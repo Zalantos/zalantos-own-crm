@@ -1,0 +1,426 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// ---------- Enums ----------
+
+enum OpportunityStage {
+  lead_identificado
+  investigacion_realizada
+  primer_contacto
+  reunion_discovery
+  dolor_validado
+  sprint_0_ofrecido
+  sprint_0_aceptado
+  diagnostico_realizado
+  propuesta_principal
+  negociacion
+  ganado
+  perdido
+}
+
+enum EntityType {
+  company
+  person
+  opportunity
+  activity
+  note
+  meeting
+}
+
+// ---------- Meeting Intelligence ----------
+
+enum ProcessingStatus {
+  pending
+  extracting
+  transcribing
+  analyzing
+  ready
+  failed
+}
+
+enum ProposalStatus {
+  pending
+  approved
+  rejected
+  partially_approved
+  applied
+}
+
+enum CustomFieldType {
+  text
+  number
+  boolean
+  date
+  select
+  multiselect
+}
+
+enum Role {
+  ADMIN
+  MEMBER
+}
+
+// ---------- Core CRM entities ----------
+
+model Company {
+  id          String   @id @default(cuid())
+  name        String
+  website     String?
+  industry    String?
+  size        String?
+  country     String?
+  city        String?
+  linkedinUrl String?
+  description String?  @db.Text
+  icpScore    Int?
+  fitScore    Int?
+  painScore   Int?
+  status      String   @default("active")
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  people         Person[]
+  opportunities  Opportunity[]
+  activities     Activity[]
+  notes          Note[]
+  meetings       Meeting[]
+  timelineEvents TimelineEvent[]
+
+  @@index([name])
+  @@index([status])
+  @@map("companies")
+}
+
+model Person {
+  id              String   @id @default(cuid())
+  companyId       String?
+  company         Company? @relation(fields: [companyId], references: [id], onDelete: SetNull)
+  firstName       String
+  lastName        String
+  email           String?
+  phone           String?
+  roleTitle       String?
+  linkedinUrl     String?
+  isDecisionMaker Boolean  @default(false)
+  isSponsor       Boolean  @default(false)
+  notes           String?  @db.Text
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  activities                   Activity[]
+  notesRel                     Note[]
+  opportunitiesAsDecisionMaker Opportunity[] @relation("OpportunityDecisionMaker")
+  opportunitiesAsSponsor       Opportunity[] @relation("OpportunitySponsor")
+
+  @@index([companyId])
+  @@index([email])
+  @@map("people")
+}
+
+model Opportunity {
+  id                String           @id @default(cuid())
+  companyId         String
+  company           Company          @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  name              String
+  stage             OpportunityStage @default(lead_identificado)
+  estimatedValue    Decimal?         @db.Decimal(14, 2)
+  probability       Int?
+  source            String?
+  mainPain          String?          @db.Text
+  urgency           String?
+  decisionMakerId   String?
+  decisionMaker     Person?          @relation("OpportunityDecisionMaker", fields: [decisionMakerId], references: [id], onDelete: SetNull)
+  sponsorId         String?
+  sponsor           Person?          @relation("OpportunitySponsor", fields: [sponsorId], references: [id], onDelete: SetNull)
+  nextStep          String?
+  nextStepDueDate   DateTime?
+  expectedCloseDate DateTime?
+  status            String           @default("open")
+  lossReason        String?
+  createdAt         DateTime         @default(now())
+  updatedAt         DateTime         @updatedAt
+
+  activities Activity[]
+  notes      Note[]
+  meetings   Meeting[]
+
+  @@index([companyId])
+  @@index([stage])
+  @@index([status])
+  @@index([nextStepDueDate])
+  @@map("opportunities")
+}
+
+model Activity {
+  id            String       @id @default(cuid())
+  companyId     String?
+  company       Company?     @relation(fields: [companyId], references: [id], onDelete: SetNull)
+  personId      String?
+  person        Person?      @relation(fields: [personId], references: [id], onDelete: SetNull)
+  opportunityId String?
+  opportunity   Opportunity? @relation(fields: [opportunityId], references: [id], onDelete: SetNull)
+  type          String
+  title         String
+  description   String?      @db.Text
+  dueDate       DateTime?
+  completedAt   DateTime?
+  status        String       @default("pending")
+  createdAt     DateTime     @default(now())
+  updatedAt     DateTime     @updatedAt
+
+  @@index([companyId])
+  @@index([personId])
+  @@index([opportunityId])
+  @@index([status])
+  @@index([dueDate])
+  @@map("activities")
+}
+
+model Note {
+  id            String       @id @default(cuid())
+  companyId     String?
+  company       Company?     @relation(fields: [companyId], references: [id], onDelete: SetNull)
+  personId      String?
+  person        Person?      @relation(fields: [personId], references: [id], onDelete: SetNull)
+  opportunityId String?
+  opportunity   Opportunity? @relation(fields: [opportunityId], references: [id], onDelete: SetNull)
+  title         String?
+  body          String       @db.Text
+  createdAt     DateTime     @default(now())
+  updatedAt     DateTime     @updatedAt
+
+  @@index([companyId])
+  @@index([personId])
+  @@index([opportunityId])
+  @@map("notes")
+}
+
+// ---------- Views / persistence ----------
+
+model SavedView {
+  id                 String     @id @default(cuid())
+  name               String
+  entityType         EntityType
+  filtersJson        Json?
+  sortJson           Json?
+  visibleColumnsJson Json?
+  createdAt          DateTime   @default(now())
+  updatedAt          DateTime   @updatedAt
+
+  @@index([entityType])
+  @@map("saved_views")
+}
+
+// ---------- Custom fields ----------
+
+model CustomFieldDefinition {
+  id          String          @id @default(cuid())
+  entityType  EntityType
+  fieldName   String
+  fieldLabel  String
+  fieldType   CustomFieldType
+  optionsJson Json?
+  isRequired  Boolean         @default(false)
+  createdAt   DateTime        @default(now())
+  updatedAt   DateTime        @updatedAt
+
+  values CustomFieldValue[]
+
+  @@unique([entityType, fieldName])
+  @@index([entityType])
+  @@map("custom_field_definitions")
+}
+
+model CustomFieldValue {
+  id                String                @id @default(cuid())
+  entityType        EntityType
+  entityId          String
+  fieldDefinitionId String
+  fieldDefinition   CustomFieldDefinition @relation(fields: [fieldDefinitionId], references: [id], onDelete: Cascade)
+  valueText         String?
+  valueNumber       Decimal?              @db.Decimal(18, 4)
+  valueBoolean      Boolean?
+  valueDate         DateTime?
+  valueJson         Json?
+  createdAt         DateTime              @default(now())
+  updatedAt         DateTime              @updatedAt
+
+  @@unique([entityType, entityId, fieldDefinitionId])
+  @@index([entityType, entityId])
+  @@index([fieldDefinitionId])
+  @@map("custom_field_values")
+}
+
+// ---------- Workflows ----------
+
+model Workflow {
+  id             String     @id @default(cuid())
+  name           String
+  description    String?    @db.Text
+  triggerEntity  EntityType
+  triggerEvent   String
+  conditionsJson Json
+  actionsJson    Json
+  isActive       Boolean    @default(true)
+  createdAt      DateTime   @default(now())
+  updatedAt      DateTime   @updatedAt
+
+  logs WorkflowLog[]
+
+  @@index([triggerEntity, triggerEvent])
+  @@index([isActive])
+  @@map("workflows")
+}
+
+model WorkflowLog {
+  id         String     @id @default(cuid())
+  workflowId String
+  workflow   Workflow   @relation(fields: [workflowId], references: [id], onDelete: Cascade)
+  entityType EntityType
+  entityId   String
+  status     String
+  message    String?    @db.Text
+  createdAt  DateTime   @default(now())
+
+  @@index([workflowId])
+  @@index([entityType, entityId])
+  @@map("workflow_logs")
+}
+
+// ---------- Auth ----------
+
+model User {
+  id           String   @id @default(cuid())
+  email        String   @unique
+  passwordHash String
+  name         String?
+  role         Role     @default(MEMBER)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@map("users")
+}
+
+// ---------- Meeting Intelligence ----------
+
+model Meeting {
+  id               String           @id @default(cuid())
+  companyId        String
+  company          Company          @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  opportunityId    String?
+  opportunity      Opportunity?     @relation(fields: [opportunityId], references: [id], onDelete: SetNull)
+  title            String
+  meetingType      String           @default("discovery")
+  meetingDate      DateTime
+  // Free-form attendees: [{ name, email?, role? }]. Linking to Person is a later phase.
+  participants     Json             @default("[]")
+  status           String           @default("open")
+  // Origin of the evidence pipeline: manual | audio | video | recall | meet | ...
+  sourceType       String           @default("manual")
+  rawTranscript    String?          @db.Text
+  aiSummary        Json?
+  processingStatus ProcessingStatus @default(pending)
+  processingError  String?          @db.Text
+  createdBy        String
+  createdAt        DateTime         @default(now())
+  updatedAt        DateTime         @updatedAt
+
+  evidence  Evidence[]
+  proposals CRMChangeProposal[]
+
+  @@index([companyId])
+  @@index([opportunityId])
+  @@index([processingStatus])
+  @@map("meetings")
+}
+
+model Evidence {
+  id            String   @id @default(cuid())
+  meetingId     String
+  meeting       Meeting  @relation(fields: [meetingId], references: [id], onDelete: Cascade)
+  // audio | video | pdf | docx | txt | md | transcript
+  type          String
+  filename      String
+  mimeType      String
+  // Object key in Cloudflare R2 (empty for inline manual transcripts).
+  storagePath   String
+  sizeBytes     Int?
+  extractedText String?  @db.Text
+  // uploaded | extracting | extracted | failed
+  status        String   @default("uploaded")
+  uploadedBy    String
+  uploadedAt    DateTime @default(now())
+
+  @@index([meetingId])
+  @@map("evidence")
+}
+
+model CRMChangeProposal {
+  id             String         @id @default(cuid())
+  meetingId      String
+  meeting        Meeting        @relation(fields: [meetingId], references: [id], onDelete: Cascade)
+  confidence     Float
+  status         ProposalStatus @default(pending)
+  // Model that produced the proposal, for audit (e.g. groq/llama-3.3-70b-versatile).
+  model          String?
+  rawModelOutput Json?
+  reviewedBy     String?
+  reviewedAt     DateTime?
+  createdAt      DateTime       @default(now())
+
+  items CRMChangeItem[]
+
+  @@index([meetingId])
+  @@index([status])
+  @@map("crm_change_proposals")
+}
+
+model CRMChangeItem {
+  id          String            @id @default(cuid())
+  proposalId  String
+  proposal    CRMChangeProposal @relation(fields: [proposalId], references: [id], onDelete: Cascade)
+  // stage_change | create_task | add_contact | update_pain | add_note |
+  // update_sponsor | update_decision_maker | update_field
+  type        String
+  // Target entity type: company | opportunity | person | activity | note
+  entity      String
+  // Logical reference (no FK); null when the item creates a new entity.
+  entityId    String?
+  beforeValue Json?
+  afterValue  Json?
+  confidence  Float
+  explanation String            @db.Text
+  approved    Boolean           @default(false)
+  // pending | approved | rejected | applied | failed
+  status      String            @default("pending")
+  appliedAt   DateTime?
+
+  @@index([proposalId])
+  @@map("crm_change_items")
+}
+
+model TimelineEvent {
+  id            String   @id @default(cuid())
+  companyId     String
+  company       Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  opportunityId String?
+  // meeting_created | proposal_applied | note_added | stage_changed | task_created
+  type          String
+  title         String
+  summary       String?  @db.Text
+  // Reference back to the source record (meeting | proposal | note | ...).
+  refType       String?
+  refId         String?
+  actorId       String?
+  metadata      Json?
+  occurredAt    DateTime @default(now())
+
+  @@index([companyId, occurredAt])
+  @@index([opportunityId])
+  @@map("timeline_events")
+}
