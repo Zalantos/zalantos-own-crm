@@ -19,6 +19,7 @@ const CRM_SECTION = {
 const ADMIN_SECTION = {
   label: "Configuración",
   items: [
+    { href: "/admin/users", label: "Usuarios" },
     { href: "/admin/custom-fields", label: "Campos custom" },
     { href: "/admin/workflows", label: "Workflows" },
   ],
@@ -26,7 +27,8 @@ const ADMIN_SECTION = {
 
 export function Sidebar({ role }: { role: Role }) {
   const pathname = usePathname();
-  const sections = role === "ADMIN" ? [CRM_SECTION, ADMIN_SECTION] : [CRM_SECTION];
+  const sections =
+    role === "ADMIN" ? [CRM_SECTION, ADMIN_SECTION] : [CRM_SECTION];
 
   return (
     <aside className="bg-muted/20 hidden w-56 shrink-0 flex-col border-r p-4 md:flex">

@@ -1,5 +1,6 @@
 import { redirect } from "next/navigation";
 import { auth } from "@/lib/auth";
+import { prisma } from "@/lib/prisma";
 
 export async function getCurrentUser() {
   const session = await auth();
@@ -11,7 +12,22 @@ export async function requireUser() {
   if (!user) {
     redirect("/login");
   }
-  return user;
+
+  const dbUser = await prisma.user.findUnique({
+    where: { id: user.id },
+    select: { email: true, name: true, role: true, isActive: true },
+  });
+
+  if (!dbUser?.isActive) {
+    redirect("/login");
+  }
+
+  return {
+    ...user,
+    email: dbUser.email,
+    name: dbUser.name,
+    role: dbUser.role,
+  };
 }
 
 export async function requireAdmin() {

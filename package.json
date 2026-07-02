@@ -2,6 +2,9 @@
   "name": "crm-zalantos",
   "version": "0.1.0",
   "private": true,
+  "engines": {
+    "node": ">=22"
+  },
   "scripts": {
     "dev": "next dev",
     "build": "prisma generate && next build",
@@ -14,6 +17,7 @@
     "prisma:migrate:deploy": "prisma migrate deploy",
     "prisma:studio": "prisma studio",
     "prisma:seed": "prisma db seed",
+    "seed:check": "tsx scripts/check-seed-data.ts",
     "postinstall": "prisma generate"
   },
   "dependencies": {
