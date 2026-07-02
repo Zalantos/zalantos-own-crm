@@ -4,17 +4,40 @@ import { revalidatePath } from "next/cache";
 import { prisma } from "@/lib/prisma";
 import { requireUser } from "@/lib/session";
 import { applyProposal } from "@/lib/meeting-intelligence/apply";
+import { appendTimelineEvent } from "@/lib/timeline";
+
+async function getMeetingContext(meetingId: string) {
+  return prisma.meeting.findUniqueOrThrow({
+    where: { id: meetingId },
+    select: { companyId: true, opportunityId: true, title: true },
+  });
+}
 
 export async function setItemApproval(
   itemId: string,
   meetingId: string,
   approved: boolean,
 ) {
-  await requireUser();
-  await prisma.cRMChangeItem.update({
+  const user = await requireUser();
+  const item = await prisma.cRMChangeItem.update({
     where: { id: itemId },
     data: { approved, status: approved ? "approved" : "pending" },
+    select: { type: true, entity: true },
   });
+
+  const meeting = await getMeetingContext(meetingId);
+  await appendTimelineEvent(prisma, {
+    companyId: meeting.companyId,
+    opportunityId: meeting.opportunityId,
+    type: "proposal_item_reviewed",
+    title: `${approved ? "Aprobó" : "Rechazó"} un cambio propuesto`,
+    summary: `Reunión: ${meeting.title}`,
+    refType: "meeting",
+    refId: meetingId,
+    actorId: user.id,
+    metadata: { itemId, itemType: item.type, entity: item.entity, approved },
+  });
+
   revalidatePath(`/meetings/${meetingId}`);
 }
 
@@ -23,11 +46,25 @@ export async function setAllItemsApproval(
   meetingId: string,
   approved: boolean,
 ) {
-  await requireUser();
-  await prisma.cRMChangeItem.updateMany({
+  const user = await requireUser();
+  const { count } = await prisma.cRMChangeItem.updateMany({
     where: { proposalId, status: { notIn: ["applied"] } },
     data: { approved, status: approved ? "approved" : "pending" },
   });
+
+  const meeting = await getMeetingContext(meetingId);
+  await appendTimelineEvent(prisma, {
+    companyId: meeting.companyId,
+    opportunityId: meeting.opportunityId,
+    type: "proposal_bulk_reviewed",
+    title: `${approved ? "Aprobó" : "Rechazó"} todos los cambios pendientes`,
+    summary: `${count} cambio(s) ${approved ? "aprobado(s)" : "rechazado(s)"} · Reunión: ${meeting.title}`,
+    refType: "meeting",
+    refId: meetingId,
+    actorId: user.id,
+    metadata: { proposalId, count, approved },
+  });
+
   revalidatePath(`/meetings/${meetingId}`);
 }
 
@@ -49,5 +86,19 @@ export async function rejectProposalAction(
     where: { id: proposalId },
     data: { status: "rejected", reviewedBy: user.id, reviewedAt: new Date() },
   });
+
+  const meeting = await getMeetingContext(meetingId);
+  await appendTimelineEvent(prisma, {
+    companyId: meeting.companyId,
+    opportunityId: meeting.opportunityId,
+    type: "proposal_rejected",
+    title: `Rechazó la propuesta de cambios`,
+    summary: `Reunión: ${meeting.title}`,
+    refType: "meeting",
+    refId: meetingId,
+    actorId: user.id,
+    metadata: { proposalId },
+  });
+
   revalidatePath(`/meetings/${meetingId}`);
 }

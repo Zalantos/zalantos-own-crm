@@ -1,9 +1,13 @@
+import { Loader2Icon } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import type { ProcessingStatus } from "@prisma/client";
 
 const CONFIG: Record<
   ProcessingStatus,
-  { label: string; variant: "default" | "secondary" | "destructive" | "outline" }
+  {
+    label: string;
+    variant: "default" | "secondary" | "destructive" | "outline";
+  }
 > = {
   pending: { label: "Pendiente", variant: "outline" },
   extracting: { label: "Extrayendo texto", variant: "secondary" },
@@ -13,11 +17,25 @@ const CONFIG: Record<
   failed: { label: "Error", variant: "destructive" },
 };
 
+const ACTIVE_STATUSES: ProcessingStatus[] = [
+  "pending",
+  "extracting",
+  "transcribing",
+  "analyzing",
+];
+
 export function ProcessingStatusBadge({
   status,
 }: {
   status: ProcessingStatus;
 }) {
   const { label, variant } = CONFIG[status];
-  return <Badge variant={variant}>{label}</Badge>;
+  const isActive = ACTIVE_STATUSES.includes(status);
+
+  return (
+    <Badge variant={variant}>
+      {isActive && <Loader2Icon className="animate-spin" />}
+      {label}
+    </Badge>
+  );
 }

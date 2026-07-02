@@ -22,7 +22,7 @@ export function DataTable<TRow extends { id: string }>({
 }: {
   columns: DataTableColumn<TRow>[];
   rows: TRow[];
-  rowHref?: (row: TRow) => string;
+  rowHref?: (row: TRow) => string | undefined;
   emptyMessage?: string;
 }) {
   if (rows.length === 0) {

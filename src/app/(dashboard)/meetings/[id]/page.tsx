@@ -7,6 +7,7 @@ import { ProcessingStatusBadge } from "@/components/shared/meeting/processing-st
 import { EvidenceUploader } from "@/components/shared/meeting/evidence-uploader";
 import { ManualTranscriptForm } from "@/components/shared/meeting/manual-transcript-form";
 import { MeetingActions } from "@/components/shared/meeting/meeting-actions";
+import { MeetingProcessingProgress } from "@/components/shared/meeting/meeting-processing-progress";
 import {
   ChangeProposalReview,
   type ReviewProposal,
@@ -74,11 +75,11 @@ export default async function MeetingDetailPage({
         }
       />
 
-      {meeting.processingStatus === "failed" && meeting.processingError && (
-        <p className="text-destructive mb-4 rounded-md border border-destructive/30 p-3 text-sm">
-          {meeting.processingError}
-        </p>
-      )}
+      <MeetingProcessingProgress
+        meetingId={meeting.id}
+        initialStatus={meeting.processingStatus}
+        initialProcessingError={meeting.processingError}
+      />
 
       <Tabs defaultValue="evidence">
         <TabsList>
@@ -96,7 +97,9 @@ export default async function MeetingDetailPage({
         <TabsContent value="evidence" className="space-y-4 pt-4">
           <EvidenceUploader meetingId={meeting.id} />
           <div className="space-y-2">
-            <p className="text-sm font-medium">O pegá una transcripción manual</p>
+            <p className="text-sm font-medium">
+              O pegá una transcripción manual
+            </p>
             <ManualTranscriptForm meetingId={meeting.id} />
           </div>
           <div className="space-y-2">

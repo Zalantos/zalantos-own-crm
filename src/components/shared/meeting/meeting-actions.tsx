@@ -1,7 +1,8 @@
 "use client";
 
-import { useTransition } from "react";
+import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
+import { Loader2Icon } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { deleteMeeting } from "@/app/(dashboard)/meetings/actions";
@@ -10,33 +11,50 @@ import { reprocessMeeting } from "@/app/(dashboard)/meetings/evidence-actions";
 export function MeetingActions({ meetingId }: { meetingId: string }) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
+  const [pendingAction, setPendingAction] = useState<
+    "reprocess" | "delete" | null
+  >(null);
 
   return (
     <div className="flex gap-2">
       <Button
         variant="secondary"
-        disabled={pending}
+        disabled={pending || pendingAction !== null}
         onClick={() =>
           startTransition(async () => {
-            await reprocessMeeting(meetingId);
-            toast.success("Reprocesando...");
-            router.refresh();
+            setPendingAction("reprocess");
+            try {
+              await reprocessMeeting(meetingId);
+              toast.success("Reprocesando...");
+              router.refresh();
+            } finally {
+              setPendingAction(null);
+            }
           })
         }
       >
-        Reprocesar
+        {pendingAction === "reprocess" && (
+          <Loader2Icon className="animate-spin" />
+        )}
+        {pendingAction === "reprocess" ? "Reprocesando..." : "Reprocesar"}
       </Button>
       <Button
         variant="ghost"
-        disabled={pending}
+        disabled={pending || pendingAction !== null}
         onClick={() =>
           startTransition(async () => {
             if (!confirm("¿Eliminar esta reunión y su evidencia?")) return;
-            await deleteMeeting(meetingId);
+            setPendingAction("delete");
+            try {
+              await deleteMeeting(meetingId);
+            } finally {
+              setPendingAction(null);
+            }
           })
         }
       >
-        Eliminar
+        {pendingAction === "delete" && <Loader2Icon className="animate-spin" />}
+        {pendingAction === "delete" ? "Eliminando..." : "Eliminar"}
       </Button>
     </div>
   );

@@ -7,6 +7,7 @@ import { requireUser } from "@/lib/session";
 import { manualTranscriptSchema } from "@/lib/zod/meeting";
 import { classifyEvidence } from "@/lib/meeting-intelligence/extraction";
 import { runPipeline } from "@/lib/meeting-intelligence/pipeline";
+import { appendTimelineEvent } from "@/lib/timeline";
 import type { FormState } from "./types";
 
 // Runs the pipeline after the response is sent (fast path). Failures are
@@ -50,12 +51,24 @@ export async function registerEvidence(input: {
     },
   });
 
-  await prisma.meeting.update({
+  const meeting = await prisma.meeting.update({
     where: { id: input.meetingId },
     data: {
       sourceType: kind === "audio" || kind === "video" ? kind : "manual",
       processingStatus: "pending",
     },
+    select: { companyId: true, opportunityId: true, title: true },
+  });
+
+  await appendTimelineEvent(prisma, {
+    companyId: meeting.companyId,
+    opportunityId: meeting.opportunityId,
+    type: "evidence_uploaded",
+    title: `Evidencia subida: ${input.filename}`,
+    summary: `Reunión: ${meeting.title}`,
+    refType: "meeting",
+    refId: input.meetingId,
+    actorId: user.id,
   });
 
   // Note: no pipeline trigger here. The uploader registers every file first,
@@ -92,9 +105,21 @@ export async function addManualTranscript(
     },
   });
 
-  await prisma.meeting.update({
+  const meeting = await prisma.meeting.update({
     where: { id: parsed.data.meetingId },
     data: { processingStatus: "pending" },
+    select: { companyId: true, opportunityId: true, title: true },
+  });
+
+  await appendTimelineEvent(prisma, {
+    companyId: meeting.companyId,
+    opportunityId: meeting.opportunityId,
+    type: "transcript_added",
+    title: `Transcripción manual agregada`,
+    summary: `Reunión: ${meeting.title}`,
+    refType: "meeting",
+    refId: parsed.data.meetingId,
+    actorId: user.id,
   });
 
   schedulePipeline(parsed.data.meetingId);

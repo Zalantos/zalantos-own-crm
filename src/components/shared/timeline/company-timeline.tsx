@@ -1,13 +1,5 @@
-import { getCompanyTimeline } from "@/lib/timeline";
+import { getCompanyTimeline, TYPE_LABELS } from "@/lib/timeline";
 import { formatDateTime } from "@/lib/utils";
-
-const TYPE_LABELS: Record<string, string> = {
-  meeting_created: "Reunión",
-  proposal_applied: "Cambios aplicados",
-  note_added: "Nota",
-  stage_changed: "Cambio de etapa",
-  task_created: "Tarea",
-};
 
 export async function CompanyTimeline({ companyId }: { companyId: string }) {
   const events = await getCompanyTimeline(companyId);

@@ -48,9 +48,26 @@ export async function createMeeting(
 }
 
 export async function deleteMeeting(id: string) {
-  await requireUser();
+  const user = await requireUser();
   try {
-    await prisma.meeting.delete({ where: { id } });
+    const meeting = await prisma.meeting.findUnique({
+      where: { id },
+      select: { companyId: true, opportunityId: true, title: true },
+    });
+    await prisma.$transaction(async (tx) => {
+      await tx.meeting.delete({ where: { id } });
+      if (meeting) {
+        await appendTimelineEvent(tx, {
+          companyId: meeting.companyId,
+          opportunityId: meeting.opportunityId,
+          type: "meeting_deleted",
+          title: `Reunión eliminada: ${meeting.title}`,
+          refType: "meeting",
+          refId: id,
+          actorId: user.id,
+        });
+      }
+    });
   } catch (error) {
     handleMutationError(error);
   }

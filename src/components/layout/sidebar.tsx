@@ -13,6 +13,7 @@ const CRM_SECTION = {
     { href: "/opportunities", label: "Oportunidades" },
     { href: "/activities", label: "Actividades" },
     { href: "/meetings", label: "Meeting Intelligence" },
+    { href: "/audit-log", label: "Actividad" },
   ],
 };
 
