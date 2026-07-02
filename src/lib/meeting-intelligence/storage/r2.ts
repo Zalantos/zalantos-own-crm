@@ -19,6 +19,12 @@ function r2(): S3Client {
         accessKeyId: r2Config.accessKeyId,
         secretAccessKey: r2Config.secretAccessKey,
       },
+      // R2 doesn't support the AWS SDK's default flexible-checksum behavior
+      // (added in @aws-sdk/client-s3 v3.729+). Without this, presigned PUT
+      // URLs include an x-amz-checksum-crc32 param that R2 rejects with 403,
+      // which the browser then reports as a CORS failure.
+      requestChecksumCalculation: "WHEN_REQUIRED",
+      responseChecksumValidation: "WHEN_REQUIRED",
     });
   }
   return client;
