@@ -1,6 +1,6 @@
 "use client";
 
-import { useTransition } from "react";
+import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
@@ -11,6 +11,9 @@ import {
   setAllItemsApproval,
   setItemApproval,
 } from "@/app/(dashboard)/meetings/proposal-actions";
+import { ProposalItemEditor } from "@/components/shared/meeting/proposal-item-editor";
+import { OPPORTUNITY_STAGE_LABELS } from "@/lib/zod/opportunity";
+import type { OpportunityStage } from "@prisma/client";
 
 export type ReviewItem = {
   id: string;
@@ -39,12 +42,22 @@ const TYPE_LABELS: Record<string, string> = {
   add_note: "Agregar nota",
   stage_change: "Cambio de etapa",
   update_pain: "Actualizar dolor",
+  update_next_step: "Próximo paso",
 };
+
+// Item types the editor supports; the rest only allow approve/reject.
+const EDITABLE_TYPES = new Set(Object.keys(TYPE_LABELS));
 
 function asObj(value: unknown): Record<string, unknown> {
   return value && typeof value === "object" && !Array.isArray(value)
     ? (value as Record<string, unknown>)
     : {};
+}
+
+function stageLabel(value: unknown): string {
+  if (value == null) return "—";
+  const stage = String(value);
+  return OPPORTUNITY_STAGE_LABELS[stage as OpportunityStage] ?? stage;
 }
 
 function describeAfter(item: ReviewItem): string {
@@ -54,16 +67,27 @@ function describeAfter(item: ReviewItem): string {
       const before = asObj(item.beforeValue).value;
       return `${String(a.field)}: ${before == null ? "—" : String(before)} → ${String(a.value)}`;
     }
-    case "add_contact":
-      return `${String(a.firstName ?? "")} ${String(a.lastName ?? "")}`.trim();
+    case "add_contact": {
+      const name = `${String(a.firstName ?? "")} ${String(a.lastName ?? "")}`.trim();
+      const extras = [a.roleTitle, a.email, a.phone].filter(Boolean).map(String);
+      return extras.length ? `${name} (${extras.join(" · ")})` : name;
+    }
     case "create_task":
       return String(a.title ?? "");
     case "add_note":
       return String(a.title ?? a.body ?? "");
-    case "stage_change":
-      return `→ ${String(a.value)}`;
+    case "stage_change": {
+      const before = asObj(item.beforeValue).value;
+      return `${stageLabel(before)} → ${stageLabel(a.value)}`;
+    }
     case "update_pain":
       return String(a.value ?? "");
+    case "update_next_step": {
+      const due = a.nextStepDueDate
+        ? ` (vence ${String(a.nextStepDueDate).slice(0, 10)})`
+        : "";
+      return `${String(a.nextStep ?? "")}${due}`;
+    }
     default:
       return JSON.stringify(a);
   }
@@ -86,6 +110,7 @@ export function ChangeProposalReview({
 }) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
+  const [editingId, setEditingId] = useState<string | null>(null);
   const isFinal = proposal.status === "applied" || proposal.status === "rejected";
 
   function run(fn: () => Promise<void>, message: string) {
@@ -157,51 +182,78 @@ export function ChangeProposalReview({
         </p>
       ) : (
         <ul className="space-y-2">
-          {proposal.items.map((item) => (
-            <li
-              key={item.id}
-              className="flex items-start gap-3 rounded-md border p-3 text-sm"
-            >
-              <input
-                type="checkbox"
-                className="mt-1"
-                defaultChecked={item.approved}
-                disabled={pending || isFinal || item.status === "applied"}
-                onChange={(e) =>
-                  run(
-                    () =>
-                      setItemApproval(item.id, meetingId, e.target.checked),
-                    "Actualizado",
-                  )
-                }
-              />
-              <div className="flex-1 space-y-1">
-                <div className="flex items-center gap-2">
-                  <span className="font-medium">
-                    {TYPE_LABELS[item.type] ?? item.type}
-                  </span>
-                  <span className="text-muted-foreground text-xs">
-                    {item.entity}
-                  </span>
-                  <Badge variant={confidenceVariant(item.confidence)}>
-                    {Math.round(item.confidence * 100)}%
-                  </Badge>
-                  {item.status === "applied" && (
-                    <Badge variant="default">Aplicado</Badge>
+          {proposal.items.map((item) => {
+            const canEdit =
+              !isFinal &&
+              item.status !== "applied" &&
+              EDITABLE_TYPES.has(item.type);
+            return (
+              <li
+                key={item.id}
+                className="flex items-start gap-3 rounded-md border p-3 text-sm"
+              >
+                <input
+                  type="checkbox"
+                  className="mt-1"
+                  defaultChecked={item.approved}
+                  disabled={pending || isFinal || item.status === "applied"}
+                  onChange={(e) =>
+                    run(
+                      () =>
+                        setItemApproval(item.id, meetingId, e.target.checked),
+                      "Actualizado",
+                    )
+                  }
+                />
+                <div className="flex-1 space-y-1">
+                  <div className="flex items-center gap-2">
+                    <span className="font-medium">
+                      {TYPE_LABELS[item.type] ?? item.type}
+                    </span>
+                    <span className="text-muted-foreground text-xs">
+                      {item.entity}
+                    </span>
+                    <Badge variant={confidenceVariant(item.confidence)}>
+                      {Math.round(item.confidence * 100)}%
+                    </Badge>
+                    {item.status === "applied" && (
+                      <Badge variant="default">Aplicado</Badge>
+                    )}
+                    {item.status === "failed" && (
+                      <Badge variant="destructive">Falló</Badge>
+                    )}
+                    {canEdit && (
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        className="ml-auto h-6 px-2 text-xs"
+                        disabled={pending}
+                        onClick={() =>
+                          setEditingId(editingId === item.id ? null : item.id)
+                        }
+                      >
+                        {editingId === item.id ? "Cerrar" : "Editar"}
+                      </Button>
+                    )}
+                  </div>
+                  {editingId === item.id ? (
+                    <ProposalItemEditor
+                      item={item}
+                      meetingId={meetingId}
+                      onDone={() => setEditingId(null)}
+                    />
+                  ) : (
+                    <p>{describeAfter(item)}</p>
                   )}
-                  {item.status === "failed" && (
-                    <Badge variant="destructive">Falló</Badge>
+                  {item.explanation && (
+                    <p className="text-muted-foreground text-xs">
+                      {item.explanation}
+                    </p>
                   )}
                 </div>
-                <p>{describeAfter(item)}</p>
-                {item.explanation && (
-                  <p className="text-muted-foreground text-xs">
-                    {item.explanation}
-                  </p>
-                )}
-              </div>
-            </li>
-          ))}
+              </li>
+            );
+          })}
         </ul>
       )}
     </div>

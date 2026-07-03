@@ -13,14 +13,29 @@ export type MappedChangeItem = {
   explanation: string;
 };
 
+export type MappingOpportunity = {
+  id: string;
+  stage: string;
+  nextStep: string | null;
+  nextStepDueDate: string | null;
+};
+
 type MappingContext = {
   companyId: string;
-  // Used to resolve a target opportunity when the model omits the id.
-  opportunityIds: string[];
+  // Snapshot of the company's opportunities; also used to resolve a target
+  // opportunity when the model omits the id, and to fill beforeValue.
+  opportunities: MappingOpportunity[];
 };
 
 function soleOpportunity(ctx: MappingContext): string | null {
-  return ctx.opportunityIds.length === 1 ? ctx.opportunityIds[0] : null;
+  return ctx.opportunities.length === 1 ? ctx.opportunities[0].id : null;
+}
+
+function opportunityById(
+  ctx: MappingContext,
+  id: string | null,
+): MappingOpportunity | null {
+  return id ? (ctx.opportunities.find((o) => o.id === id) ?? null) : null;
 }
 
 export function mapAnalysisToItems(
@@ -37,6 +52,23 @@ export function mapAnalysisToItems(
         : u.entity === "opportunity"
           ? soleOpportunity(ctx)
           : null);
+
+    // Stage sent as a plain field update is normalized into a stage_change
+    // item so workflows fire and there is a single apply path for stages.
+    if (u.entity === "opportunity" && u.field === "stage") {
+      const current = opportunityById(ctx, entityId);
+      items.push({
+        type: "stage_change",
+        entity: "opportunity",
+        entityId,
+        beforeValue: { value: u.current_value ?? current?.stage ?? null },
+        afterValue: { value: u.new_value },
+        confidence: u.confidence,
+        explanation: u.explanation,
+      });
+      continue;
+    }
+
     items.push({
       type: "update_field",
       entity: u.entity,
@@ -58,7 +90,10 @@ export function mapAnalysisToItems(
         firstName: c.first_name,
         lastName: c.last_name,
         email: c.email ?? null,
+        phone: c.phone ?? null,
         roleTitle: c.role_title ?? null,
+        linkedinUrl: c.linkedin_url ?? null,
+        notes: c.notes ?? null,
         isDecisionMaker: c.is_decision_maker,
         isSponsor: c.is_sponsor,
       },
@@ -98,11 +133,13 @@ export function mapAnalysisToItems(
 
   if (analysis.stage_change) {
     const s = analysis.stage_change;
+    const entityId = s.opportunity_id ?? soleOpportunity(ctx);
+    const current = opportunityById(ctx, entityId);
     items.push({
       type: "stage_change",
       entity: "opportunity",
-      entityId: s.opportunity_id ?? soleOpportunity(ctx),
-      beforeValue: { value: s.from_stage ?? null },
+      entityId,
+      beforeValue: { value: s.from_stage ?? current?.stage ?? null },
       afterValue: { value: s.to_stage },
       confidence: s.confidence,
       explanation: s.explanation,
@@ -118,6 +155,27 @@ export function mapAnalysisToItems(
       afterValue: { value: p.pain },
       confidence: p.confidence,
       explanation: p.explanation,
+    });
+  }
+
+  if (analysis.next_step_update) {
+    const n = analysis.next_step_update;
+    const entityId = n.opportunity_id ?? soleOpportunity(ctx);
+    const current = opportunityById(ctx, entityId);
+    items.push({
+      type: "update_next_step",
+      entity: "opportunity",
+      entityId,
+      beforeValue: {
+        nextStep: current?.nextStep ?? null,
+        nextStepDueDate: current?.nextStepDueDate ?? null,
+      },
+      afterValue: {
+        nextStep: n.next_step,
+        nextStepDueDate: n.due_date ?? null,
+      },
+      confidence: n.confidence,
+      explanation: n.explanation,
     });
   }
 

@@ -5,6 +5,7 @@ import { prisma } from "@/lib/prisma";
 import { requireUser } from "@/lib/session";
 import { activityCreateSchema } from "@/lib/zod/activity";
 import { handleMutationError } from "@/lib/prisma-errors";
+import { appendTimelineEvent } from "@/lib/timeline";
 
 function parentPath(entity: {
   companyId?: string | null;
@@ -23,7 +24,7 @@ export async function createActivity(
   _prevState: ActivityFormState,
   formData: FormData,
 ): Promise<ActivityFormState> {
-  await requireUser();
+  const user = await requireUser();
 
   const parsed = activityCreateSchema.safeParse(Object.fromEntries(formData));
   if (!parsed.success) {
@@ -31,6 +32,18 @@ export async function createActivity(
   }
 
   const activity = await prisma.activity.create({ data: parsed.data });
+  if (activity.companyId) {
+    await appendTimelineEvent(prisma, {
+      companyId: activity.companyId,
+      opportunityId: activity.opportunityId,
+      type: "task_created",
+      title: `Tarea creada: ${activity.title}`,
+      summary: activity.dueDate
+        ? `Vence ${activity.dueDate.toLocaleDateString("es-AR")}`
+        : undefined,
+      actorId: user.id,
+    });
+  }
   revalidatePath(parentPath(activity));
   revalidatePath("/activities");
 }

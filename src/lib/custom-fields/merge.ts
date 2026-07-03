@@ -105,6 +105,34 @@ function serializeCustomFieldValue(fieldType: CustomFieldType, raw: unknown) {
   }
 }
 
+// Upserts a single custom field value inside an existing transaction. Used by
+// the proposal apply engine, which validates the raw value beforehand.
+export async function upsertCustomFieldValue(
+  tx: Prisma.TransactionClient,
+  entityType: EntityType,
+  entityId: string,
+  definition: CustomFieldDefinition,
+  raw: unknown,
+) {
+  const data = serializeCustomFieldValue(definition.fieldType, raw);
+  await tx.customFieldValue.upsert({
+    where: {
+      entityType_entityId_fieldDefinitionId: {
+        entityType,
+        entityId,
+        fieldDefinitionId: definition.id,
+      },
+    },
+    create: {
+      entityType,
+      entityId,
+      fieldDefinitionId: definition.id,
+      ...data,
+    },
+    update: data,
+  });
+}
+
 export async function upsertCustomFieldValues(
   entityType: EntityType,
   entityId: string,

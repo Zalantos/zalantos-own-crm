@@ -7,12 +7,17 @@ export const TYPE_LABELS: Record<string, string> = {
   evidence_uploaded: "Evidencia subida",
   transcript_added: "Transcripción agregada",
   proposal_item_reviewed: "Cambio revisado",
+  proposal_item_edited: "Propuesta editada",
   proposal_bulk_reviewed: "Cambios revisados en bloque",
   proposal_rejected: "Propuesta rechazada",
   proposal_applied: "Cambios aplicados",
   note_added: "Nota",
   stage_changed: "Cambio de etapa",
   task_created: "Tarea",
+  next_step_updated: "Próximo paso actualizado",
+  field_updated: "Campo actualizado",
+  contact_added: "Contacto agregado",
+  opportunity_created: "Oportunidad creada",
 };
 
 const ACTIVITY_PAGE_SIZE = 25;
@@ -53,6 +58,14 @@ export async function appendTimelineEvent(
 export async function getCompanyTimeline(companyId: string) {
   return prisma.timelineEvent.findMany({
     where: { companyId },
+    orderBy: { occurredAt: "desc" },
+    take: 100,
+  });
+}
+
+export async function getOpportunityTimeline(opportunityId: string) {
+  return prisma.timelineEvent.findMany({
+    where: { opportunityId },
     orderBy: { occurredAt: "desc" },
     take: 100,
   });

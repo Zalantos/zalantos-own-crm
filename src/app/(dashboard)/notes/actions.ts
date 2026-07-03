@@ -5,6 +5,7 @@ import { prisma } from "@/lib/prisma";
 import { requireUser } from "@/lib/session";
 import { noteCreateSchema, noteUpdateSchema } from "@/lib/zod/note";
 import { handleMutationError } from "@/lib/prisma-errors";
+import { appendTimelineEvent } from "@/lib/timeline";
 
 function parentPath(entity: {
   companyId?: string | null;
@@ -23,7 +24,7 @@ export async function createNote(
   _prevState: NoteFormState,
   formData: FormData,
 ): Promise<NoteFormState> {
-  await requireUser();
+  const user = await requireUser();
 
   const parsed = noteCreateSchema.safeParse(Object.fromEntries(formData));
   if (!parsed.success) {
@@ -31,6 +32,16 @@ export async function createNote(
   }
 
   const note = await prisma.note.create({ data: parsed.data });
+  if (note.companyId) {
+    await appendTimelineEvent(prisma, {
+      companyId: note.companyId,
+      opportunityId: note.opportunityId,
+      type: "note_added",
+      title: note.title ? `Nota: ${note.title}` : "Nota agregada",
+      summary: note.body.length > 200 ? `${note.body.slice(0, 200)}…` : note.body,
+      actorId: user.id,
+    });
+  }
   revalidatePath(parentPath(note));
 }
 

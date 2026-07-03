@@ -9,6 +9,7 @@ import { NotesPanel } from "@/components/shared/notes/notes-panel";
 import { ActivitiesPanel } from "@/components/shared/activities/activities-panel";
 import { CustomFieldsDetailSection } from "@/components/shared/custom-fields/custom-fields-detail-section";
 import { StageSelect } from "@/components/shared/kanban/stage-select";
+import { CompanyTimeline } from "@/components/shared/timeline/company-timeline";
 
 export default async function OpportunityDetailPage({
   params,
@@ -132,12 +133,16 @@ export default async function OpportunityDetailPage({
         <TabsList>
           <TabsTrigger value="activities">Actividades</TabsTrigger>
           <TabsTrigger value="notes">Notas</TabsTrigger>
+          <TabsTrigger value="timeline">Timeline</TabsTrigger>
         </TabsList>
         <TabsContent value="activities" className="pt-4">
           <ActivitiesPanel opportunityId={opportunity.id} />
         </TabsContent>
         <TabsContent value="notes" className="pt-4">
           <NotesPanel opportunityId={opportunity.id} />
+        </TabsContent>
+        <TabsContent value="timeline" className="pt-4">
+          <CompanyTimeline opportunityId={opportunity.id} />
         </TabsContent>
       </Tabs>
     </div>

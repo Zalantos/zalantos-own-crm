@@ -15,6 +15,8 @@ import {
 } from "@/lib/custom-fields/merge";
 import { evaluateWorkflows } from "@/lib/workflows/engine";
 import { handleMutationError } from "@/lib/prisma-errors";
+import { appendTimelineEvent } from "@/lib/timeline";
+import { OPPORTUNITY_STAGE_LABELS } from "@/lib/zod/opportunity";
 
 export type FormState =
   | { error: string; fieldErrors?: Record<string, string[] | undefined> }
@@ -24,7 +26,7 @@ export async function createOpportunity(
   _prevState: FormState,
   formData: FormData,
 ): Promise<FormState> {
-  await requireUser();
+  const user = await requireUser();
 
   const parsed = opportunityCreateSchema.safeParse(
     Object.fromEntries(formData),
@@ -38,6 +40,13 @@ export async function createOpportunity(
 
   const opportunity = await prisma.opportunity.create({ data: parsed.data });
   await upsertCustomFieldValues("opportunity", opportunity.id, formData);
+  await appendTimelineEvent(prisma, {
+    companyId: opportunity.companyId,
+    opportunityId: opportunity.id,
+    type: "opportunity_created",
+    title: `Oportunidad creada: ${opportunity.name}`,
+    actorId: user.id,
+  });
   revalidatePath("/opportunities");
   revalidatePath(`/companies/${opportunity.companyId}`);
   redirect(`/opportunities/${opportunity.id}`);
@@ -47,7 +56,7 @@ export async function updateOpportunity(
   _prevState: FormState,
   formData: FormData,
 ): Promise<FormState> {
-  await requireUser();
+  const user = await requireUser();
 
   const parsed = opportunityUpdateSchema.safeParse(
     Object.fromEntries(formData),
@@ -60,6 +69,9 @@ export async function updateOpportunity(
   }
 
   const { id, ...data } = parsed.data;
+  const before = await prisma.opportunity.findUnique({ where: { id } });
+  if (!before) redirect("/opportunities");
+
   let opportunity;
   try {
     opportunity = await prisma.opportunity.update({ where: { id }, data });
@@ -67,6 +79,39 @@ export async function updateOpportunity(
     handleMutationError(error);
   }
   await upsertCustomFieldValues("opportunity", id, formData);
+
+  if (data.stage && data.stage !== before.stage) {
+    await appendTimelineEvent(prisma, {
+      companyId: opportunity.companyId,
+      opportunityId: opportunity.id,
+      type: "stage_changed",
+      title: "Cambio de etapa",
+      summary: `${OPPORTUNITY_STAGE_LABELS[before.stage]} → ${OPPORTUNITY_STAGE_LABELS[opportunity.stage]}`,
+      actorId: user.id,
+    });
+    await evaluateWorkflows({
+      entityType: "opportunity",
+      entityId: opportunity.id,
+      eventName: "stage_changed",
+      before: { stage: before.stage },
+      after: { stage: opportunity.stage },
+    });
+  }
+  if (
+    "nextStep" in data &&
+    (data.nextStep !== before.nextStep ||
+      opportunity.nextStepDueDate?.getTime() !== before.nextStepDueDate?.getTime())
+  ) {
+    await appendTimelineEvent(prisma, {
+      companyId: opportunity.companyId,
+      opportunityId: opportunity.id,
+      type: "next_step_updated",
+      title: "Próximo paso actualizado",
+      summary: opportunity.nextStep ?? undefined,
+      actorId: user.id,
+    });
+  }
+
   revalidatePath("/opportunities");
   revalidatePath(`/opportunities/${id}`);
   revalidatePath(`/companies/${opportunity.companyId}`);
@@ -74,7 +119,7 @@ export async function updateOpportunity(
 }
 
 export async function updateOpportunityStage(id: string, stage: string) {
-  await requireUser();
+  const user = await requireUser();
 
   const parsed = opportunityStageChangeSchema.safeParse({ id, stage });
   if (!parsed.success) return;
@@ -91,6 +136,15 @@ export async function updateOpportunityStage(id: string, stage: string) {
   } catch (error) {
     handleMutationError(error);
   }
+
+  await appendTimelineEvent(prisma, {
+    companyId: opportunity.companyId,
+    opportunityId: opportunity.id,
+    type: "stage_changed",
+    title: "Cambio de etapa",
+    summary: `${OPPORTUNITY_STAGE_LABELS[before.stage]} → ${OPPORTUNITY_STAGE_LABELS[opportunity.stage]}`,
+    actorId: user.id,
+  });
 
   await evaluateWorkflows({
     entityType: "opportunity",

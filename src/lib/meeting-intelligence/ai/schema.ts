@@ -29,7 +29,10 @@ const contactSchema = z.object({
   first_name: z.string(),
   last_name: z.string().optional().default(""),
   email: z.string().nullable().optional(),
+  phone: z.string().nullable().optional(),
   role_title: z.string().nullable().optional(),
+  linkedin_url: z.string().nullable().optional(),
+  notes: z.string().nullable().optional(),
   is_decision_maker: z.boolean().optional().default(false),
   is_sponsor: z.boolean().optional().default(false),
   confidence,
@@ -69,6 +72,19 @@ const painUpdateSchema = z.object({
   explanation,
 });
 
+// The prompt demands one of these after every meeting; the schema stays
+// tolerant so a missing next_step_update doesn't fail the whole parse.
+const nextStepUpdateSchema = z
+  .object({
+    opportunity_id: z.string().nullable().optional(),
+    next_step: z.string(),
+    due_date: z.string().nullable().optional(),
+    confidence,
+    explanation,
+  })
+  .nullable()
+  .optional();
+
 export const crmAnalysisSchema = z.object({
   summary: summarySchema,
   updates: z.array(updateSchema).optional().default([]),
@@ -77,6 +93,7 @@ export const crmAnalysisSchema = z.object({
   notes: z.array(noteSchema).optional().default([]),
   stage_change: stageChangeSchema,
   pain_updates: z.array(painUpdateSchema).optional().default([]),
+  next_step_update: nextStepUpdateSchema,
   risks: z.array(z.string()).optional().default([]),
   decisions: z.array(z.string()).optional().default([]),
   next_steps: z.array(taskSchema).optional().default([]),

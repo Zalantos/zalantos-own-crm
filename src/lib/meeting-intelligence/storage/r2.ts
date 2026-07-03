@@ -37,6 +37,31 @@ export function buildEvidenceKey(meetingId: string, filename: string): string {
   return `meetings/${meetingId}/${Date.now()}-${safe}`;
 }
 
+export function buildAgentAttachmentKey(
+  threadId: string,
+  filename: string,
+): string {
+  const safe = filename.replace(/[^a-zA-Z0-9._-]/g, "_");
+  return `agent/${threadId}/${Date.now()}-${safe}`;
+}
+
+// Server-side upload for small documents (agent chat attachments); large
+// audio/video keeps using presigned browser uploads.
+export async function putObject(params: {
+  key: string;
+  contentType: string;
+  body: Buffer;
+}): Promise<void> {
+  await r2().send(
+    new PutObjectCommand({
+      Bucket: r2Config.bucket,
+      Key: params.key,
+      ContentType: params.contentType,
+      Body: params.body,
+    }),
+  );
+}
+
 // Presigned PUT URL so the browser uploads large audio/video straight to R2,
 // never through the Next.js request body.
 export async function createPresignedUploadUrl(params: {

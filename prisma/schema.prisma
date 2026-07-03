@@ -363,8 +363,17 @@ model Evidence {
 
 model CRMChangeProposal {
   id             String         @id @default(cuid())
-  meetingId      String
-  meeting        Meeting        @relation(fields: [meetingId], references: [id], onDelete: Cascade)
+  // Optional since proposals can also originate from the agent chat.
+  meetingId      String?
+  meeting        Meeting?       @relation(fields: [meetingId], references: [id], onDelete: Cascade)
+  // meeting | agent
+  source         String         @default("meeting")
+  // Denormalized context (backfilled from the meeting for legacy rows).
+  companyId      String?
+  opportunityId  String?
+  // Logical refs to the agent chat (no FK, same convention as TimelineEvent.refId).
+  chatThreadId   String?
+  chatMessageId  String?
   confidence     Float
   status         ProposalStatus @default(pending)
   // Model that produced the proposal, for audit (e.g. groq/llama-3.3-70b-versatile).
@@ -378,6 +387,7 @@ model CRMChangeProposal {
 
   @@index([meetingId])
   @@index([status])
+  @@index([chatThreadId])
   @@map("crm_change_proposals")
 }
 
@@ -403,6 +413,57 @@ model CRMChangeItem {
 
   @@index([proposalId])
   @@map("crm_change_items")
+}
+
+// ---------- Agente IA (copiloto) ----------
+
+model AgentChatThread {
+  id          String      @id @default(cuid())
+  userId      String
+  title       String?
+  // Page context captured when the thread was opened (e.g. company being viewed).
+  contextType EntityType?
+  contextId   String?
+  createdAt   DateTime    @default(now())
+  updatedAt   DateTime    @updatedAt
+
+  messages AgentChatMessage[]
+
+  @@index([userId, updatedAt])
+  @@map("agent_chat_threads")
+}
+
+model AgentChatMessage {
+  id       String          @id @default(cuid())
+  threadId String
+  thread   AgentChatThread @relation(fields: [threadId], references: [id], onDelete: Cascade)
+  // user | assistant
+  role     String
+  // AI SDK UIMessage.parts stored verbatim so the UI re-renders tool cards on reload.
+  parts    Json
+  createdAt DateTime       @default(now())
+
+  @@index([threadId, createdAt])
+  @@map("agent_chat_messages")
+}
+
+model AgentAttachment {
+  id            String   @id @default(cuid())
+  // Logical ref to AgentChatThread (no FK, mirrors Evidence's storage shape).
+  threadId      String
+  filename      String
+  mimeType      String
+  // Object key in R2; empty when R2 isn't configured (text-only fallback).
+  storagePath   String
+  sizeBytes     Int?
+  extractedText String?  @db.Text
+  // uploaded | extracted | failed
+  status        String   @default("uploaded")
+  uploadedBy    String
+  createdAt     DateTime @default(now())
+
+  @@index([threadId])
+  @@map("agent_attachments")
 }
 
 model TimelineEvent {

@@ -6,7 +6,7 @@ import {
 } from "@/lib/meeting-intelligence/extraction";
 import { transcribeAudio } from "@/lib/meeting-intelligence/transcription";
 import { buildCrmSnapshot } from "@/lib/meeting-intelligence/ai/snapshot";
-import { groqReasoningProvider } from "@/lib/meeting-intelligence/ai/groq";
+import { defaultReasoningProvider } from "@/lib/meeting-intelligence/ai/groq";
 import {
   buildAiSummary,
   mapAnalysisToItems,
@@ -87,14 +87,19 @@ export async function runPipeline(meetingId: string): Promise<void> {
     });
 
     const snapshot = await buildCrmSnapshot(meetingId);
-    const { analysis, model, raw } = await groqReasoningProvider.analyze({
+    const { analysis, model, raw } = await defaultReasoningProvider.analyze({
       snapshot,
       transcript: combined,
     });
 
     const items = mapAnalysisToItems(analysis, {
       companyId: meeting.companyId,
-      opportunityIds: snapshot.opportunities.map((o) => o.id),
+      opportunities: snapshot.opportunities.map((o) => ({
+        id: o.id,
+        stage: o.stage,
+        nextStep: o.nextStep,
+        nextStepDueDate: o.nextStepDueDate,
+      })),
     });
 
     // --- Persist proposal + items ---

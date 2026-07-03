@@ -1,5 +1,6 @@
 import { Input } from "@/components/ui/input";
 import { LogoutButton } from "@/components/layout/logout-button";
+import { AgentPanel } from "@/components/agent/agent-panel";
 
 export function Topbar({ userName }: { userName: string | null | undefined }) {
   return (
@@ -13,6 +14,7 @@ export function Topbar({ userName }: { userName: string | null | undefined }) {
         />
       </form>
       <div className="flex items-center gap-3">
+        <AgentPanel />
         {userName && (
           <span className="text-muted-foreground text-sm">{userName}</span>
         )}

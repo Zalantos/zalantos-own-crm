@@ -1,8 +1,19 @@
-import { getCompanyTimeline, TYPE_LABELS } from "@/lib/timeline";
+import {
+  getCompanyTimeline,
+  getOpportunityTimeline,
+  TYPE_LABELS,
+} from "@/lib/timeline";
 import { formatDateTime } from "@/lib/utils";
 
-export async function CompanyTimeline({ companyId }: { companyId: string }) {
-  const events = await getCompanyTimeline(companyId);
+type TimelineProps =
+  | { companyId: string; opportunityId?: never }
+  | { opportunityId: string; companyId?: never };
+
+export async function CompanyTimeline(props: TimelineProps) {
+  const events =
+    "opportunityId" in props && props.opportunityId
+      ? await getOpportunityTimeline(props.opportunityId)
+      : await getCompanyTimeline((props as { companyId: string }).companyId);
 
   if (events.length === 0) {
     return (
