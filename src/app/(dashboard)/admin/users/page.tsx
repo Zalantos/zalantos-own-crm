@@ -43,7 +43,7 @@ export default async function UsersAdminPage() {
         <UserCreateForm />
       </div>
 
-      <div className="overflow-x-auto rounded-md border">
+      <div className="hidden overflow-x-auto rounded-md border md:block">
         <Table>
           <TableHeader>
             <TableRow>
@@ -89,6 +89,40 @@ export default async function UsersAdminPage() {
             ))}
           </TableBody>
         </Table>
+      </div>
+
+      <div className="flex flex-col gap-3 md:hidden">
+        {users.map((user) => (
+          <div key={user.id} className="space-y-3 rounded-md border p-4">
+            <div>
+              <p className="font-medium">{user.name ?? user.email}</p>
+              <p className="text-muted-foreground text-xs">{user.email}</p>
+            </div>
+            <div className="flex items-center justify-between gap-3 text-sm">
+              <span className="text-muted-foreground">Rol</span>
+              <Badge variant="outline">{user.role}</Badge>
+            </div>
+            <div className="flex items-center justify-between gap-3 text-sm">
+              <span className="text-muted-foreground">Estado</span>
+              <Badge variant={user.isActive ? "success" : "destructive"}>
+                {user.isActive ? "Activo" : "Desactivado"}
+              </Badge>
+            </div>
+            <div className="flex items-center justify-between gap-3 text-sm">
+              <span className="text-muted-foreground">Creado</span>
+              <span>
+                {new Intl.DateTimeFormat("es-CL", {
+                  dateStyle: "medium",
+                }).format(user.createdAt)}
+              </span>
+            </div>
+            <div className="flex flex-col gap-3 border-t pt-3">
+              <UserRoleForm id={user.id} role={user.role} />
+              <UserActiveForm id={user.id} isActive={user.isActive} />
+              <UserResetPasswordForm id={user.id} />
+            </div>
+          </div>
+        ))}
       </div>
     </div>
   );
