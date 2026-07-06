@@ -1,0 +1,157 @@
+- generic [active] [ref=f4e1]:
+  - generic [ref=f4e2]:
+    - generic [ref=f4e3]:
+      - banner [ref=f4e4]:
+        - button "Buscar" [ref=f4e5] [cursor=pointer]:
+          - img
+          - generic [ref=f4e6]: Buscar
+        - generic [ref=f4e7]:
+          - button "Abrir copiloto" [ref=f4e8]:
+            - img
+            - text: Copiloto
+          - button "Cambiar tema" [ref=f4e9]:
+            - img
+          - button "Cerrar sesión" [ref=f4e11]
+      - main [ref=f4e12]:
+        - generic [ref=f4e13]:
+          - generic [ref=f4e14]:
+            - generic [ref=f4e15]:
+              - heading "Pipeline de oportunidades" [level=1] [ref=f4e16]
+              - paragraph [ref=f4e17]: Arrastra las tarjetas para cambiar de etapa
+            - generic [ref=f4e18]:
+              - button "Ver como lista" [ref=f4e19] [cursor=pointer]
+              - button "Nueva oportunidad" [ref=f4e20] [cursor=pointer]
+          - generic [ref=f4e21]:
+            - generic [ref=f4e22]:
+              - generic [ref=f4e23]:
+                - generic [ref=f4e24]:
+                  - generic [ref=f4e25]:
+                    - paragraph [ref=f4e26]: Investigación realizada
+                    - paragraph [ref=f4e27]: 2 oportunidades
+                  - generic [ref=f4e28]:
+                    - paragraph [ref=f4e29]: Valor
+                    - paragraph [ref=f4e30]: $10.000.000
+                - generic [ref=f4e31]:
+                  - 'button "Gestión y control de cotizaciones Skava $5.000.000 Próximo: Conversar con Julio para darle forma a ésta solución" [ref=f4e32]':
+                    - generic [ref=f4e33]:
+                      - link "Gestión y control de cotizaciones" [ref=f4e34] [cursor=pointer]:
+                        - /url: /opportunities/cmr489f8h00001wqzhbywo9b0
+                      - paragraph [ref=f4e35]: Skava
+                    - generic [ref=f4e37]: $5.000.000
+                    - paragraph [ref=f4e39]: "Próximo: Conversar con Julio para darle forma a ésta solución"
+                  - 'button "BI para Urbanland Urbanland $5.000.000 Próximo: Quedar a la espera del feedback de Sergio Gonzalez y Juan Pablo Humenyi (Urbanland). Tras recibirlo, preparar cotización formal." [ref=f4e40]':
+                    - generic [ref=f4e41]:
+                      - link "BI para Urbanland" [ref=f4e42] [cursor=pointer]:
+                        - /url: /opportunities/cmr40j45h000s2hv81ep5zqe3
+                      - paragraph [ref=f4e43]: Urbanland
+                    - generic [ref=f4e45]: $5.000.000
+                    - paragraph [ref=f4e47]: "Próximo: Quedar a la espera del feedback de Sergio Gonzalez y Juan Pablo Humenyi (Urbanland). Tras recibirlo, preparar cotización formal."
+              - generic [ref=f4e48]:
+                - generic [ref=f4e49]:
+                  - generic [ref=f4e50]:
+                    - paragraph [ref=f4e51]: Propuesta principal
+                    - paragraph [ref=f4e52]: 1 oportunidad
+                  - generic [ref=f4e53]:
+                    - paragraph [ref=f4e54]: Valor
+                    - paragraph [ref=f4e55]: $500.000
+                - button "Consultoria Comercial y de TI Repopack $500.000" [ref=f4e57]:
+                  - generic [ref=f4e58]:
+                    - link "Consultoria Comercial y de TI" [ref=f4e59] [cursor=pointer]:
+                      - /url: /opportunities/cmr40j3yo000r2hv8rqaq4crj
+                    - paragraph [ref=f4e60]: Repopack
+                  - generic [ref=f4e62]: $500.000
+              - generic [ref=f4e63]:
+                - generic [ref=f4e64]:
+                  - generic [ref=f4e65]:
+                    - paragraph [ref=f4e66]: Negociación
+                    - paragraph [ref=f4e67]: 2 oportunidades
+                  - generic [ref=f4e68]:
+                    - paragraph [ref=f4e69]: Valor
+                    - paragraph [ref=f4e70]: $22.990.000
+                - generic [ref=f4e71]:
+                  - button "ERP para Empresa Manufacturera de Ventanas APV Ventanas $16.000.000" [ref=f4e72]:
+                    - generic [ref=f4e73]:
+                      - link "ERP para Empresa Manufacturera de Ventanas" [ref=f4e74] [cursor=pointer]:
+                        - /url: /opportunities/cmr40j3cc000n2hv8avzqs89n
+                      - paragraph [ref=f4e75]: APV Ventanas
+                    - generic [ref=f4e77]: $16.000.000
+                  - button "Forecast de Venta de Repuestos Mineros y Dashboard Estratégico Skava $6.990.000" [ref=f4e78]:
+                    - generic [ref=f4e79]:
+                      - link "Forecast de Venta de Repuestos Mineros y Dashboard Estratégico" [ref=f4e80] [cursor=pointer]:
+                        - /url: /opportunities/cmr40j2ou000j2hv8qj00snwd
+                      - paragraph [ref=f4e81]: Skava
+                    - generic [ref=f4e83]: $6.990.000
+              - generic [ref=f4e84]:
+                - generic [ref=f4e85]:
+                  - generic [ref=f4e86]:
+                    - paragraph [ref=f4e87]: Ganado
+                    - paragraph [ref=f4e88]: 1 oportunidad
+                  - generic [ref=f4e89]:
+                    - paragraph [ref=f4e90]: Valor
+                    - paragraph [ref=f4e91]: $0
+                - button "Agente RAG para reglamento Colegio San Francisco de Machalí $0" [ref=f4e93]:
+                  - generic [ref=f4e94]:
+                    - link "Agente RAG para reglamento" [ref=f4e95] [cursor=pointer]:
+                      - /url: /opportunities/cmr40j35o000m2hv83suzd4ng
+                    - paragraph [ref=f4e96]: Colegio San Francisco de Machalí
+                  - generic [ref=f4e98]: $0
+              - generic [ref=f4e99]:
+                - generic [ref=f4e100]:
+                  - generic [ref=f4e101]:
+                    - paragraph [ref=f4e102]: Perdido
+                    - paragraph [ref=f4e103]: 3 oportunidades
+                  - generic [ref=f4e104]:
+                    - paragraph [ref=f4e105]: Valor
+                    - paragraph [ref=f4e106]: $0
+                - generic [ref=f4e107]:
+                  - button "Todavía en Desarrollo Polpaico" [ref=f4e108]:
+                    - generic [ref=f4e109]:
+                      - link "Todavía en Desarrollo" [ref=f4e110] [cursor=pointer]:
+                        - /url: /opportunities/cmr40j3t4000q2hv8tloh4j0h
+                      - paragraph [ref=f4e111]: Polpaico
+                  - button "PR HUB VP Media" [ref=f4e112]:
+                    - generic [ref=f4e113]:
+                      - link "PR HUB" [ref=f4e114] [cursor=pointer]:
+                        - /url: /opportunities/cmr40j3nj000p2hv8ftyohgsn
+                      - paragraph [ref=f4e115]: VP Media
+                  - button "Inventariado paralelo en una Plataforma Web Cruz Verde $0" [ref=f4e116]:
+                    - generic [ref=f4e117]:
+                      - link "Inventariado paralelo en una Plataforma Web" [ref=f4e118] [cursor=pointer]:
+                        - /url: /opportunities/cmr40j303000l2hv80346quwn
+                      - paragraph [ref=f4e119]: Cruz Verde
+                    - generic [ref=f4e121]: $0
+            - generic [ref=f4e122]:
+              - generic [ref=f4e123]:
+                - paragraph [ref=f4e124]: Etapas vacías
+                - generic [ref=f4e125]: 7 ocultas
+              - generic [ref=f4e126]:
+                - button "Lead identificado" [ref=f4e127]
+                - button "Primer contacto" [ref=f4e128]
+                - button "Reunión discovery" [ref=f4e129]
+                - button "Dolor validado" [ref=f4e130]
+                - button "Sprint 0 ofrecido" [ref=f4e131]
+                - button "Sprint 0 aceptado" [ref=f4e132]
+                - button "Diagnóstico realizado" [ref=f4e133]
+    - navigation [ref=f4e134]:
+      - link "Inicio" [ref=f4e135] [cursor=pointer]:
+        - /url: /dashboard
+        - img [ref=f4e136]
+        - generic [ref=f4e141]: Inicio
+      - link "Empresas" [ref=f4e142] [cursor=pointer]:
+        - /url: /companies
+        - img [ref=f4e143]
+        - generic [ref=f4e147]: Empresas
+      - link "Personas" [ref=f4e148] [cursor=pointer]:
+        - /url: /people
+        - img [ref=f4e149]
+        - generic [ref=f4e154]: Personas
+      - link "Oportunidades" [ref=f4e155] [cursor=pointer]:
+        - /url: /opportunities
+        - img [ref=f4e156]
+        - generic [ref=f4e158]: Oportunidades
+      - button "Más" [ref=f4e159]:
+        - img [ref=f4e160]
+        - generic [ref=f4e164]: Más
+  - region "Notifications alt+T"
+  - button "Open Next.js Dev Tools" [ref=f4e170] [cursor=pointer]:
+    - img [ref=f4e171]

@@ -38,7 +38,7 @@ export function CustomFieldDefinitionForm() {
       className="space-y-4 rounded-md border p-4"
     >
       <p className="text-sm font-medium">Nuevo campo custom</p>
-      <div className="grid grid-cols-2 gap-4">
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
         <div className="space-y-2">
           <Label htmlFor="entityType">Entidad</Label>
           <select

@@ -1,0 +1,66 @@
+import {
+  Building2Icon,
+  CheckSquareIcon,
+  HistoryIcon,
+  KanbanSquareIcon,
+  LayoutDashboardIcon,
+  SlidersHorizontalIcon,
+  UserCogIcon,
+  UsersIcon,
+  VideoIcon,
+  WorkflowIcon,
+  type LucideIcon,
+} from "lucide-react";
+
+export type NavItem = {
+  href: string;
+  label: string;
+  icon: LucideIcon;
+};
+
+export type NavSection = {
+  label: string;
+  items: NavItem[];
+};
+
+export const HOME_ITEM: NavItem = {
+  href: "/dashboard",
+  label: "Inicio",
+  icon: LayoutDashboardIcon,
+};
+
+export const CRM_SECTION: NavSection = {
+  label: "CRM",
+  items: [
+    { href: "/companies", label: "Empresas", icon: Building2Icon },
+    { href: "/people", label: "Personas", icon: UsersIcon },
+    { href: "/opportunities", label: "Oportunidades", icon: KanbanSquareIcon },
+    { href: "/activities", label: "Actividades", icon: CheckSquareIcon },
+    { href: "/meetings", label: "Meeting Intelligence", icon: VideoIcon },
+    { href: "/audit-log", label: "Actividad", icon: HistoryIcon },
+  ],
+};
+
+export const ADMIN_SECTION: NavSection = {
+  label: "Configuración",
+  items: [
+    { href: "/admin/users", label: "Usuarios", icon: UserCogIcon },
+    {
+      href: "/admin/custom-fields",
+      label: "Campos custom",
+      icon: SlidersHorizontalIcon,
+    },
+    { href: "/admin/workflows", label: "Workflows", icon: WorkflowIcon },
+  ],
+};
+
+// Los 4 accesos de mayor frecuencia de uso para la barra inferior de mobile;
+// el resto de las secciones queda detrás del botón "Más".
+export const BOTTOM_NAV_PRIMARY_ITEMS: NavItem[] = [
+  HOME_ITEM,
+  CRM_SECTION.items[0],
+  CRM_SECTION.items[1],
+  CRM_SECTION.items[2],
+];
+
+export const BOTTOM_NAV_MORE_ITEMS: NavItem[] = CRM_SECTION.items.slice(3);

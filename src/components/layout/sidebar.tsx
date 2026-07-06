@@ -2,52 +2,14 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import {
-  Building2Icon,
-  CheckSquareIcon,
-  HistoryIcon,
-  KanbanSquareIcon,
-  LayoutDashboardIcon,
-  SlidersHorizontalIcon,
-  UserCogIcon,
-  UsersIcon,
-  VideoIcon,
-  WorkflowIcon,
-  type LucideIcon,
-} from "lucide-react";
+import { type LucideIcon } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { Role } from "@prisma/client";
-
-const HOME_ITEM = {
-  href: "/dashboard",
-  label: "Inicio",
-  icon: LayoutDashboardIcon,
-};
-
-const CRM_SECTION = {
-  label: "CRM",
-  items: [
-    { href: "/companies", label: "Empresas", icon: Building2Icon },
-    { href: "/people", label: "Personas", icon: UsersIcon },
-    { href: "/opportunities", label: "Oportunidades", icon: KanbanSquareIcon },
-    { href: "/activities", label: "Actividades", icon: CheckSquareIcon },
-    { href: "/meetings", label: "Meeting Intelligence", icon: VideoIcon },
-    { href: "/audit-log", label: "Actividad", icon: HistoryIcon },
-  ],
-};
-
-const ADMIN_SECTION = {
-  label: "Configuración",
-  items: [
-    { href: "/admin/users", label: "Usuarios", icon: UserCogIcon },
-    {
-      href: "/admin/custom-fields",
-      label: "Campos custom",
-      icon: SlidersHorizontalIcon,
-    },
-    { href: "/admin/workflows", label: "Workflows", icon: WorkflowIcon },
-  ],
-};
+import {
+  ADMIN_SECTION,
+  CRM_SECTION,
+  HOME_ITEM,
+} from "@/components/layout/nav-config";
 
 function NavLink({
   href,

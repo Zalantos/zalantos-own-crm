@@ -1,0 +1,182 @@
+- generic [ref=e1]:
+  - generic [ref=e26]:
+    - generic [ref=e27]:
+      - banner [ref=e28]:
+        - button [ref=e230] [cursor=pointer]:
+          - img
+          - generic [ref=e30]: Buscar
+        - generic [ref=e31]:
+          - button [ref=e231]:
+            - img
+            - text: Copiloto
+          - button [ref=e232]:
+            - img
+          - button [ref=e233]: Cerrar sesión
+      - main [ref=e36]:
+        - generic [ref=e37]:
+          - generic [ref=e39]:
+            - heading [level=1] [ref=e234]: Inicio
+            - paragraph [ref=e41]: Resumen del pipeline comercial de Zalantos
+          - generic [ref=e43]:
+            - generic [ref=e45]:
+              - paragraph [ref=e46]:
+                - img [ref=e47]
+                - text: Empresas
+              - paragraph [ref=e51]: "9"
+            - generic [ref=e53]:
+              - paragraph [ref=e54]:
+                - img [ref=e55]
+                - text: Oportunidades abiertas
+              - paragraph [ref=e59]: "7"
+            - generic [ref=e61]:
+              - paragraph [ref=e62]:
+                - img [ref=e63]
+                - text: Valor de pipeline
+              - paragraph [ref=e66]: $33.490.000
+            - generic [ref=e68]:
+              - paragraph [ref=e69]:
+                - img [ref=e70]
+                - text: Actividades vencidas
+              - paragraph [ref=e73]: "0"
+            - generic [ref=e75]:
+              - paragraph [ref=e76]:
+                - img [ref=e77]
+                - text: Meetings procesados
+              - paragraph [ref=e80]: 1/1
+          - generic [ref=e81]:
+            - generic [ref=e82]:
+              - generic [ref=e84]: Pipeline por etapa
+              - application [ref=e88]:
+                - generic [ref=e116]:
+                  - generic [ref=e117]:
+                    - generic [ref=e119]: "0"
+                    - generic [ref=e121]: "1"
+                    - generic [ref=e123]: "2"
+                    - generic [ref=e125]: "3"
+                    - generic [ref=e127]: "4"
+                  - generic [ref=e128]:
+                    - generic [ref=e130]: Lead identificado
+                    - generic [ref=e132]: Investigaciónrealizada
+                    - generic [ref=e134]: Primer contacto
+                    - generic [ref=e136]: Reunión discovery
+                    - generic [ref=e138]: Dolor validado
+                    - generic [ref=e140]: Sprint 0 ofrecido
+                    - generic [ref=e142]: Sprint 0 aceptado
+                    - generic [ref=e144]: Diagnósticorealizado
+                    - generic [ref=e146]: Propuesta principal
+                    - generic [ref=e148]: Negociación
+                    - generic [ref=e150]: Ganado
+                    - generic [ref=e152]: Perdido
+            - generic [ref=e153]:
+              - generic [ref=e155]: Actividad reciente
+              - generic [ref=e157]:
+                - link [ref=e235] [cursor=pointer]:
+                  - /url: /meetings/cmr9kw0dq00081wny23i21e3p
+                  - generic [ref=e159]:
+                    - paragraph [ref=e160]: Cambios aplicados desde "Chat del agente"
+                    - generic [ref=e161]: Cambios aplicados
+                  - paragraph [ref=e162]: Urbanland · 6 jul 2026, 14:55
+                - link [ref=e236] [cursor=pointer]:
+                  - /url: /meetings/cmr9kw0dq00081wny23i21e3p
+                  - generic [ref=e164]:
+                    - paragraph [ref=e165]: "Campo actualizado en oportunidad: nextStepDueDate"
+                    - generic [ref=e166]: Campo actualizado
+                  - paragraph [ref=e167]: Urbanland · 6 jul 2026, 14:55
+                - link [ref=e237] [cursor=pointer]:
+                  - /url: /meetings/cmr9kw0dq00081wny23i21e3p
+                  - generic [ref=e169]:
+                    - paragraph [ref=e170]: "Campo actualizado en oportunidad: nextStep"
+                    - generic [ref=e171]: Campo actualizado
+                  - paragraph [ref=e172]: Urbanland · 6 jul 2026, 14:55
+                - generic [ref=e173]:
+                  - generic [ref=e174]:
+                    - paragraph [ref=e175]: "Tarea creada: Seguimiento: obtener feedback sobre diseño enviado — Responsable: Tomas Rodriguez"
+                    - generic [ref=e176]: Tarea
+                  - paragraph [ref=e177]: Urbanland · 6 jul 2026, 14:52
+                - generic [ref=e178]:
+                  - generic [ref=e179]:
+                    - paragraph [ref=e180]: "Nota: Propuesta enviada: metodología y diseño"
+                    - generic [ref=e181]: Nota
+                  - paragraph [ref=e182]: Urbanland · 6 jul 2026, 14:49
+                - link [ref=e238] [cursor=pointer]:
+                  - /url: /meetings/cmr425i5q00011wnyp486y454
+                  - generic [ref=e184]:
+                    - paragraph [ref=e185]: Cambios aplicados desde "Reunion 2"
+                    - generic [ref=e186]: Cambios aplicados
+                  - paragraph [ref=e187]: Urbanland · 5 jul 2026, 19:32
+                - link [ref=e239] [cursor=pointer]:
+                  - /url: /meetings/cmr425i5q00011wnyp486y454
+                  - generic [ref=e189]:
+                    - paragraph [ref=e190]: Dolor principal actualizado
+                    - generic [ref=e191]: Campo actualizado
+                  - paragraph [ref=e192]: Urbanland · 5 jul 2026, 19:32
+                - link [ref=e240] [cursor=pointer]:
+                  - /url: /meetings/cmr425i5q00011wnyp486y454
+                  - generic [ref=e194]:
+                    - paragraph [ref=e195]: Cambio de etapa
+                    - generic [ref=e196]: Cambio de etapa
+                  - paragraph [ref=e197]: Urbanland · 5 jul 2026, 19:32
+    - navigation [ref=e198]:
+      - link [ref=e241] [cursor=pointer]:
+        - /url: /dashboard
+        - img [ref=e200]
+        - generic [ref=e205]: Inicio
+      - link [ref=e242] [cursor=pointer]:
+        - /url: /companies
+        - img [ref=e207]
+        - generic [ref=e211]: Empresas
+      - link [ref=e243] [cursor=pointer]:
+        - /url: /people
+        - img [ref=e213]
+        - generic [ref=e218]: Personas
+      - link [ref=e244] [cursor=pointer]:
+        - /url: /opportunities
+        - img [ref=e220]
+        - generic [ref=e222]: Oportunidades
+      - button [expanded] [ref=e245]:
+        - img [ref=e224]
+        - generic [ref=e228]: Más
+  - region "Notifications alt+T"
+  - generic [ref=e21] [cursor=pointer]:
+    - button "Open Next.js Dev Tools" [ref=e22]:
+      - img [ref=e23]
+    - generic [ref=e246]:
+      - button "Open issues overlay" [ref=e247]:
+        - generic [ref=e248]:
+          - generic [ref=e249]: "0"
+          - generic [ref=e250]: "1"
+        - generic [ref=e251]: Issue
+      - button "Collapse issues badge" [ref=e252]:
+        - img [ref=e253]
+  - alert [ref=e16]
+  - generic [ref=e229]: principal
+  - dialog "Más opciones" [ref=e258]:
+    - heading "Más opciones" [level=2] [ref=e260]
+    - navigation [ref=e261]:
+      - link "Actividades" [active] [ref=e262] [cursor=pointer]:
+        - /url: /activities
+        - img [ref=e263]
+        - text: Actividades
+      - link "Meeting Intelligence" [ref=e266] [cursor=pointer]:
+        - /url: /meetings
+        - img [ref=e267]
+        - text: Meeting Intelligence
+      - link "Actividad" [ref=e270] [cursor=pointer]:
+        - /url: /audit-log
+        - img [ref=e271]
+        - text: Actividad
+      - link "Usuarios" [ref=e275] [cursor=pointer]:
+        - /url: /admin/users
+        - img [ref=e276]
+        - text: Usuarios
+      - link "Campos custom" [ref=e288] [cursor=pointer]:
+        - /url: /admin/custom-fields
+        - img [ref=e289]
+        - text: Campos custom
+      - link "Workflows" [ref=e290] [cursor=pointer]:
+        - /url: /admin/workflows
+        - img [ref=e291]
+        - text: Workflows
+    - button "Close" [ref=e295]:
+      - img
+      - generic [ref=e296]: Close

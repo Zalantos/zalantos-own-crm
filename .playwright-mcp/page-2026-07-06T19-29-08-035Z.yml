@@ -1,0 +1,147 @@
+- generic [active] [ref=f5e1]:
+  - generic [ref=f5e2]:
+    - complementary [ref=f5e3]:
+      - generic [ref=f5e4]: CRM Zalantos
+      - navigation [ref=f5e5]:
+        - link "Inicio" [ref=f5e7] [cursor=pointer]:
+          - /url: /dashboard
+          - img [ref=f5e8]
+          - text: Inicio
+        - generic [ref=f5e13]:
+          - paragraph [ref=f5e14]: CRM
+          - link "Empresas" [ref=f5e15] [cursor=pointer]:
+            - /url: /companies
+            - img [ref=f5e16]
+            - text: Empresas
+          - link "Personas" [ref=f5e20] [cursor=pointer]:
+            - /url: /people
+            - img [ref=f5e21]
+            - text: Personas
+          - link "Oportunidades" [ref=f5e26] [cursor=pointer]:
+            - /url: /opportunities
+            - img [ref=f5e27]
+            - text: Oportunidades
+          - link "Actividades" [ref=f5e29] [cursor=pointer]:
+            - /url: /activities
+            - img [ref=f5e30]
+            - text: Actividades
+          - link "Meeting Intelligence" [ref=f5e33] [cursor=pointer]:
+            - /url: /meetings
+            - img [ref=f5e34]
+            - text: Meeting Intelligence
+          - link "Actividad" [ref=f5e37] [cursor=pointer]:
+            - /url: /audit-log
+            - img [ref=f5e38]
+            - text: Actividad
+        - generic [ref=f5e42]:
+          - paragraph [ref=f5e43]: Configuración
+          - link "Usuarios" [ref=f5e44] [cursor=pointer]:
+            - /url: /admin/users
+            - img [ref=f5e45]
+            - text: Usuarios
+          - link "Campos custom" [ref=f5e57] [cursor=pointer]:
+            - /url: /admin/custom-fields
+            - img [ref=f5e58]
+            - text: Campos custom
+          - link "Workflows" [ref=f5e59] [cursor=pointer]:
+            - /url: /admin/workflows
+            - img [ref=f5e60]
+            - text: Workflows
+    - generic [ref=f5e64]:
+      - banner [ref=f5e65]:
+        - generic [ref=f5e66]:
+          - img
+          - searchbox "Buscar empresas, personas, oportunidades..." [ref=f5e67]
+        - generic [ref=f5e68]:
+          - button "Abrir copiloto" [ref=f5e69]:
+            - img
+            - text: Copiloto
+          - button "Cambiar tema" [ref=f5e70]:
+            - img
+          - generic [ref=f5e71]: Admin
+          - button "Cerrar sesión" [ref=f5e73]
+      - main [ref=f5e74]:
+        - generic [ref=f5e75]:
+          - generic [ref=f5e77]:
+            - heading "Inicio" [level=1] [ref=f5e78]
+            - paragraph [ref=f5e79]: Resumen del pipeline comercial de Zalantos
+          - generic [ref=f5e81]:
+            - generic [ref=f5e83]:
+              - paragraph [ref=f5e84]:
+                - img [ref=f5e85]
+                - text: Empresas
+              - paragraph [ref=f5e89]: "9"
+            - generic [ref=f5e91]:
+              - paragraph [ref=f5e92]:
+                - img [ref=f5e93]
+                - text: Oportunidades abiertas
+              - paragraph [ref=f5e97]: "7"
+            - generic [ref=f5e99]:
+              - paragraph [ref=f5e100]:
+                - img [ref=f5e101]
+                - text: Valor de pipeline
+              - paragraph [ref=f5e104]: $33.490.000
+            - generic [ref=f5e106]:
+              - paragraph [ref=f5e107]:
+                - img [ref=f5e108]
+                - text: Actividades vencidas
+              - paragraph [ref=f5e111]: "0"
+            - generic [ref=f5e113]:
+              - paragraph [ref=f5e114]:
+                - img [ref=f5e115]
+                - text: Meetings procesados
+              - paragraph [ref=f5e118]: 1/1
+          - generic [ref=f5e119]:
+            - generic [ref=f5e122]: Pipeline por etapa
+            - generic [ref=f5e125]:
+              - generic [ref=f5e127]: Actividad reciente
+              - generic [ref=f5e129]:
+                - link "Cambios aplicados desde \"Chat del agente\" Cambios aplicados Urbanland · 6 jul 2026, 14:55" [ref=f5e130] [cursor=pointer]:
+                  - /url: /meetings/cmr9kw0dq00081wny23i21e3p
+                  - generic [ref=f5e131]:
+                    - paragraph [ref=f5e132]: Cambios aplicados desde "Chat del agente"
+                    - generic [ref=f5e133]: Cambios aplicados
+                  - paragraph [ref=f5e134]: Urbanland · 6 jul 2026, 14:55
+                - 'link "Campo actualizado en oportunidad: nextStepDueDate Campo actualizado Urbanland · 6 jul 2026, 14:55" [ref=f5e135] [cursor=pointer]':
+                  - /url: /meetings/cmr9kw0dq00081wny23i21e3p
+                  - generic [ref=f5e136]:
+                    - paragraph [ref=f5e137]: "Campo actualizado en oportunidad: nextStepDueDate"
+                    - generic [ref=f5e138]: Campo actualizado
+                  - paragraph [ref=f5e139]: Urbanland · 6 jul 2026, 14:55
+                - 'link "Campo actualizado en oportunidad: nextStep Campo actualizado Urbanland · 6 jul 2026, 14:55" [ref=f5e140] [cursor=pointer]':
+                  - /url: /meetings/cmr9kw0dq00081wny23i21e3p
+                  - generic [ref=f5e141]:
+                    - paragraph [ref=f5e142]: "Campo actualizado en oportunidad: nextStep"
+                    - generic [ref=f5e143]: Campo actualizado
+                  - paragraph [ref=f5e144]: Urbanland · 6 jul 2026, 14:55
+                - generic [ref=f5e145]:
+                  - generic [ref=f5e146]:
+                    - paragraph [ref=f5e147]: "Tarea creada: Seguimiento: obtener feedback sobre diseño enviado — Responsable: Tomas Rodriguez"
+                    - generic [ref=f5e148]: Tarea
+                  - paragraph [ref=f5e149]: Urbanland · 6 jul 2026, 14:52
+                - generic [ref=f5e150]:
+                  - generic [ref=f5e151]:
+                    - paragraph [ref=f5e152]: "Nota: Propuesta enviada: metodología y diseño"
+                    - generic [ref=f5e153]: Nota
+                  - paragraph [ref=f5e154]: Urbanland · 6 jul 2026, 14:49
+                - link "Cambios aplicados desde \"Reunion 2\" Cambios aplicados Urbanland · 5 jul 2026, 19:32" [ref=f5e155] [cursor=pointer]:
+                  - /url: /meetings/cmr425i5q00011wnyp486y454
+                  - generic [ref=f5e156]:
+                    - paragraph [ref=f5e157]: Cambios aplicados desde "Reunion 2"
+                    - generic [ref=f5e158]: Cambios aplicados
+                  - paragraph [ref=f5e159]: Urbanland · 5 jul 2026, 19:32
+                - link "Dolor principal actualizado Campo actualizado Urbanland · 5 jul 2026, 19:32" [ref=f5e160] [cursor=pointer]:
+                  - /url: /meetings/cmr425i5q00011wnyp486y454
+                  - generic [ref=f5e161]:
+                    - paragraph [ref=f5e162]: Dolor principal actualizado
+                    - generic [ref=f5e163]: Campo actualizado
+                  - paragraph [ref=f5e164]: Urbanland · 5 jul 2026, 19:32
+                - link "Cambio de etapa Cambio de etapa Urbanland · 5 jul 2026, 19:32" [ref=f5e165] [cursor=pointer]:
+                  - /url: /meetings/cmr425i5q00011wnyp486y454
+                  - generic [ref=f5e166]:
+                    - paragraph [ref=f5e167]: Cambio de etapa
+                    - generic [ref=f5e168]: Cambio de etapa
+                  - paragraph [ref=f5e169]: Urbanland · 5 jul 2026, 19:32
+  - region "Notifications alt+T"
+  - button "Open Next.js Dev Tools" [ref=f5e175] [cursor=pointer]:
+    - img [ref=f5e176]

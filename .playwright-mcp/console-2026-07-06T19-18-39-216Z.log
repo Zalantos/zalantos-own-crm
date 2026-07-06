@@ -1,0 +1,11 @@
+[     102ms] [INFO] %cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold @ http://localhost:3000/_next/static/chunks/node_modules_next_dist_1ybzpk2._.js:2477
+[     137ms] [LOG] [HMR] connected @ http://localhost:3000/_next/static/chunks/node_modules_next_dist_1ybzpk2._.js:2477
+[   85380ms] [ERROR] Base UI: A component that acts as a button expected a native <button> because the `nativeButton` prop is true. Rendering a non-<button> removes native button semantics, which can impact forms and accessibility. Use a real <button> in the `render` prop, or set `nativeButton` to `false`.
+    at SheetClose (http://localhost:3000/_next/static/chunks/src_10nulai._.js:829:214)
+    at MoreNavLink (http://localhost:3000/_next/static/chunks/src_10nulai._.js:2448:214)
+    at http://localhost:3000/_next/static/chunks/src_10nulai._.js:2539:267
+    at Array.map (<anonymous>)
+    at BottomNav (http://localhost:3000/_next/static/chunks/src_10nulai._.js:2539:53)
+    at DashboardLayout (about://React/Server/file:///Users/tomasrodriguez/Zalantos/Desarrollo/twenty/CRM-Zalantos/.next/dev/server/chunks/ssr/%5Broot-of-the-server%5D__1t1c0rb._.js?41:639:264) @ http://localhost:3000/_next/static/chunks/node_modules_next_dist_1ybzpk2._.js:3318
+[  437356ms] [LOG] [Fast Refresh] rebuilding @ http://localhost:3000/_next/static/chunks/node_modules_next_dist_1ybzpk2._.js:2477
+[  437395ms] [LOG] [Fast Refresh] done in 114ms @ http://localhost:3000/_next/static/chunks/node_modules_next_dist_1ybzpk2._.js:2477

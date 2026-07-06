@@ -1,0 +1,193 @@
+- generic [active] [ref=f2e1]:
+  - generic [ref=f2e2]:
+    - generic [ref=f2e3]:
+      - banner [ref=f2e4]:
+        - button "Buscar" [ref=f2e5] [cursor=pointer]:
+          - img
+          - generic [ref=f2e6]: Buscar
+        - generic [ref=f2e7]:
+          - button "Abrir copiloto" [ref=f2e8]:
+            - img
+            - text: Copiloto
+          - button "Cambiar tema" [ref=f2e9]:
+            - img
+          - button "Cerrar sesión" [ref=f2e11]
+      - main [ref=f2e12]:
+        - generic [ref=f2e13]:
+          - generic [ref=f2e14]:
+            - generic [ref=f2e15]:
+              - heading "Empresas" [level=1] [ref=f2e16]
+              - paragraph [ref=f2e17]: Cuentas y prospectos comerciales de Zalantos
+            - button "Nueva empresa" [ref=f2e19] [cursor=pointer]
+          - generic [ref=f2e20]:
+            - searchbox "Buscar por nombre..." [ref=f2e21]
+            - combobox [ref=f2e22]:
+              - generic [ref=f2e23]: Todas las industrias
+              - img: ▼
+            - textbox [ref=f2e24]
+            - combobox [ref=f2e25]:
+              - generic [ref=f2e26]: Todos los estados
+              - img: ▼
+            - textbox [ref=f2e27]
+            - button "Filtrar" [ref=f2e28]
+          - generic [ref=f2e30]:
+            - combobox [ref=f2e31]:
+              - option "Vistas guardadas..." [selected]
+            - button "Guardar vista actual" [ref=f2e32]
+          - table [ref=f2e35]:
+            - rowgroup [ref=f2e36]:
+              - row "Nombre Industria País Estado" [ref=f2e37]:
+                - columnheader "Nombre" [ref=f2e38]
+                - columnheader "Industria" [ref=f2e39]
+                - columnheader "País" [ref=f2e40]
+                - columnheader "Estado" [ref=f2e41]
+            - rowgroup [ref=f2e42]:
+              - row "Urbanland Inmobiliaria Chile Activa" [ref=f2e43]:
+                - cell "Urbanland" [ref=f2e44]:
+                  - link "Urbanland" [ref=f2e45] [cursor=pointer]:
+                    - /url: /companies/cmr40j1jj000g2hv8fkvh3f16
+                - cell "Inmobiliaria" [ref=f2e46]:
+                  - link "Inmobiliaria" [ref=f2e47] [cursor=pointer]:
+                    - /url: /companies/cmr40j1jj000g2hv8fkvh3f16
+                - cell "Chile" [ref=f2e48]:
+                  - link "Chile" [ref=f2e49] [cursor=pointer]:
+                    - /url: /companies/cmr40j1jj000g2hv8fkvh3f16
+                - cell "Activa" [ref=f2e50]:
+                  - link "Activa" [ref=f2e51] [cursor=pointer]:
+                    - /url: /companies/cmr40j1jj000g2hv8fkvh3f16
+                    - generic [ref=f2e52]: Activa
+              - row "Repopack Estrategia comercial / Consultoría TI Chile Activa" [ref=f2e53]:
+                - cell "Repopack" [ref=f2e54]:
+                  - link "Repopack" [ref=f2e55] [cursor=pointer]:
+                    - /url: /companies/cmr40j18i000e2hv8s1ragjyl
+                - cell "Estrategia comercial / Consultoría TI" [ref=f2e56]:
+                  - link "Estrategia comercial / Consultoría TI" [ref=f2e57] [cursor=pointer]:
+                    - /url: /companies/cmr40j18i000e2hv8s1ragjyl
+                - cell "Chile" [ref=f2e58]:
+                  - link "Chile" [ref=f2e59] [cursor=pointer]:
+                    - /url: /companies/cmr40j18i000e2hv8s1ragjyl
+                - cell "Activa" [ref=f2e60]:
+                  - link "Activa" [ref=f2e61] [cursor=pointer]:
+                    - /url: /companies/cmr40j18i000e2hv8s1ragjyl
+                    - generic [ref=f2e62]: Activa
+              - row "Polpaico Construcción Chile Activa" [ref=f2e63]:
+                - cell "Polpaico" [ref=f2e64]:
+                  - link "Polpaico" [ref=f2e65] [cursor=pointer]:
+                    - /url: /companies/cmr40j0xc000c2hv8sclhzy6y
+                - cell "Construcción" [ref=f2e66]:
+                  - link "Construcción" [ref=f2e67] [cursor=pointer]:
+                    - /url: /companies/cmr40j0xc000c2hv8sclhzy6y
+                - cell "Chile" [ref=f2e68]:
+                  - link "Chile" [ref=f2e69] [cursor=pointer]:
+                    - /url: /companies/cmr40j0xc000c2hv8sclhzy6y
+                - cell "Activa" [ref=f2e70]:
+                  - link "Activa" [ref=f2e71] [cursor=pointer]:
+                    - /url: /companies/cmr40j0xc000c2hv8sclhzy6y
+                    - generic [ref=f2e72]: Activa
+              - row "Zalantos Startup / Tecnología Chile Activa" [ref=f2e73]:
+                - cell "Zalantos" [ref=f2e74]:
+                  - link "Zalantos" [ref=f2e75] [cursor=pointer]:
+                    - /url: /companies/cmr40j0kj000a2hv8ojmtck3d
+                - cell "Startup / Tecnología" [ref=f2e76]:
+                  - link "Startup / Tecnología" [ref=f2e77] [cursor=pointer]:
+                    - /url: /companies/cmr40j0kj000a2hv8ojmtck3d
+                - cell "Chile" [ref=f2e78]:
+                  - link "Chile" [ref=f2e79] [cursor=pointer]:
+                    - /url: /companies/cmr40j0kj000a2hv8ojmtck3d
+                - cell "Activa" [ref=f2e80]:
+                  - link "Activa" [ref=f2e81] [cursor=pointer]:
+                    - /url: /companies/cmr40j0kj000a2hv8ojmtck3d
+                    - generic [ref=f2e82]: Activa
+              - row "Colegio San Francisco de Machalí Educación Chile Activa" [ref=f2e83]:
+                - cell "Colegio San Francisco de Machalí" [ref=f2e84]:
+                  - link "Colegio San Francisco de Machalí" [ref=f2e85] [cursor=pointer]:
+                    - /url: /companies/cmr40j09e00082hv89ajyiboa
+                - cell "Educación" [ref=f2e86]:
+                  - link "Educación" [ref=f2e87] [cursor=pointer]:
+                    - /url: /companies/cmr40j09e00082hv89ajyiboa
+                - cell "Chile" [ref=f2e88]:
+                  - link "Chile" [ref=f2e89] [cursor=pointer]:
+                    - /url: /companies/cmr40j09e00082hv89ajyiboa
+                - cell "Activa" [ref=f2e90]:
+                  - link "Activa" [ref=f2e91] [cursor=pointer]:
+                    - /url: /companies/cmr40j09e00082hv89ajyiboa
+                    - generic [ref=f2e92]: Activa
+              - row "VP Media Marketing / Publicidad Perú Activa" [ref=f2e93]:
+                - cell "VP Media" [ref=f2e94]:
+                  - link "VP Media" [ref=f2e95] [cursor=pointer]:
+                    - /url: /companies/cmr40izx600062hv8m6nvlido
+                - cell "Marketing / Publicidad" [ref=f2e96]:
+                  - link "Marketing / Publicidad" [ref=f2e97] [cursor=pointer]:
+                    - /url: /companies/cmr40izx600062hv8m6nvlido
+                - cell "Perú" [ref=f2e98]:
+                  - link "Perú" [ref=f2e99] [cursor=pointer]:
+                    - /url: /companies/cmr40izx600062hv8m6nvlido
+                - cell "Activa" [ref=f2e100]:
+                  - link "Activa" [ref=f2e101] [cursor=pointer]:
+                    - /url: /companies/cmr40izx600062hv8m6nvlido
+                    - generic [ref=f2e102]: Activa
+              - row "APV Ventanas Manufactura / Eficiencia operacional Chile Activa" [ref=f2e103]:
+                - cell "APV Ventanas" [ref=f2e104]:
+                  - link "APV Ventanas" [ref=f2e105] [cursor=pointer]:
+                    - /url: /companies/cmr40izm000042hv86g952q5e
+                - cell "Manufactura / Eficiencia operacional" [ref=f2e106]:
+                  - link "Manufactura / Eficiencia operacional" [ref=f2e107] [cursor=pointer]:
+                    - /url: /companies/cmr40izm000042hv86g952q5e
+                - cell "Chile" [ref=f2e108]:
+                  - link "Chile" [ref=f2e109] [cursor=pointer]:
+                    - /url: /companies/cmr40izm000042hv86g952q5e
+                - cell "Activa" [ref=f2e110]:
+                  - link "Activa" [ref=f2e111] [cursor=pointer]:
+                    - /url: /companies/cmr40izm000042hv86g952q5e
+                    - generic [ref=f2e112]: Activa
+              - row "Cruz Verde Salud Chile Activa" [ref=f2e113]:
+                - cell "Cruz Verde" [ref=f2e114]:
+                  - link "Cruz Verde" [ref=f2e115] [cursor=pointer]:
+                    - /url: /companies/cmr40izaq00022hv8r7apyf6i
+                - cell "Salud" [ref=f2e116]:
+                  - link "Salud" [ref=f2e117] [cursor=pointer]:
+                    - /url: /companies/cmr40izaq00022hv8r7apyf6i
+                - cell "Chile" [ref=f2e118]:
+                  - link "Chile" [ref=f2e119] [cursor=pointer]:
+                    - /url: /companies/cmr40izaq00022hv8r7apyf6i
+                - cell "Activa" [ref=f2e120]:
+                  - link "Activa" [ref=f2e121] [cursor=pointer]:
+                    - /url: /companies/cmr40izaq00022hv8r7apyf6i
+                    - generic [ref=f2e122]: Activa
+              - row "Skava Consultoría / Minería Chile Activa" [ref=f2e123]:
+                - cell "Skava" [ref=f2e124]:
+                  - link "Skava" [ref=f2e125] [cursor=pointer]:
+                    - /url: /companies/cmr40iyyj00002hv8hbhedx13
+                - cell "Consultoría / Minería" [ref=f2e126]:
+                  - link "Consultoría / Minería" [ref=f2e127] [cursor=pointer]:
+                    - /url: /companies/cmr40iyyj00002hv8hbhedx13
+                - cell "Chile" [ref=f2e128]:
+                  - link "Chile" [ref=f2e129] [cursor=pointer]:
+                    - /url: /companies/cmr40iyyj00002hv8hbhedx13
+                - cell "Activa" [ref=f2e130]:
+                  - link "Activa" [ref=f2e131] [cursor=pointer]:
+                    - /url: /companies/cmr40iyyj00002hv8hbhedx13
+                    - generic [ref=f2e132]: Activa
+    - navigation [ref=f2e133]:
+      - link "Inicio" [ref=f2e134] [cursor=pointer]:
+        - /url: /dashboard
+        - img [ref=f2e135]
+        - generic [ref=f2e140]: Inicio
+      - link "Empresas" [ref=f2e141] [cursor=pointer]:
+        - /url: /companies
+        - img [ref=f2e142]
+        - generic [ref=f2e146]: Empresas
+      - link "Personas" [ref=f2e147] [cursor=pointer]:
+        - /url: /people
+        - img [ref=f2e148]
+        - generic [ref=f2e153]: Personas
+      - link "Oportunidades" [ref=f2e154] [cursor=pointer]:
+        - /url: /opportunities
+        - img [ref=f2e155]
+        - generic [ref=f2e157]: Oportunidades
+      - button "Más" [ref=f2e158]:
+        - img [ref=f2e159]
+        - generic [ref=f2e163]: Más
+  - region "Notifications alt+T"
+  - button "Open Next.js Dev Tools" [ref=f2e169] [cursor=pointer]:
+    - img [ref=f2e170]

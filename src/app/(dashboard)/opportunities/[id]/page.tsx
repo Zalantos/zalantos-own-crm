@@ -53,7 +53,7 @@ export default async function OpportunityDetailPage({
         }
       />
 
-      <div className="mb-6 grid grid-cols-2 gap-4 sm:grid-cols-4">
+      <div className="mb-6 grid grid-cols-1 gap-4 sm:grid-cols-2 sm:grid-cols-4">
         <StatCard
           label="Empresa"
           value={opportunity.company.name}
@@ -98,7 +98,7 @@ export default async function OpportunityDetailPage({
         />
       </div>
 
-      <div className="mb-6 grid grid-cols-2 gap-4">
+      <div className="mb-6 grid grid-cols-1 gap-4 sm:grid-cols-2">
         <Card size="sm">
           <CardContent>
             <p className="text-muted-foreground text-xs">Dolor principal</p>

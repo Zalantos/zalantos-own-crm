@@ -29,7 +29,7 @@ export function PersonForm({
     <form action={formAction} className="max-w-2xl space-y-6">
       {person && <input type="hidden" name="id" value={person.id} />}
 
-      <div className="grid grid-cols-2 gap-4">
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
         <div className="space-y-2">
           <Label htmlFor="companyId">Empresa</Label>
           <select

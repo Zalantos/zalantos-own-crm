@@ -104,6 +104,13 @@ export async function POST(req: Request) {
     stopWhen: stepCountIs(agentConfig.maxSteps),
   });
 
+  // Drive the stream to completion server-side so the assistant reply is
+  // persisted even if the client disconnects (e.g. the user closes the panel
+  // mid-response). Without this, onFinish never fires on disconnect and the
+  // thread ends up with an orphaned user message and no reply, which looks
+  // like a scrambled/out-of-order conversation on reopen.
+  void result.consumeStream();
+
   return createUIMessageStreamResponse({
     stream: toUIMessageStream({
       stream: result.stream,

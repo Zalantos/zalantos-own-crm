@@ -43,49 +43,53 @@ export default async function UsersAdminPage() {
         <UserCreateForm />
       </div>
 
-      <Table>
-        <TableHeader>
-          <TableRow>
-            <TableHead>Usuario</TableHead>
-            <TableHead>Rol</TableHead>
-            <TableHead>Estado</TableHead>
-            <TableHead>Creado</TableHead>
-            <TableHead className="w-[360px]">Acciones</TableHead>
-          </TableRow>
-        </TableHeader>
-        <TableBody>
-          {users.map((user) => (
-            <TableRow key={user.id}>
-              <TableCell>
-                <div>
-                  <p className="font-medium">{user.name ?? user.email}</p>
-                  <p className="text-muted-foreground text-xs">{user.email}</p>
-                </div>
-              </TableCell>
-              <TableCell>
-                <Badge variant="outline">{user.role}</Badge>
-              </TableCell>
-              <TableCell>
-                <Badge variant={user.isActive ? "success" : "destructive"}>
-                  {user.isActive ? "Activo" : "Desactivado"}
-                </Badge>
-              </TableCell>
-              <TableCell>
-                {new Intl.DateTimeFormat("es-CL", {
-                  dateStyle: "medium",
-                }).format(user.createdAt)}
-              </TableCell>
-              <TableCell>
-                <div className="flex flex-col gap-3">
-                  <UserRoleForm id={user.id} role={user.role} />
-                  <UserActiveForm id={user.id} isActive={user.isActive} />
-                  <UserResetPasswordForm id={user.id} />
-                </div>
-              </TableCell>
+      <div className="overflow-x-auto rounded-md border">
+        <Table>
+          <TableHeader>
+            <TableRow>
+              <TableHead>Usuario</TableHead>
+              <TableHead>Rol</TableHead>
+              <TableHead>Estado</TableHead>
+              <TableHead>Creado</TableHead>
+              <TableHead className="w-[360px]">Acciones</TableHead>
             </TableRow>
-          ))}
-        </TableBody>
-      </Table>
+          </TableHeader>
+          <TableBody>
+            {users.map((user) => (
+              <TableRow key={user.id}>
+                <TableCell>
+                  <div>
+                    <p className="font-medium">{user.name ?? user.email}</p>
+                    <p className="text-muted-foreground text-xs">
+                      {user.email}
+                    </p>
+                  </div>
+                </TableCell>
+                <TableCell>
+                  <Badge variant="outline">{user.role}</Badge>
+                </TableCell>
+                <TableCell>
+                  <Badge variant={user.isActive ? "success" : "destructive"}>
+                    {user.isActive ? "Activo" : "Desactivado"}
+                  </Badge>
+                </TableCell>
+                <TableCell>
+                  {new Intl.DateTimeFormat("es-CL", {
+                    dateStyle: "medium",
+                  }).format(user.createdAt)}
+                </TableCell>
+                <TableCell>
+                  <div className="flex flex-col gap-3">
+                    <UserRoleForm id={user.id} role={user.role} />
+                    <UserActiveForm id={user.id} isActive={user.isActive} />
+                    <UserResetPasswordForm id={user.id} />
+                  </div>
+                </TableCell>
+              </TableRow>
+            ))}
+          </TableBody>
+        </Table>
+      </div>
     </div>
   );
 }
