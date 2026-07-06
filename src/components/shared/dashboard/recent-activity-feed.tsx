@@ -20,10 +20,18 @@ export function RecentActivityFeed({ events }: { events: ActivityEvent[] }) {
   return (
     <div className="space-y-2">
       {events.map((event) => {
+        // "proposal" events point at a CRMChangeProposal id, not a meeting —
+        // that's only guaranteed a real destination when it came from a
+        // meeting. Route to the opportunity/company the change landed on
+        // instead, since that's what the event always carries.
         const href =
-          event.refType === "meeting" || event.refType === "proposal"
+          event.refType === "meeting"
             ? `/meetings/${event.refId}`
-            : undefined;
+            : event.refType === "proposal"
+              ? event.opportunityId
+                ? `/opportunities/${event.opportunityId}`
+                : `/companies/${event.companyId}`
+              : undefined;
         const content = (
           <>
             <div className="flex items-center justify-between gap-2">
