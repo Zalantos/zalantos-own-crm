@@ -1,28 +1,78 @@
 import Link from "next/link";
+import type { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
+import { getCurrentUser } from "@/lib/session";
+import { getActiveTeamMembers } from "@/lib/team";
 import { PageHeader } from "@/components/shared/page-header";
 import { ActivityRow } from "@/components/shared/activities/activity-row";
+import { Button } from "@/components/ui/button";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+
+type SearchParams = {
+  filter?: string;
+  assignee?: string;
+};
+
+function buildQuery(params: SearchParams, overrides: Partial<SearchParams>) {
+  const merged = { ...params, ...overrides };
+  const query = new URLSearchParams();
+  for (const [key, value] of Object.entries(merged)) {
+    if (value) query.set(key, value);
+  }
+  return `/activities?${query.toString()}`;
+}
 
 export default async function ActivitiesPage({
   searchParams,
 }: {
-  searchParams: Promise<{ filter?: string }>;
+  searchParams: Promise<SearchParams>;
 }) {
-  const { filter = "upcoming" } = await searchParams;
+  const params = await searchParams;
+  const filter = params.filter ?? "upcoming";
+  const assignee = params.assignee;
+
+  const currentUser = await getCurrentUser();
 
   const now = new Date();
-  const activities = await prisma.activity.findMany({
-    where:
-      filter === "completed"
-        ? { status: "completed" }
-        : filter === "overdue"
-          ? { status: "pending", dueDate: { lt: now } }
-          : { status: "pending" },
-    include: { company: true, person: true, opportunity: true },
-    orderBy:
-      filter === "completed" ? { completedAt: "desc" } : { dueDate: "asc" },
-  });
+  const statusWhere: Prisma.ActivityWhereInput =
+    filter === "completed"
+      ? { status: "completed" }
+      : filter === "overdue"
+        ? { status: "pending", dueDate: { lt: now } }
+        : { status: "pending" };
+
+  const assigneeWhere: Prisma.ActivityWhereInput =
+    assignee === "me"
+      ? { assignee: { userId: currentUser?.id ?? "" } }
+      : assignee === "none"
+        ? { assigneeId: null }
+        : assignee
+          ? { assigneeId: assignee }
+          : {};
+
+  const [activities, teamMembers] = await Promise.all([
+    prisma.activity.findMany({
+      where: { ...statusWhere, ...assigneeWhere },
+      include: {
+        company: true,
+        person: true,
+        opportunity: true,
+        assignee: { select: { id: true, name: true } },
+      },
+      orderBy:
+        filter === "completed" ? { completedAt: "desc" } : { dueDate: "asc" },
+    }),
+    getActiveTeamMembers(),
+  ]);
+
+  const isMine = assignee === "me";
 
   return (
     <div>
@@ -31,26 +81,59 @@ export default async function ActivitiesPage({
         description="Tareas y recordatorios vinculados a empresas, personas y oportunidades"
       />
 
+      <div className="mb-4 flex flex-wrap items-center gap-2">
+        <Button
+          variant={isMine ? "default" : "secondary"}
+          render={
+            <Link
+              href={buildQuery(params, { assignee: isMine ? undefined : "me" })}
+            />
+          }
+        >
+          Mis tareas
+        </Button>
+        <form className="flex items-center gap-2">
+          <input type="hidden" name="filter" value={filter} />
+          <Select name="assignee" defaultValue={isMine ? "" : (assignee ?? "")}>
+            <SelectTrigger className="w-48">
+              <SelectValue placeholder="Todos los responsables" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="">Todos los responsables</SelectItem>
+              <SelectItem value="none">Sin responsable</SelectItem>
+              {teamMembers.map((member) => (
+                <SelectItem key={member.id} value={member.id}>
+                  {member.name}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          <Button type="submit" variant="secondary">
+            Filtrar
+          </Button>
+        </form>
+      </div>
+
       <Tabs defaultValue={filter}>
         <TabsList>
           <TabsTrigger
             value="upcoming"
             nativeButton={false}
-            render={<Link href="?filter=upcoming" />}
+            render={<Link href={buildQuery(params, { filter: "upcoming" })} />}
           >
             Próximas
           </TabsTrigger>
           <TabsTrigger
             value="overdue"
             nativeButton={false}
-            render={<Link href="?filter=overdue" />}
+            render={<Link href={buildQuery(params, { filter: "overdue" })} />}
           >
             Vencidas
           </TabsTrigger>
           <TabsTrigger
             value="completed"
             nativeButton={false}
-            render={<Link href="?filter=completed" />}
+            render={<Link href={buildQuery(params, { filter: "completed" })} />}
           >
             Completadas
           </TabsTrigger>
@@ -64,22 +147,7 @@ export default async function ActivitiesPage({
           ) : (
             activities.map((activity) => (
               <div key={activity.id} className="space-y-1">
-                <ActivityRow
-                  activity={{
-                    id: activity.id,
-                    companyId: activity.companyId,
-                    personId: activity.personId,
-                    opportunityId: activity.opportunityId,
-                    type: activity.type,
-                    title: activity.title,
-                    description: activity.description,
-                    dueDate: activity.dueDate,
-                    completedAt: activity.completedAt,
-                    status: activity.status,
-                    createdAt: activity.createdAt,
-                    updatedAt: activity.updatedAt,
-                  }}
-                />
+                <ActivityRow activity={activity} teamMembers={teamMembers} />
                 <p className="text-muted-foreground pl-3 text-xs">
                   {activity.company && (
                     <Link

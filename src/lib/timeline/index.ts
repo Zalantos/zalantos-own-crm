@@ -3,6 +3,7 @@ import type { Prisma } from "@prisma/client";
 
 export const TYPE_LABELS: Record<string, string> = {
   meeting_created: "Reunión",
+  meeting_updated: "Reunión actualizada",
   meeting_deleted: "Reunión eliminada",
   evidence_uploaded: "Evidencia subida",
   transcript_added: "Transcripción agregada",
@@ -14,6 +15,7 @@ export const TYPE_LABELS: Record<string, string> = {
   note_added: "Nota",
   stage_changed: "Cambio de etapa",
   task_created: "Tarea",
+  task_assigned: "Tarea asignada",
   next_step_updated: "Próximo paso actualizado",
   field_updated: "Campo actualizado",
   contact_added: "Contacto agregado",

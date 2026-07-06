@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useTransition } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Loader2Icon } from "lucide-react";
 import { toast } from "sonner";
@@ -17,6 +18,9 @@ export function MeetingActions({ meetingId }: { meetingId: string }) {
 
   return (
     <div className="flex gap-2">
+      <Button variant="outline" render={<Link href={`/meetings/${meetingId}/edit`} />}>
+        Editar
+      </Button>
       <Button
         variant="secondary"
         disabled={pending || pendingAction !== null}

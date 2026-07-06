@@ -7,6 +7,7 @@ export const activityCreateSchema = z.object({
   companyId: z.preprocess(emptyToUndefined, z.string().optional()),
   personId: z.preprocess(emptyToUndefined, z.string().optional()),
   opportunityId: z.preprocess(emptyToUndefined, z.string().optional()),
+  assigneeId: z.preprocess(emptyToUndefined, z.string().optional()),
   type: z.string().min(1, "El tipo es obligatorio"),
   title: z.string().min(1, "El título es obligatorio"),
   description: z.preprocess(emptyToUndefined, z.string().optional()),

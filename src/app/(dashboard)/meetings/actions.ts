@@ -6,7 +6,11 @@ import type { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { requireUser } from "@/lib/session";
 import { handleMutationError } from "@/lib/prisma-errors";
-import { meetingCreateSchema, parseParticipants } from "@/lib/zod/meeting";
+import {
+  meetingCreateSchema,
+  meetingUpdateSchema,
+  parseParticipants,
+} from "@/lib/zod/meeting";
 import { appendTimelineEvent } from "@/lib/timeline";
 import type { FormState } from "./types";
 
@@ -44,6 +48,55 @@ export async function createMeeting(
   });
 
   revalidatePath("/meetings");
+  redirect(`/meetings/${meeting.id}`);
+}
+
+export async function updateMeeting(
+  _prevState: FormState,
+  formData: FormData,
+): Promise<FormState> {
+  const user = await requireUser();
+
+  const parsed = meetingUpdateSchema.safeParse(Object.fromEntries(formData));
+  if (!parsed.success) {
+    return {
+      error: "Revisa los campos del formulario.",
+      fieldErrors: parsed.error.flatten().fieldErrors,
+    };
+  }
+
+  const { id, participants, ...data } = parsed.data;
+  let meeting;
+  try {
+    meeting = await prisma.meeting.update({
+      where: { id },
+      data: {
+        ...data,
+        ...(participants !== undefined
+          ? {
+              participants: parseParticipants(
+                participants,
+              ) as Prisma.InputJsonValue,
+            }
+          : {}),
+      },
+    });
+  } catch (error) {
+    handleMutationError(error);
+  }
+
+  await appendTimelineEvent(prisma, {
+    companyId: meeting.companyId,
+    opportunityId: meeting.opportunityId,
+    type: "meeting_updated",
+    title: `Reunión actualizada: ${meeting.title}`,
+    refType: "meeting",
+    refId: meeting.id,
+    actorId: user.id,
+  });
+
+  revalidatePath("/meetings");
+  revalidatePath(`/meetings/${meeting.id}`);
   redirect(`/meetings/${meeting.id}`);
 }
 

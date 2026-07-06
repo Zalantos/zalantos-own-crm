@@ -5,7 +5,8 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { SubmitButton } from "@/components/shared/submit-button";
-import { createMeeting } from "./actions";
+import { createMeeting, updateMeeting } from "./actions";
+import { serializeParticipants } from "@/lib/zod/meeting";
 import type { FormState } from "./types";
 
 const MEETING_TYPES = [
@@ -22,26 +23,45 @@ type CompanyOption = {
   opportunities: { id: string; name: string }[];
 };
 
+type MeetingFormData = {
+  id: string;
+  companyId: string;
+  opportunityId: string | null;
+  title: string;
+  meetingType: string;
+  meetingDate: Date;
+  participants: unknown;
+};
+
+function formatMeetingDateForInput(meetingDate: Date) {
+  return new Date(meetingDate).toISOString().slice(0, 16);
+}
+
 export function MeetingForm({
   companies,
   defaultCompanyId,
+  meeting,
 }: {
   companies: CompanyOption[];
   defaultCompanyId?: string;
+  meeting?: MeetingFormData;
 }) {
+  const action = meeting ? updateMeeting : createMeeting;
   const [state, formAction] = useActionState<FormState, FormData>(
-    createMeeting,
+    action,
     undefined,
   );
   const [companyId, setCompanyId] = useState(
-    defaultCompanyId ?? companies[0]?.id ?? "",
+    meeting?.companyId ?? defaultCompanyId ?? companies[0]?.id ?? "",
   );
 
   const opportunities =
-    companies.find((c) => c.id === companyId)?.opportunities ?? [];
+    companies.find((company) => company.id === companyId)?.opportunities ?? [];
 
   return (
     <form action={formAction} className="max-w-2xl space-y-6">
+      {meeting && <input type="hidden" name="id" value={meeting.id} />}
+
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
         <div className="space-y-2">
           <Label htmlFor="companyId">Empresa</Label>
@@ -49,7 +69,7 @@ export function MeetingForm({
             id="companyId"
             name="companyId"
             value={companyId}
-            onChange={(e) => setCompanyId(e.target.value)}
+            onChange={(event) => setCompanyId(event.target.value)}
             required
             className="bg-background h-9 w-full rounded-md border px-3 text-sm"
           >
@@ -66,7 +86,7 @@ export function MeetingForm({
           <select
             id="opportunityId"
             name="opportunityId"
-            defaultValue=""
+            defaultValue={meeting?.opportunityId ?? ""}
             className="bg-background h-9 w-full rounded-md border px-3 text-sm"
           >
             <option value="">Sin oportunidad</option>
@@ -80,7 +100,12 @@ export function MeetingForm({
 
         <div className="space-y-2">
           <Label htmlFor="title">Título</Label>
-          <Input id="title" name="title" required />
+          <Input
+            id="title"
+            name="title"
+            defaultValue={meeting?.title}
+            required
+          />
           {state?.fieldErrors?.title && (
             <p className="text-destructive text-xs">
               {state.fieldErrors.title[0]}
@@ -93,7 +118,7 @@ export function MeetingForm({
           <select
             id="meetingType"
             name="meetingType"
-            defaultValue="discovery"
+            defaultValue={meeting?.meetingType ?? "discovery"}
             className="bg-background h-9 w-full rounded-md border px-3 text-sm"
           >
             {MEETING_TYPES.map((type) => (
@@ -110,6 +135,9 @@ export function MeetingForm({
             id="meetingDate"
             name="meetingDate"
             type="datetime-local"
+            defaultValue={
+              meeting ? formatMeetingDateForInput(meeting.meetingDate) : undefined
+            }
             required
           />
         </div>
@@ -121,6 +149,9 @@ export function MeetingForm({
           id="participants"
           name="participants"
           rows={3}
+          defaultValue={
+            meeting ? serializeParticipants(meeting.participants) : undefined
+          }
           placeholder="Un participante por línea. Ej: Ana Pérez, ana@cliente.com"
         />
       </div>
@@ -129,7 +160,9 @@ export function MeetingForm({
         <p className="text-destructive text-sm">{state.error}</p>
       )}
 
-      <SubmitButton>Crear reunión</SubmitButton>
+      <SubmitButton>
+        {meeting ? "Guardar cambios" : "Crear reunión"}
+      </SubmitButton>
     </form>
   );
 }

@@ -23,6 +23,8 @@ export const manualTranscriptSchema = z.object({
 
 export type MeetingCreateInput = z.infer<typeof meetingCreateSchema>;
 
+type ParticipantEntry = { name: string; email?: string };
+
 // "Ana Pérez, ana@x.com\nJuan (cliente)" → [{ name, email? }]
 export function parseParticipants(raw: string | undefined) {
   if (!raw) return [];
@@ -36,4 +38,17 @@ export function parseParticipants(raw: string | undefined) {
       const name = email ? line.replace(email, "").replace(/[,\s]+$/, "").trim() : line;
       return email ? { name, email } : { name };
     });
+}
+
+export function serializeParticipants(participants: unknown): string {
+  if (!Array.isArray(participants)) return "";
+  return participants
+    .map((entry) => {
+      if (!entry || typeof entry !== "object") return "";
+      const { name, email } = entry as ParticipantEntry;
+      if (!name) return "";
+      return email ? `${name}, ${email}` : name;
+    })
+    .filter(Boolean)
+    .join("\n");
 }

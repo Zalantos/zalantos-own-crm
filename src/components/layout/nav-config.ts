@@ -7,6 +7,7 @@ import {
   SlidersHorizontalIcon,
   UserCogIcon,
   UsersIcon,
+  UsersRoundIcon,
   VideoIcon,
   WorkflowIcon,
   type LucideIcon,
@@ -45,6 +46,7 @@ export const ADMIN_SECTION: NavSection = {
   label: "Configuración",
   items: [
     { href: "/admin/users", label: "Usuarios", icon: UserCogIcon },
+    { href: "/admin/team", label: "Equipo", icon: UsersRoundIcon },
     {
       href: "/admin/custom-fields",
       label: "Campos custom",

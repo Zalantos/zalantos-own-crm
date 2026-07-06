@@ -1,4 +1,5 @@
 import { prisma } from "@/lib/prisma";
+import { getActiveTeamMembers } from "@/lib/team";
 import { ActivityCreateForm } from "@/components/shared/activities/activity-create-form";
 import { ActivityRow } from "@/components/shared/activities/activity-row";
 
@@ -11,10 +12,14 @@ export async function ActivitiesPanel({
   personId?: string;
   opportunityId?: string;
 }) {
-  const activities = await prisma.activity.findMany({
-    where: { companyId, personId, opportunityId },
-    orderBy: [{ status: "asc" }, { dueDate: "asc" }],
-  });
+  const [activities, teamMembers] = await Promise.all([
+    prisma.activity.findMany({
+      where: { companyId, personId, opportunityId },
+      include: { assignee: { select: { id: true, name: true } } },
+      orderBy: [{ status: "asc" }, { dueDate: "asc" }],
+    }),
+    getActiveTeamMembers(),
+  ]);
 
   return (
     <div className="space-y-4">
@@ -22,6 +27,7 @@ export async function ActivitiesPanel({
         companyId={companyId}
         personId={personId}
         opportunityId={opportunityId}
+        teamMembers={teamMembers}
       />
       <div className="space-y-2">
         {activities.length === 0 ? (
@@ -30,7 +36,11 @@ export async function ActivitiesPanel({
           </p>
         ) : (
           activities.map((activity) => (
-            <ActivityRow key={activity.id} activity={activity} />
+            <ActivityRow
+              key={activity.id}
+              activity={activity}
+              teamMembers={teamMembers}
+            />
           ))
         )}
       </div>
