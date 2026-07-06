@@ -1,9 +1,16 @@
 import Link from "next/link";
 import { prisma } from "@/lib/prisma";
 import { PageHeader } from "@/components/shared/page-header";
+import { DataTable } from "@/components/shared/data-table";
 import { Button } from "@/components/ui/button";
 import { ProcessingStatusBadge } from "@/components/shared/meeting/processing-status-badge";
 import { formatDate } from "@/lib/utils";
+import type { Company, Meeting } from "@prisma/client";
+
+type MeetingRow = Meeting & {
+  company: Pick<Company, "name">;
+  _count: { evidence: number; proposals: number };
+};
 
 export default async function MeetingsPage() {
   const meetings = await prisma.meeting.findMany({
@@ -24,31 +31,30 @@ export default async function MeetingsPage() {
         }
       />
 
-      {meetings.length === 0 ? (
-        <p className="text-muted-foreground text-sm">
-          Todavía no hay reuniones registradas.
-        </p>
-      ) : (
-        <div className="space-y-2">
-          {meetings.map((meeting) => (
-            <Link
-              key={meeting.id}
-              href={`/meetings/${meeting.id}`}
-              className="hover:bg-muted/50 flex items-center justify-between rounded-md border p-4 text-sm"
-            >
-              <div>
-                <p className="font-medium">{meeting.title}</p>
-                <p className="text-muted-foreground text-xs">
-                  {meeting.company.name} · {formatDate(meeting.meetingDate)} ·{" "}
-                  {meeting._count.evidence} evidencia(s) ·{" "}
-                  {meeting._count.proposals} propuesta(s)
-                </p>
-              </div>
-              <ProcessingStatusBadge status={meeting.processingStatus} />
-            </Link>
-          ))}
-        </div>
-      )}
+      <DataTable<MeetingRow>
+        rows={meetings}
+        rowHref={(row) => `/meetings/${row.id}`}
+        emptyMessage="Todavía no hay reuniones registradas."
+        columns={[
+          { header: "Título", cell: (row) => row.title },
+          { header: "Empresa", cell: (row) => row.company.name },
+          { header: "Fecha", cell: (row) => formatDate(row.meetingDate) },
+          {
+            header: "Evidencia",
+            cell: (row) => row._count.evidence,
+          },
+          {
+            header: "Propuestas",
+            cell: (row) => row._count.proposals,
+          },
+          {
+            header: "Estado",
+            cell: (row) => (
+              <ProcessingStatusBadge status={row.processingStatus} />
+            ),
+          },
+        ]}
+      />
     </div>
   );
 }

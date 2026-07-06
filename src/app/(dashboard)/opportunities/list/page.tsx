@@ -3,8 +3,16 @@ import { prisma } from "@/lib/prisma";
 import { PageHeader } from "@/components/shared/page-header";
 import { DataTable } from "@/components/shared/data-table";
 import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { SavedViewSelector } from "@/components/shared/saved-view-selector";
+import { OpportunityStageBadge } from "@/components/shared/opportunities/status-badge";
+import { formatCurrency } from "@/lib/currency";
 import {
   OPPORTUNITY_STAGES,
   OPPORTUNITY_STAGE_LABELS,
@@ -60,38 +68,41 @@ export default async function OpportunitiesListPage({
       />
 
       <form className="mb-4 flex flex-wrap items-center gap-2">
-        <select
-          name="stage"
-          defaultValue={stage ?? ""}
-          className="bg-background h-9 rounded-md border px-3 text-sm"
-        >
-          <option value="">Todas las etapas</option>
-          {OPPORTUNITY_STAGES.map((s) => (
-            <option key={s} value={s}>
-              {OPPORTUNITY_STAGE_LABELS[s]}
-            </option>
-          ))}
-        </select>
-        <select
-          name="urgency"
-          defaultValue={urgency ?? ""}
-          className="bg-background h-9 rounded-md border px-3 text-sm"
-        >
-          <option value="">Toda urgencia</option>
-          <option value="low">low</option>
-          <option value="medium">medium</option>
-          <option value="high">high</option>
-        </select>
-        <select
-          name="status"
-          defaultValue={status ?? ""}
-          className="bg-background h-9 rounded-md border px-3 text-sm"
-        >
-          <option value="">Todo estado</option>
-          <option value="open">open</option>
-          <option value="won">won</option>
-          <option value="lost">lost</option>
-        </select>
+        <Select name="stage" defaultValue={stage ?? ""}>
+          <SelectTrigger className="w-52">
+            <SelectValue placeholder="Todas las etapas" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="">Todas las etapas</SelectItem>
+            {OPPORTUNITY_STAGES.map((s) => (
+              <SelectItem key={s} value={s}>
+                {OPPORTUNITY_STAGE_LABELS[s]}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+        <Select name="urgency" defaultValue={urgency ?? ""}>
+          <SelectTrigger className="w-36">
+            <SelectValue placeholder="Toda urgencia" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="">Toda urgencia</SelectItem>
+            <SelectItem value="low">Baja</SelectItem>
+            <SelectItem value="medium">Media</SelectItem>
+            <SelectItem value="high">Alta</SelectItem>
+          </SelectContent>
+        </Select>
+        <Select name="status" defaultValue={status ?? ""}>
+          <SelectTrigger className="w-36">
+            <SelectValue placeholder="Todo estado" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="">Todo estado</SelectItem>
+            <SelectItem value="open">Abierta</SelectItem>
+            <SelectItem value="won">Ganada</SelectItem>
+            <SelectItem value="lost">Perdida</SelectItem>
+          </SelectContent>
+        </Select>
         <label className="flex items-center gap-1.5 text-sm">
           <input
             type="checkbox"
@@ -124,16 +135,14 @@ export default async function OpportunitiesListPage({
           { header: "Empresa", cell: (row) => row.company.name },
           {
             header: "Etapa",
-            cell: (row) => (
-              <Badge variant="outline">
-                {OPPORTUNITY_STAGE_LABELS[row.stage]}
-              </Badge>
-            ),
+            cell: (row) => <OpportunityStageBadge stage={row.stage} />,
           },
           {
             header: "Valor",
             cell: (row) =>
-              row.estimatedValue ? `$${row.estimatedValue.toString()}` : "—",
+              row.estimatedValue
+                ? formatCurrency(row.estimatedValue.toString())
+                : "—",
           },
           {
             header: "Próximo paso",

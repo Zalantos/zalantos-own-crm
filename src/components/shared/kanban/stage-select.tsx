@@ -27,7 +27,7 @@ export function StageSelect({
           void updateOpportunityStage(opportunityId, stage);
         });
       }}
-      className="bg-background h-9 rounded-md border px-3 text-sm disabled:opacity-50"
+      className="border-input bg-background h-8 rounded-lg border px-2.5 text-sm disabled:opacity-50"
     >
       {OPPORTUNITY_STAGES.map((stage) => (
         <option key={stage} value={stage}>

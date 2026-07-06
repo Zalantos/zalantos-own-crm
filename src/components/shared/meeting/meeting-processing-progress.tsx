@@ -2,8 +2,10 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Loader2Icon } from "lucide-react";
+import { CircleAlertIcon, Loader2Icon } from "lucide-react";
 import type { ProcessingStatus } from "@prisma/client";
+import { Alert, AlertDescription } from "@/components/ui/alert";
+import { Progress } from "@/components/ui/progress";
 import { cn } from "@/lib/utils";
 
 const ACTIVE_STATUSES = ["pending", "extracting", "transcribing", "analyzing"];
@@ -79,9 +81,10 @@ export function MeetingProcessingProgress({
   if (status === "failed") {
     if (!processingError) return null;
     return (
-      <p className="text-destructive border-destructive/30 mb-4 rounded-md border p-3 text-sm">
-        {processingError}
-      </p>
+      <Alert variant="destructive" className="mb-4">
+        <CircleAlertIcon />
+        <AlertDescription>{processingError}</AlertDescription>
+      </Alert>
     );
   }
 
@@ -110,14 +113,5 @@ export function UploadProgressBar({
 }) {
   const boundedValue = Math.max(0, Math.min(100, value));
 
-  return (
-    <div
-      className={cn("bg-muted h-1.5 overflow-hidden rounded-full", className)}
-    >
-      <div
-        className="bg-primary h-full rounded-full transition-all"
-        style={{ width: `${boundedValue}%` }}
-      />
-    </div>
-  );
+  return <Progress value={boundedValue} className={cn("gap-0", className)} />;
 }

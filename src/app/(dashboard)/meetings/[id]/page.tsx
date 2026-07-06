@@ -2,6 +2,7 @@ import { notFound } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import { PageHeader } from "@/components/shared/page-header";
 import { Badge } from "@/components/ui/badge";
+import { Card, CardContent } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ProcessingStatusBadge } from "@/components/shared/meeting/processing-status-badge";
 import { EvidenceUploader } from "@/components/shared/meeting/evidence-uploader";
@@ -104,25 +105,28 @@ export default async function MeetingDetailPage({
           </div>
           <div className="space-y-2">
             {meeting.evidence.map((ev) => (
-              <div
-                key={ev.id}
-                className="flex items-center justify-between rounded-md border p-3 text-sm"
-              >
-                <span>{ev.filename}</span>
-                <span className="flex items-center gap-2">
-                  <Badge variant="outline">{ev.type}</Badge>
-                  <Badge variant="secondary">{ev.status}</Badge>
-                </span>
-              </div>
+              <Card key={ev.id} size="sm">
+                <CardContent className="flex items-center justify-between text-sm">
+                  <span>{ev.filename}</span>
+                  <span className="flex items-center gap-2">
+                    <Badge variant="outline">{ev.type}</Badge>
+                    <Badge variant="secondary">{ev.status}</Badge>
+                  </span>
+                </CardContent>
+              </Card>
             ))}
           </div>
         </TabsContent>
 
         <TabsContent value="transcript" className="space-y-4 pt-4">
           {meeting.rawTranscript ? (
-            <pre className="bg-muted/30 max-h-[500px] overflow-auto rounded-md border p-4 text-sm whitespace-pre-wrap">
-              {meeting.rawTranscript}
-            </pre>
+            <Card>
+              <CardContent>
+                <pre className="max-h-[500px] overflow-auto text-sm whitespace-pre-wrap">
+                  {meeting.rawTranscript}
+                </pre>
+              </CardContent>
+            </Card>
           ) : (
             <p className="text-muted-foreground text-sm">
               Todavía no hay transcripción.

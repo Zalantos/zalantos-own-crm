@@ -8,7 +8,8 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { NotesPanel } from "@/components/shared/notes/notes-panel";
 import { ActivitiesPanel } from "@/components/shared/activities/activities-panel";
 import { CustomFieldsDetailSection } from "@/components/shared/custom-fields/custom-fields-detail-section";
-import { OPPORTUNITY_STAGE_LABELS } from "@/lib/zod/opportunity";
+import { StatCard } from "@/components/shared/stat-card";
+import { OpportunityStageBadge } from "@/components/shared/opportunities/status-badge";
 
 export default async function PersonDetailPage({
   params,
@@ -59,13 +60,14 @@ export default async function PersonDetailPage({
         }
       />
 
-      <div className="mb-6 grid grid-cols-3 gap-4 text-sm">
-        <InfoRow label="Email" value={person.email} />
-        <InfoRow label="Teléfono" value={person.phone} />
-        <InfoRow
+      <div className="mb-6 grid grid-cols-1 gap-4 sm:grid-cols-3">
+        <StatCard label="Email" value={person.email} variant="compact" />
+        <StatCard label="Teléfono" value={person.phone} variant="compact" />
+        <StatCard
           label="Empresa"
           value={person.company?.name}
           href={person.companyId ? `/companies/${person.companyId}` : undefined}
+          variant="compact"
         />
       </div>
 
@@ -103,9 +105,7 @@ export default async function PersonDetailPage({
                 <span>{opportunity.name}</span>
                 <span className="flex gap-1">
                   <Badge variant="outline">{role}</Badge>
-                  <Badge variant="outline">
-                    {OPPORTUNITY_STAGE_LABELS[opportunity.stage]}
-                  </Badge>
+                  <OpportunityStageBadge stage={opportunity.stage} />
                 </span>
               </Link>
             ))
@@ -120,29 +120,6 @@ export default async function PersonDetailPage({
           <NotesPanel personId={person.id} />
         </TabsContent>
       </Tabs>
-    </div>
-  );
-}
-
-function InfoRow({
-  label,
-  value,
-  href,
-}: {
-  label: string;
-  value?: string | null;
-  href?: string;
-}) {
-  return (
-    <div className="rounded-md border p-3">
-      <p className="text-muted-foreground text-xs">{label}</p>
-      {href && value ? (
-        <Link href={href} className="text-sm underline">
-          {value}
-        </Link>
-      ) : (
-        <p className="text-sm">{value ?? "—"}</p>
-      )}
     </div>
   );
 }

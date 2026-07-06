@@ -4,11 +4,22 @@ import { useActionState } from "react";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { SubmitButton } from "@/components/shared/submit-button";
 import { createCompany, updateCompany, type FormState } from "./actions";
 import type { Company } from "@prisma/client";
 
-const STATUS_OPTIONS = ["active", "inactive", "churned"];
+const STATUS_OPTIONS = [
+  { value: "active", label: "Activa" },
+  { value: "inactive", label: "Inactiva" },
+  { value: "churned", label: "Perdida" },
+];
 
 export function CompanyForm({
   company,
@@ -60,18 +71,18 @@ export function CompanyForm({
         />
         <div className="space-y-2">
           <Label htmlFor="status">Estado</Label>
-          <select
-            id="status"
-            name="status"
-            defaultValue={company?.status ?? "active"}
-            className="bg-background h-9 w-full rounded-md border px-3 text-sm"
-          >
-            {STATUS_OPTIONS.map((status) => (
-              <option key={status} value={status}>
-                {status}
-              </option>
-            ))}
-          </select>
+          <Select name="status" defaultValue={company?.status ?? "active"}>
+            <SelectTrigger id="status" className="w-full">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {STATUS_OPTIONS.map((status) => (
+                <SelectItem key={status.value} value={status.value}>
+                  {status.label}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
         </div>
         <Field
           label="ICP score (0-100)"

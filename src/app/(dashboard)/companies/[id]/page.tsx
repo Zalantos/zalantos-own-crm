@@ -8,7 +8,9 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { NotesPanel } from "@/components/shared/notes/notes-panel";
 import { ActivitiesPanel } from "@/components/shared/activities/activities-panel";
 import { CustomFieldsDetailSection } from "@/components/shared/custom-fields/custom-fields-detail-section";
-import { OPPORTUNITY_STAGE_LABELS } from "@/lib/zod/opportunity";
+import { StatCard } from "@/components/shared/stat-card";
+import { CompanyStatusBadge } from "@/components/shared/companies/status-badge";
+import { OpportunityStageBadge } from "@/components/shared/opportunities/status-badge";
 
 export default async function CompanyDetailPage({
   params,
@@ -35,7 +37,7 @@ export default async function CompanyDetailPage({
           .join(" · ")}
         actions={
           <>
-            <Badge variant="outline">{company.status}</Badge>
+            <CompanyStatusBadge status={company.status} />
             <Button
               variant="secondary"
               render={<Link href={`/companies/${company.id}/edit`} />}
@@ -46,11 +48,15 @@ export default async function CompanyDetailPage({
         }
       />
 
-      <div className="mb-6 grid grid-cols-4 gap-4">
-        <Stat label="ICP score" value={company.icpScore} />
-        <Stat label="Fit score" value={company.fitScore} />
-        <Stat label="Pain score" value={company.painScore} />
-        <Stat label="Sitio web" value={company.website ?? "—"} isText />
+      <div className="mb-6 grid grid-cols-2 gap-4 sm:grid-cols-4">
+        <StatCard label="ICP score" value={company.icpScore} />
+        <StatCard label="Fit score" value={company.fitScore} />
+        <StatCard label="Pain score" value={company.painScore} />
+        <StatCard
+          label="Sitio web"
+          value={company.website ?? "—"}
+          variant="compact"
+        />
       </div>
 
       {company.description && (
@@ -141,9 +147,7 @@ export default async function CompanyDetailPage({
                   className="hover:bg-muted/50 flex items-center justify-between rounded-md border p-3 text-sm"
                 >
                   <span>{opportunity.name}</span>
-                  <Badge variant="outline">
-                    {OPPORTUNITY_STAGE_LABELS[opportunity.stage]}
-                  </Badge>
+                  <OpportunityStageBadge stage={opportunity.stage} />
                 </Link>
               ))}
             </div>
@@ -158,25 +162,6 @@ export default async function CompanyDetailPage({
           <NotesPanel companyId={company.id} />
         </TabsContent>
       </Tabs>
-    </div>
-  );
-}
-
-function Stat({
-  label,
-  value,
-  isText,
-}: {
-  label: string;
-  value: number | string | null;
-  isText?: boolean;
-}) {
-  return (
-    <div className="rounded-md border p-3">
-      <p className="text-muted-foreground text-xs">{label}</p>
-      <p className={isText ? "truncate text-sm" : "text-xl font-semibold"}>
-        {value ?? "—"}
-      </p>
     </div>
   );
 }

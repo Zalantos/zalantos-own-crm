@@ -1,4 +1,5 @@
 import { mergeCustomFields } from "@/lib/custom-fields/merge";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import type { EntityType } from "@prisma/client";
 
 function formatValue(
@@ -39,18 +40,22 @@ export async function CustomFieldsDetailSection({
   if (fields.length === 0) return null;
 
   return (
-    <div className="space-y-2 rounded-md border p-4">
-      <p className="text-sm font-medium">Campos adicionales</p>
-      <dl className="grid grid-cols-2 gap-3">
-        {fields.map((field) => (
-          <div key={field.definition.id}>
-            <dt className="text-muted-foreground text-xs">
-              {field.definition.fieldLabel}
-            </dt>
-            <dd className="text-sm">{formatValue(field)}</dd>
-          </div>
-        ))}
-      </dl>
-    </div>
+    <Card size="sm">
+      <CardHeader>
+        <CardTitle>Campos adicionales</CardTitle>
+      </CardHeader>
+      <CardContent>
+        <dl className="grid grid-cols-2 gap-3">
+          {fields.map((field) => (
+            <div key={field.definition.id}>
+              <dt className="text-muted-foreground text-xs">
+                {field.definition.fieldLabel}
+              </dt>
+              <dd className="text-sm">{formatValue(field)}</dd>
+            </div>
+          ))}
+        </dl>
+      </CardContent>
+    </Card>
   );
 }

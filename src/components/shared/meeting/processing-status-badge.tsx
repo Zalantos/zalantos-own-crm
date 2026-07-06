@@ -1,19 +1,20 @@
 import { Loader2Icon } from "lucide-react";
-import { Badge } from "@/components/ui/badge";
+import type { VariantProps } from "class-variance-authority";
+import { Badge, type badgeVariants } from "@/components/ui/badge";
 import type { ProcessingStatus } from "@prisma/client";
 
 const CONFIG: Record<
   ProcessingStatus,
   {
     label: string;
-    variant: "default" | "secondary" | "destructive" | "outline";
+    variant: VariantProps<typeof badgeVariants>["variant"];
   }
 > = {
   pending: { label: "Pendiente", variant: "outline" },
   extracting: { label: "Extrayendo texto", variant: "secondary" },
   transcribing: { label: "Transcribiendo", variant: "secondary" },
   analyzing: { label: "Analizando con IA", variant: "secondary" },
-  ready: { label: "Listo", variant: "default" },
+  ready: { label: "Listo", variant: "success" },
   failed: { label: "Error", variant: "destructive" },
 };
 

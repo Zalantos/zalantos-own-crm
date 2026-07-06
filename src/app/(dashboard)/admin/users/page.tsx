@@ -66,7 +66,7 @@ export default async function UsersAdminPage() {
                 <Badge variant="outline">{user.role}</Badge>
               </TableCell>
               <TableCell>
-                <Badge variant={user.isActive ? "outline" : "destructive"}>
+                <Badge variant={user.isActive ? "success" : "destructive"}>
                   {user.isActive ? "Activo" : "Desactivado"}
                 </Badge>
               </TableCell>

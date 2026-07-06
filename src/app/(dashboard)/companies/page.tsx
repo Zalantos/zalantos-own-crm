@@ -4,8 +4,15 @@ import { PageHeader } from "@/components/shared/page-header";
 import { DataTable } from "@/components/shared/data-table";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Badge } from "@/components/ui/badge";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { SavedViewSelector } from "@/components/shared/saved-view-selector";
+import { CompanyStatusBadge } from "@/components/shared/companies/status-badge";
 import type { Company } from "@prisma/client";
 
 export default async function CompaniesPage({
@@ -53,31 +60,33 @@ export default async function CompaniesPage({
           defaultValue={q}
           className="max-w-xs"
         />
-        <select
-          name="industry"
-          defaultValue={industry ?? ""}
-          className="bg-background h-9 rounded-md border px-3 text-sm"
-        >
-          <option value="">Todas las industrias</option>
-          {industries.map(
-            (item) =>
-              item.industry && (
-                <option key={item.industry} value={item.industry}>
-                  {item.industry}
-                </option>
-              ),
-          )}
-        </select>
-        <select
-          name="status"
-          defaultValue={status ?? ""}
-          className="bg-background h-9 rounded-md border px-3 text-sm"
-        >
-          <option value="">Todos los estados</option>
-          <option value="active">active</option>
-          <option value="inactive">inactive</option>
-          <option value="churned">churned</option>
-        </select>
+        <Select name="industry" defaultValue={industry ?? ""}>
+          <SelectTrigger className="w-48">
+            <SelectValue placeholder="Todas las industrias" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="">Todas las industrias</SelectItem>
+            {industries.map(
+              (item) =>
+                item.industry && (
+                  <SelectItem key={item.industry} value={item.industry}>
+                    {item.industry}
+                  </SelectItem>
+                ),
+            )}
+          </SelectContent>
+        </Select>
+        <Select name="status" defaultValue={status ?? ""}>
+          <SelectTrigger className="w-44">
+            <SelectValue placeholder="Todos los estados" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="">Todos los estados</SelectItem>
+            <SelectItem value="active">Activa</SelectItem>
+            <SelectItem value="inactive">Inactiva</SelectItem>
+            <SelectItem value="churned">Perdida</SelectItem>
+          </SelectContent>
+        </Select>
         <Button type="submit" variant="secondary">
           Filtrar
         </Button>
@@ -101,7 +110,7 @@ export default async function CompaniesPage({
           { header: "País", cell: (row) => row.country ?? "—" },
           {
             header: "Estado",
-            cell: (row) => <Badge variant="outline">{row.status}</Badge>,
+            cell: (row) => <CompanyStatusBadge status={row.status} />,
           },
         ]}
       />

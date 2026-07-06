@@ -8,7 +8,7 @@ export default function NotFound() {
       <p className="text-muted-foreground max-w-sm text-sm">
         El recurso no existe o fue eliminado.
       </p>
-      <Button render={<Link href="/companies" />}>Volver al inicio</Button>
+      <Button render={<Link href="/dashboard" />}>Volver al inicio</Button>
     </div>
   );
 }

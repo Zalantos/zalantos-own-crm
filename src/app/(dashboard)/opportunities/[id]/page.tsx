@@ -4,12 +4,15 @@ import { prisma } from "@/lib/prisma";
 import { PageHeader } from "@/components/shared/page-header";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { Card, CardContent } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { NotesPanel } from "@/components/shared/notes/notes-panel";
 import { ActivitiesPanel } from "@/components/shared/activities/activities-panel";
 import { CustomFieldsDetailSection } from "@/components/shared/custom-fields/custom-fields-detail-section";
 import { StageSelect } from "@/components/shared/kanban/stage-select";
 import { CompanyTimeline } from "@/components/shared/timeline/company-timeline";
+import { StatCard } from "@/components/shared/stat-card";
+import { formatCurrency } from "@/lib/currency";
 
 export default async function OpportunityDetailPage({
   params,
@@ -50,13 +53,14 @@ export default async function OpportunityDetailPage({
         }
       />
 
-      <div className="mb-6 grid grid-cols-4 gap-4">
-        <InfoCard
+      <div className="mb-6 grid grid-cols-2 gap-4 sm:grid-cols-4">
+        <StatCard
           label="Empresa"
           value={opportunity.company.name}
           href={`/companies/${opportunity.company.id}`}
+          variant="compact"
         />
-        <InfoCard
+        <StatCard
           label="Decisor"
           value={
             opportunity.decisionMaker
@@ -68,8 +72,9 @@ export default async function OpportunityDetailPage({
               ? `/people/${opportunity.decisionMaker.id}`
               : undefined
           }
+          variant="compact"
         />
-        <InfoCard
+        <StatCard
           label="Sponsor"
           value={
             opportunity.sponsor
@@ -81,45 +86,50 @@ export default async function OpportunityDetailPage({
               ? `/people/${opportunity.sponsor.id}`
               : undefined
           }
+          variant="compact"
         />
-        <InfoCard
+        <StatCard
           label="Valor estimado"
           value={
             opportunity.estimatedValue
-              ? `$${opportunity.estimatedValue.toString()}`
+              ? formatCurrency(opportunity.estimatedValue.toString())
               : "—"
           }
         />
       </div>
 
       <div className="mb-6 grid grid-cols-2 gap-4">
-        <div className="rounded-md border p-3">
-          <p className="text-muted-foreground text-xs">Dolor principal</p>
-          <p className="text-sm">{opportunity.mainPain || "—"}</p>
-        </div>
-        <div className="rounded-md border p-3">
-          <p className="text-muted-foreground text-xs">Próximo paso</p>
-          <p className="text-sm">
-            {opportunity.nextStep || "—"}
-            {opportunity.nextStepDueDate && (
-              <span
-                className={
-                  isOverdue
-                    ? "text-destructive ml-2"
-                    : "text-muted-foreground ml-2"
-                }
-              >
-                (vence{" "}
-                {new Date(opportunity.nextStepDueDate).toLocaleDateString()})
-              </span>
+        <Card size="sm">
+          <CardContent>
+            <p className="text-muted-foreground text-xs">Dolor principal</p>
+            <p className="text-sm">{opportunity.mainPain || "—"}</p>
+          </CardContent>
+        </Card>
+        <Card size="sm">
+          <CardContent>
+            <p className="text-muted-foreground text-xs">Próximo paso</p>
+            <p className="text-sm">
+              {opportunity.nextStep || "—"}
+              {opportunity.nextStepDueDate && (
+                <span
+                  className={
+                    isOverdue
+                      ? "text-destructive ml-2"
+                      : "text-muted-foreground ml-2"
+                  }
+                >
+                  (vence{" "}
+                  {new Date(opportunity.nextStepDueDate).toLocaleDateString()})
+                </span>
+              )}
+            </p>
+            {isOverdue && (
+              <Badge variant="destructive" className="mt-1">
+                Vencido
+              </Badge>
             )}
-          </p>
-          {isOverdue && (
-            <Badge variant="destructive" className="mt-1">
-              Vencido
-            </Badge>
-          )}
-        </div>
+          </CardContent>
+        </Card>
       </div>
 
       <div className="mb-6">
@@ -145,29 +155,6 @@ export default async function OpportunityDetailPage({
           <CompanyTimeline opportunityId={opportunity.id} />
         </TabsContent>
       </Tabs>
-    </div>
-  );
-}
-
-function InfoCard({
-  label,
-  value,
-  href,
-}: {
-  label: string;
-  value: string;
-  href?: string;
-}) {
-  return (
-    <div className="rounded-md border p-3">
-      <p className="text-muted-foreground text-xs">{label}</p>
-      {href ? (
-        <Link href={href} className="text-sm underline">
-          {value}
-        </Link>
-      ) : (
-        <p className="text-sm">{value}</p>
-      )}
     </div>
   );
 }

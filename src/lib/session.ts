@@ -33,7 +33,7 @@ export async function requireUser() {
 export async function requireAdmin() {
   const user = await requireUser();
   if (user.role !== "ADMIN") {
-    redirect("/companies");
+    redirect("/dashboard");
   }
   return user;
 }

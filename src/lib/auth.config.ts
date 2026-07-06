@@ -17,7 +17,7 @@ export const authConfig = {
 
       if (isLoginPage) {
         if (isLoggedIn) {
-          return NextResponse.redirect(new URL("/companies", origin));
+          return NextResponse.redirect(new URL("/dashboard", origin));
         }
         return true;
       }

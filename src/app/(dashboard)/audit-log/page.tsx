@@ -6,6 +6,14 @@ import { PageHeader } from "@/components/shared/page-header";
 import { DataTable } from "@/components/shared/data-table";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { Input } from "@/components/ui/input";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 
 type SearchParams = {
   type?: string;
@@ -60,53 +68,56 @@ export default async function ActivityPage({
       />
 
       <form className="mb-4 flex flex-wrap items-center gap-2">
-        <select
-          name="type"
-          defaultValue={params.type ?? ""}
-          className="bg-background h-9 rounded-md border px-3 text-sm"
-        >
-          <option value="">Todos los tipos</option>
-          {Object.entries(TYPE_LABELS).map(([value, label]) => (
-            <option key={value} value={value}>
-              {label}
-            </option>
-          ))}
-        </select>
-        <select
-          name="actorId"
-          defaultValue={params.actorId ?? ""}
-          className="bg-background h-9 rounded-md border px-3 text-sm"
-        >
-          <option value="">Todos los usuarios</option>
-          {users.map((user) => (
-            <option key={user.id} value={user.id}>
-              {user.name ?? user.email}
-            </option>
-          ))}
-        </select>
-        <select
-          name="companyId"
-          defaultValue={params.companyId ?? ""}
-          className="bg-background h-9 rounded-md border px-3 text-sm"
-        >
-          <option value="">Todas las empresas</option>
-          {companies.map((company) => (
-            <option key={company.id} value={company.id}>
-              {company.name}
-            </option>
-          ))}
-        </select>
-        <input
+        <Select name="type" defaultValue={params.type ?? ""}>
+          <SelectTrigger className="w-44">
+            <SelectValue placeholder="Todos los tipos" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="">Todos los tipos</SelectItem>
+            {Object.entries(TYPE_LABELS).map(([value, label]) => (
+              <SelectItem key={value} value={value}>
+                {label}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+        <Select name="actorId" defaultValue={params.actorId ?? ""}>
+          <SelectTrigger className="w-44">
+            <SelectValue placeholder="Todos los usuarios" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="">Todos los usuarios</SelectItem>
+            {users.map((user) => (
+              <SelectItem key={user.id} value={user.id}>
+                {user.name ?? user.email}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+        <Select name="companyId" defaultValue={params.companyId ?? ""}>
+          <SelectTrigger className="w-44">
+            <SelectValue placeholder="Todas las empresas" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="">Todas las empresas</SelectItem>
+            {companies.map((company) => (
+              <SelectItem key={company.id} value={company.id}>
+                {company.name}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+        <Input
           type="date"
           name="from"
           defaultValue={params.from ?? ""}
-          className="bg-background h-9 rounded-md border px-3 text-sm"
+          className="w-36"
         />
-        <input
+        <Input
           type="date"
           name="to"
           defaultValue={params.to ?? ""}
-          className="bg-background h-9 rounded-md border px-3 text-sm"
+          className="w-36"
         />
         <Button type="submit" variant="secondary">
           Filtrar
@@ -140,9 +151,7 @@ export default async function ActivityPage({
               <div>
                 <p className="font-medium">{row.title}</p>
                 {row.summary && (
-                  <p className="text-muted-foreground text-sm">
-                    {row.summary}
-                  </p>
+                  <p className="text-muted-foreground text-sm">{row.summary}</p>
                 )}
               </div>
             ),
