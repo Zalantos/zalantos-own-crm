@@ -19,7 +19,7 @@ export async function createCompany(
   _prevState: FormState,
   formData: FormData,
 ): Promise<FormState> {
-  await requireUser();
+  const user = await requireUser();
 
   const parsed = companyCreateSchema.safeParse(Object.fromEntries(formData));
   if (!parsed.success) {
@@ -29,7 +29,9 @@ export async function createCompany(
     };
   }
 
-  const company = await prisma.company.create({ data: parsed.data });
+  const company = await prisma.company.create({
+    data: { ...parsed.data, createdById: user.id },
+  });
   await upsertCustomFieldValues("company", company.id, formData);
   revalidatePath("/companies");
   redirect(`/companies/${company.id}`);
@@ -62,7 +64,21 @@ export async function updateCompany(
 }
 
 export async function deleteCompany(id: string) {
-  await requireUser();
+  const user = await requireUser();
+  const company = await prisma.company.findUnique({
+    where: { id },
+    select: { createdById: true },
+  });
+
+  if (!company) {
+    revalidatePath("/companies");
+    redirect("/companies");
+  }
+
+  if (user.role !== "ADMIN" && company.createdById !== user.id) {
+    throw new Error("No tienes permiso para eliminar esta empresa.");
+  }
+
   try {
     await prisma.$transaction(async (tx) => {
       const opportunities = await tx.opportunity.findMany({

@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { prisma } from "@/lib/prisma";
+import { requireUser } from "@/lib/session";
 import { PageHeader } from "@/components/shared/page-header";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -11,6 +12,7 @@ import { CustomFieldsDetailSection } from "@/components/shared/custom-fields/cus
 import { StatCard } from "@/components/shared/stat-card";
 import { CompanyStatusBadge } from "@/components/shared/companies/status-badge";
 import { OpportunityStageBadge } from "@/components/shared/opportunities/status-badge";
+import { deleteCompany } from "../actions";
 
 export default async function CompanyDetailPage({
   params,
@@ -18,6 +20,7 @@ export default async function CompanyDetailPage({
   params: Promise<{ id: string }>;
 }) {
   const { id } = await params;
+  const user = await requireUser();
 
   const company = await prisma.company.findUnique({
     where: { id },
@@ -27,6 +30,7 @@ export default async function CompanyDetailPage({
     },
   });
   if (!company) notFound();
+  const canDelete = user.role === "ADMIN" || company.createdById === user.id;
 
   return (
     <div>
@@ -44,6 +48,13 @@ export default async function CompanyDetailPage({
             >
               Editar
             </Button>
+            {canDelete && (
+              <form action={deleteCompany.bind(null, company.id)}>
+                <Button type="submit" variant="destructive">
+                  Eliminar
+                </Button>
+              </form>
+            )}
           </>
         }
       />

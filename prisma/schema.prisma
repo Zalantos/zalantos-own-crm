@@ -81,6 +81,8 @@ model Company {
   fitScore    Int?
   painScore   Int?
   status      String   @default("active")
+  createdById String?
+  createdBy   User?    @relation(fields: [createdById], references: [id], onDelete: SetNull)
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
@@ -93,6 +95,7 @@ model Company {
 
   @@index([name])
   @@index([status])
+  @@index([createdById])
   @@map("companies")
 }
 
@@ -335,7 +338,8 @@ model User {
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 
-  teamMember TeamMember?
+  teamMember       TeamMember?
+  createdCompanies Company[]
 
   @@map("users")
 }
