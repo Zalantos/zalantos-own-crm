@@ -295,6 +295,34 @@ model WorkflowLog {
   @@map("workflow_logs")
 }
 
+// ---------- Integrations ----------
+
+model IntegrationDelivery {
+  id                   String     @id @default(cuid())
+  type                 String
+  channel              String
+  entityType           EntityType
+  entityId             String
+  recipientJson        Json
+  payloadJson          Json
+  dedupeKey            String     @unique
+  // pending | sent | failed
+  status               String     @default("pending")
+  attempts             Int        @default(0)
+  lastError            String?    @db.Text
+  providerResponseJson Json?
+  sentAt               DateTime?
+  createdAt            DateTime   @default(now())
+  updatedAt            DateTime   @updatedAt
+
+  @@index([status])
+  @@index([type])
+  @@index([channel])
+  @@index([entityType, entityId])
+  @@index([createdAt])
+  @@map("integration_deliveries")
+}
+
 // ---------- Auth ----------
 
 model User {
