@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { SubmitButton } from "@/components/shared/submit-button";
 import {
   deleteTeamMember,
+  ensureCurrentAdminTeamMember,
   linkTeamMemberUser,
   toggleTeamMemberActive,
   type TeamMemberFormState,
@@ -62,6 +63,20 @@ export function TeamMemberLinkForm({
         </select>
         <SubmitButton pendingText="...">Vincular</SubmitButton>
       </div>
+      <FormMessages state={state} />
+    </form>
+  );
+}
+
+export function EnsureCurrentAdminTeamMemberForm() {
+  const [state, formAction] = useActionState<TeamMemberFormState>(
+    ensureCurrentAdminTeamMember,
+    undefined,
+  );
+
+  return (
+    <form action={formAction} className="space-y-2">
+      <SubmitButton pendingText="Agregando...">Agregarme al equipo</SubmitButton>
       <FormMessages state={state} />
     </form>
   );

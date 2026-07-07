@@ -1,6 +1,7 @@
 import { prisma } from "@/lib/prisma";
 import { requireAdmin } from "@/lib/session";
 import { PageHeader } from "@/components/shared/page-header";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import {
   Table,
@@ -12,26 +13,34 @@ import {
 } from "@/components/ui/table";
 import { TeamMemberCreateForm } from "./team-member-create-form";
 import {
+  EnsureCurrentAdminTeamMemberForm,
   TeamMemberActiveForm,
   TeamMemberDeleteForm,
   TeamMemberLinkForm,
 } from "./team-member-row-actions";
 
 export default async function TeamAdminPage() {
-  await requireAdmin();
+  const currentUser = await requireAdmin();
 
-  const [teamMembers, availableUsers] = await Promise.all([
-    prisma.teamMember.findMany({
-      orderBy: [{ isActive: "desc" }, { name: "asc" }],
-      include: { user: { select: { name: true, email: true } } },
-    }),
-    // Usuarios activos que todavía no tienen persona del equipo vinculada.
-    prisma.user.findMany({
-      where: { isActive: true, teamMember: null },
-      select: { id: true, name: true, email: true },
-      orderBy: { email: "asc" },
-    }),
-  ]);
+  const [teamMembers, availableUsers, currentAdminTeamMember] =
+    await Promise.all([
+      prisma.teamMember.findMany({
+        orderBy: [{ isActive: "desc" }, { name: "asc" }],
+        include: { user: { select: { name: true, email: true } } },
+      }),
+      // Usuarios activos que todavía no tienen persona del equipo vinculada.
+      prisma.user.findMany({
+        where: { isActive: true, teamMember: null },
+        select: { id: true, name: true, email: true },
+        orderBy: { email: "asc" },
+      }),
+      prisma.teamMember.findUnique({
+        where: { userId: currentUser.id },
+        select: { isActive: true },
+      }),
+    ]);
+
+  const currentAdminIsAssignable = currentAdminTeamMember?.isActive ?? false;
 
   return (
     <div>
@@ -39,6 +48,22 @@ export default async function TeamAdminPage() {
         title="Equipo"
         description="Define las personas disponibles para asignarles tareas, tengan o no usuario en el CRM"
       />
+
+      {!currentAdminIsAssignable && (
+        <Alert className="mb-6 max-w-4xl">
+          <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+            <div>
+              <AlertTitle>No apareces como responsable asignable</AlertTitle>
+              <AlertDescription>
+                Tu cuenta admin necesita estar vinculada a una persona activa
+                del equipo para poder recibir tareas y usar el filtro Mis
+                tareas.
+              </AlertDescription>
+            </div>
+            <EnsureCurrentAdminTeamMemberForm />
+          </div>
+        </Alert>
+      )}
 
       <div className="mb-8 max-w-4xl">
         <TeamMemberCreateForm availableUsers={availableUsers} />

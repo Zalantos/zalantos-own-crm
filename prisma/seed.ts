@@ -24,7 +24,7 @@ async function seedAdminUser() {
   }
 
   const passwordHash = await bcrypt.hash(password, 10);
-  await prisma.user.upsert({
+  const admin = await prisma.user.upsert({
     where: { email },
     update: { passwordHash, role: "ADMIN" },
     create: {
@@ -32,6 +32,20 @@ async function seedAdminUser() {
       passwordHash,
       name: "Admin",
       role: "ADMIN",
+    },
+  });
+  await prisma.teamMember.upsert({
+    where: { userId: admin.id },
+    update: {
+      email: admin.email,
+      isActive: true,
+      name: admin.name ?? admin.email,
+    },
+    create: {
+      name: admin.name ?? admin.email,
+      email: admin.email,
+      userId: admin.id,
+      isActive: true,
     },
   });
   console.log(`[seed] Usuario admin listo: ${email}`);

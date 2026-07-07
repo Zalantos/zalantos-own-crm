@@ -68,6 +68,37 @@ export async function createTeamMember(
   return { success: "Persona agregada al equipo." };
 }
 
+export async function ensureCurrentAdminTeamMember(
+  prevState: TeamMemberFormState,
+): Promise<TeamMemberFormState> {
+  void prevState;
+  const user = await requireAdmin();
+
+  try {
+    await prisma.teamMember.upsert({
+      where: { userId: user.id },
+      update: {
+        email: user.email,
+        isActive: true,
+        name: user.name ?? user.email,
+      },
+      create: {
+        name: user.name ?? user.email,
+        email: user.email,
+        userId: user.id,
+        isActive: true,
+      },
+    });
+  } catch (error) {
+    return { error: mutationErrorMessage(error) };
+  }
+
+  revalidatePath("/admin/team");
+  revalidatePath("/activities");
+  revalidatePath("/dashboard");
+  return { success: "Tu usuario ya puede recibir tareas." };
+}
+
 export async function linkTeamMemberUser(
   id: string,
   _prevState: TeamMemberFormState,
