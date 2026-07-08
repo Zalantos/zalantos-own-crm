@@ -12,11 +12,7 @@ import { toast } from "sonner";
 import { KanbanColumn } from "@/components/shared/kanban/kanban-column";
 import type { KanbanOpportunity } from "@/components/shared/kanban/kanban-card";
 import { updateOpportunityStage } from "@/app/(dashboard)/opportunities/actions";
-import {
-  OPPORTUNITY_STAGES,
-  OPPORTUNITY_STAGE_LABELS,
-} from "@/lib/zod/opportunity";
-import type { OpportunityStage } from "@prisma/client";
+import type { StageOption } from "@/lib/pipeline/stages";
 
 function subscribeNoop() {
   return () => {};
@@ -37,13 +33,17 @@ function useMounted() {
 
 export function KanbanBoard({
   opportunities,
+  stages,
+  currency,
+  locale,
 }: {
   opportunities: KanbanOpportunity[];
+  stages: StageOption[];
+  currency: string;
+  locale: string;
 }) {
   const [items, setItems] = useState(opportunities);
-  const [expandedEmptyStages, setExpandedEmptyStages] = useState<
-    OpportunityStage[]
-  >([]);
+  const [expandedEmptyStages, setExpandedEmptyStages] = useState<string[]>([]);
   const mounted = useMounted();
   const sensors = useSensors(
     useSensor(PointerSensor, {
@@ -56,45 +56,47 @@ export function KanbanBoard({
     if (!over) return;
 
     const opportunityId = active.id as string;
-    const newStage = over.id as OpportunityStage;
+    const newStageId = over.id as string;
     const current = items.find((item) => item.id === opportunityId);
-    if (!current || current.stage === newStage) return;
+    if (!current || current.stageId === newStageId) return;
 
-    const previousStage = current.stage;
+    const previousStageId = current.stageId;
     setItems((prev) =>
       prev.map((item) =>
-        item.id === opportunityId ? { ...item, stage: newStage } : item,
+        item.id === opportunityId ? { ...item, stageId: newStageId } : item,
       ),
     );
 
-    updateOpportunityStage(opportunityId, newStage).catch(() => {
+    updateOpportunityStage(opportunityId, newStageId).catch(() => {
       setItems((prev) =>
         prev.map((item) =>
-          item.id === opportunityId ? { ...item, stage: previousStage } : item,
+          item.id === opportunityId
+            ? { ...item, stageId: previousStageId }
+            : item,
         ),
       );
       toast.error("No se pudo mover la oportunidad. Intenta de nuevo.");
     });
   }
 
-  const columns = OPPORTUNITY_STAGES.map((stage) => ({
+  const columns = stages.map((stage) => ({
     stage,
-    label: OPPORTUNITY_STAGE_LABELS[stage],
-    opportunities: items.filter((item) => item.stage === stage),
+    opportunities: items.filter((item) => item.stageId === stage.id),
   }));
 
   const visibleColumns = columns.filter(
     ({ stage, opportunities: columnOpportunities }) =>
-      columnOpportunities.length > 0 || expandedEmptyStages.includes(stage),
+      columnOpportunities.length > 0 || expandedEmptyStages.includes(stage.id),
   );
   const emptyStages = columns.filter(
     ({ stage, opportunities: columnOpportunities }) =>
-      columnOpportunities.length === 0 && !expandedEmptyStages.includes(stage),
+      columnOpportunities.length === 0 &&
+      !expandedEmptyStages.includes(stage.id),
   );
 
-  function expandEmptyStage(stage: OpportunityStage) {
+  function expandEmptyStage(stageId: string) {
     setExpandedEmptyStages((prev) =>
-      prev.includes(stage) ? prev : [...prev, stage],
+      prev.includes(stageId) ? prev : [...prev, stageId],
     );
   }
 
@@ -102,16 +104,16 @@ export function KanbanBoard({
     <div className="space-y-4">
       {visibleColumns.length > 0 ? (
         <div className="grid grid-cols-1 gap-4 pb-2 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">
-          {visibleColumns.map(
-            ({ stage, label, opportunities: columnOpportunities }) => (
-              <KanbanColumn
-                key={stage}
-                stage={stage}
-                label={label}
-                opportunities={columnOpportunities}
-              />
-            ),
-          )}
+          {visibleColumns.map(({ stage, opportunities: columnOpportunities }) => (
+            <KanbanColumn
+              key={stage.id}
+              stageId={stage.id}
+              label={stage.label}
+              opportunities={columnOpportunities}
+              currency={currency}
+              locale={locale}
+            />
+          ))}
         </div>
       ) : (
         <div className="text-muted-foreground rounded-md border border-dashed p-8 text-center text-sm">
@@ -128,14 +130,14 @@ export function KanbanBoard({
             </span>
           </div>
           <div className="flex flex-wrap gap-2">
-            {emptyStages.map(({ stage, label }) => (
+            {emptyStages.map(({ stage }) => (
               <button
-                key={stage}
+                key={stage.id}
                 type="button"
-                onClick={() => expandEmptyStage(stage)}
+                onClick={() => expandEmptyStage(stage.id)}
                 className="text-muted-foreground hover:bg-muted hover:text-foreground focus-visible:border-ring focus-visible:ring-ring/50 rounded-md border bg-background px-2.5 py-1.5 text-xs font-medium transition-colors outline-none focus-visible:ring-2"
               >
-                {label}
+                {stage.label}
               </button>
             ))}
           </div>

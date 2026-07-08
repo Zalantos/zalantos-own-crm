@@ -1,5 +1,4 @@
-import { prisma } from "@/lib/prisma";
-import { requireAdmin } from "@/lib/session";
+import { requireOrgAdminContext } from "@/lib/tenant";
 import { PageHeader } from "@/components/shared/page-header";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -9,9 +8,9 @@ import { WorkflowToggle } from "./workflow-toggle";
 import { deleteWorkflow } from "./actions";
 
 export default async function WorkflowsAdminPage() {
-  await requireAdmin();
+  const { db } = await requireOrgAdminContext();
 
-  const workflows = await prisma.workflow.findMany({
+  const workflows = await db.workflow.findMany({
     include: { logs: { orderBy: { createdAt: "desc" }, take: 5 } },
     orderBy: { createdAt: "desc" },
   });

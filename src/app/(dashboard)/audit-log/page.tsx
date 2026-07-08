@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { prisma } from "@/lib/prisma";
+import { requireOrgContext } from "@/lib/tenant";
 import { getActivityFeed, TYPE_LABELS } from "@/lib/timeline";
 import { formatDateTime } from "@/lib/utils";
 import { PageHeader } from "@/components/shared/page-header";
@@ -40,9 +40,10 @@ export default async function ActivityPage({
 }) {
   const params = await searchParams;
   const page = params.page ? Number(params.page) : 1;
+  const { db } = await requireOrgContext();
 
   const [{ events, total, pageCount }, users, companies] = await Promise.all([
-    getActivityFeed({
+    getActivityFeed(db, {
       type: params.type || undefined,
       actorId: params.actorId || undefined,
       companyId: params.companyId || undefined,
@@ -50,11 +51,11 @@ export default async function ActivityPage({
       to: params.to ? new Date(`${params.to}T23:59:59`) : undefined,
       page,
     }),
-    prisma.user.findMany({
+    db.user.findMany({
       select: { id: true, name: true, email: true },
       orderBy: { email: "asc" },
     }),
-    prisma.company.findMany({
+    db.company.findMany({
       select: { id: true, name: true },
       orderBy: { name: "asc" },
     }),

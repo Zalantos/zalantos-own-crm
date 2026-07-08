@@ -1,6 +1,7 @@
 import { timingSafeEqual } from "node:crypto";
 import { NextResponse, type NextRequest } from "next/server";
-import { prisma } from "@/lib/prisma";
+import { prismaSystem } from "@/lib/prisma";
+import { forOrg } from "@/lib/tenant";
 import { evaluateWorkflows } from "@/lib/workflows/engine";
 
 // Known placeholder values that must never be treated as a valid secret.
@@ -28,6 +29,35 @@ function isAuthorized(authHeader: string | null, cronSecret: string) {
   return timingSafeEqual(expectedBuffer, providedBuffer);
 }
 
+async function runForOrg(orgId: string) {
+  const db = forOrg(orgId);
+  const overdueOpportunities = await db.opportunity.findMany({
+    where: { status: "open", nextStepDueDate: { lt: new Date() } },
+  });
+
+  let processed = 0;
+  for (const opportunity of overdueOpportunities) {
+    const existingFollowUp = await db.activity.findFirst({
+      where: {
+        opportunityId: opportunity.id,
+        type: "overdue_follow_up",
+        status: "pending",
+      },
+    });
+    if (existingFollowUp) continue;
+
+    await evaluateWorkflows(db, orgId, {
+      entityType: "opportunity",
+      entityId: opportunity.id,
+      eventName: "field_overdue",
+      after: { nextStepDueDate: opportunity.nextStepDueDate },
+    });
+    processed += 1;
+  }
+
+  return { checked: overdueOpportunities.length, processed };
+}
+
 export async function POST(request: NextRequest) {
   const cronSecret = process.env.CRON_SECRET;
   if (!isCronSecretConfigured(cronSecret)) {
@@ -44,32 +74,20 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  const overdueOpportunities = await prisma.opportunity.findMany({
-    where: { status: "open", nextStepDueDate: { lt: new Date() } },
+  const totals = { checked: 0, processed: 0 };
+  const orgs = await prismaSystem.organization.findMany({
+    where: { isActive: true },
+    select: { id: true, slug: true },
   });
-
-  let processed = 0;
-  for (const opportunity of overdueOpportunities) {
-    const existingFollowUp = await prisma.activity.findFirst({
-      where: {
-        opportunityId: opportunity.id,
-        type: "overdue_follow_up",
-        status: "pending",
-      },
-    });
-    if (existingFollowUp) continue;
-
-    await evaluateWorkflows({
-      entityType: "opportunity",
-      entityId: opportunity.id,
-      eventName: "field_overdue",
-      after: { nextStepDueDate: opportunity.nextStepDueDate },
-    });
-    processed += 1;
+  for (const org of orgs) {
+    try {
+      const result = await runForOrg(org.id);
+      totals.checked += result.checked;
+      totals.processed += result.processed;
+    } catch (error) {
+      console.error(`[cron] check-overdue falló para org ${org.slug}`, error);
+    }
   }
 
-  return NextResponse.json({
-    checked: overdueOpportunities.length,
-    processed,
-  });
+  return NextResponse.json(totals);
 }

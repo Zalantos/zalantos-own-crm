@@ -4,8 +4,7 @@ import { revalidatePath } from "next/cache";
 import bcrypt from "bcryptjs";
 import { Prisma, Role } from "@prisma/client";
 import { z } from "zod";
-import { prisma } from "@/lib/prisma";
-import { requireAdmin } from "@/lib/session";
+import { requireOrgAdminContext, type TenantClient } from "@/lib/tenant";
 
 const passwordSchema = z.string().min(8);
 
@@ -31,8 +30,8 @@ export type UserFormState =
     }
   | undefined;
 
-async function countActiveAdmins() {
-  return prisma.user.count({
+async function countActiveAdmins(db: TenantClient) {
+  return db.user.count({
     where: {
       role: "ADMIN",
       isActive: true,
@@ -40,8 +39,8 @@ async function countActiveAdmins() {
   });
 }
 
-async function canRemoveActiveAdmin(userId: string) {
-  const user = await prisma.user.findUnique({
+async function canRemoveActiveAdmin(db: TenantClient, userId: string) {
+  const user = await db.user.findUnique({
     where: { id: userId },
     select: { role: true, isActive: true },
   });
@@ -54,7 +53,7 @@ async function canRemoveActiveAdmin(userId: string) {
     return { ok: true };
   }
 
-  const activeAdmins = await countActiveAdmins();
+  const activeAdmins = await countActiveAdmins(db);
   if (activeAdmins <= 1) {
     return {
       ok: false,
@@ -84,7 +83,7 @@ export async function createUser(
   _prevState: UserFormState,
   formData: FormData,
 ): Promise<UserFormState> {
-  await requireAdmin();
+  const { org, db } = await requireOrgAdminContext();
 
   const raw = Object.fromEntries(formData);
   const parsed = createUserSchema.safeParse({
@@ -102,8 +101,9 @@ export async function createUser(
 
   try {
     const passwordHash = await bcrypt.hash(parsed.data.password, 10);
-    await prisma.user.create({
+    await db.user.create({
       data: {
+        organizationId: org.id,
         email: parsed.data.email,
         name: parsed.data.name,
         passwordHash,
@@ -123,7 +123,7 @@ export async function updateUserRole(
   _prevState: UserFormState,
   formData: FormData,
 ): Promise<UserFormState> {
-  await requireAdmin();
+  const { db } = await requireOrgAdminContext();
 
   const parsed = roleSchema.safeParse(Object.fromEntries(formData));
   if (!parsed.success) {
@@ -131,14 +131,14 @@ export async function updateUserRole(
   }
 
   if (parsed.data.role === "MEMBER") {
-    const guard = await canRemoveActiveAdmin(id);
+    const guard = await canRemoveActiveAdmin(db, id);
     if (!guard.ok) {
       return { error: guard.error };
     }
   }
 
   try {
-    await prisma.user.update({
+    await db.user.update({
       where: { id },
       data: { role: parsed.data.role },
     });
@@ -156,21 +156,21 @@ export async function toggleUserActive(
   prevState: UserFormState,
 ): Promise<UserFormState> {
   void prevState;
-  const currentUser = await requireAdmin();
+  const { user: currentUser, db } = await requireOrgAdminContext();
 
   if (!nextIsActive && id === currentUser.id) {
     return { error: "No puedes desactivar tu propio usuario." };
   }
 
   if (!nextIsActive) {
-    const guard = await canRemoveActiveAdmin(id);
+    const guard = await canRemoveActiveAdmin(db, id);
     if (!guard.ok) {
       return { error: guard.error };
     }
   }
 
   try {
-    await prisma.user.update({
+    await db.user.update({
       where: { id },
       data: { isActive: nextIsActive },
     });
@@ -189,7 +189,7 @@ export async function resetUserPassword(
   _prevState: UserFormState,
   formData: FormData,
 ): Promise<UserFormState> {
-  await requireAdmin();
+  const { db } = await requireOrgAdminContext();
 
   const parsed = resetPasswordSchema.safeParse(Object.fromEntries(formData));
   if (!parsed.success) {
@@ -198,7 +198,7 @@ export async function resetUserPassword(
 
   try {
     const passwordHash = await bcrypt.hash(parsed.data.password, 10);
-    await prisma.user.update({
+    await db.user.update({
       where: { id },
       data: { passwordHash },
     });

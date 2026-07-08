@@ -2,14 +2,13 @@
 
 import { revalidatePath } from "next/cache";
 import type { Prisma } from "@prisma/client";
-import { prisma } from "@/lib/prisma";
-import { requireUser } from "@/lib/session";
+import { requireOrgContext, type TenantClient } from "@/lib/tenant";
 import { applyProposal } from "@/lib/meeting-intelligence/apply";
 import { appendTimelineEvent } from "@/lib/timeline";
 import { ITEM_AFTER_VALUE_SCHEMAS } from "@/lib/zod/proposal-item";
 
-async function getMeetingContext(meetingId: string) {
-  return prisma.meeting.findUniqueOrThrow({
+async function getMeetingContext(db: TenantClient, meetingId: string) {
+  return db.meeting.findUniqueOrThrow({
     where: { id: meetingId },
     select: { companyId: true, opportunityId: true, title: true },
   });
@@ -20,15 +19,16 @@ export async function setItemApproval(
   meetingId: string,
   approved: boolean,
 ) {
-  const user = await requireUser();
-  const item = await prisma.cRMChangeItem.update({
+  const { user, org, db } = await requireOrgContext();
+  const item = await db.cRMChangeItem.update({
     where: { id: itemId },
     data: { approved, status: approved ? "approved" : "pending" },
     select: { type: true, entity: true },
   });
 
-  const meeting = await getMeetingContext(meetingId);
-  await appendTimelineEvent(prisma, {
+  const meeting = await getMeetingContext(db, meetingId);
+  await appendTimelineEvent(db, {
+    organizationId: org.id,
     companyId: meeting.companyId,
     opportunityId: meeting.opportunityId,
     type: "proposal_item_reviewed",
@@ -48,14 +48,15 @@ export async function setAllItemsApproval(
   meetingId: string,
   approved: boolean,
 ) {
-  const user = await requireUser();
-  const { count } = await prisma.cRMChangeItem.updateMany({
+  const { user, org, db } = await requireOrgContext();
+  const { count } = await db.cRMChangeItem.updateMany({
     where: { proposalId, status: { notIn: ["applied"] } },
     data: { approved, status: approved ? "approved" : "pending" },
   });
 
-  const meeting = await getMeetingContext(meetingId);
-  await appendTimelineEvent(prisma, {
+  const meeting = await getMeetingContext(db, meetingId);
+  await appendTimelineEvent(db, {
+    organizationId: org.id,
     companyId: meeting.companyId,
     opportunityId: meeting.opportunityId,
     type: "proposal_bulk_reviewed",
@@ -75,9 +76,9 @@ export async function updateItemValue(
   meetingId: string,
   afterValue: unknown,
 ): Promise<{ error?: string }> {
-  const user = await requireUser();
+  const { user, org, db } = await requireOrgContext();
 
-  const item = await prisma.cRMChangeItem.findUnique({
+  const item = await db.cRMChangeItem.findUnique({
     where: { id: itemId },
     include: { proposal: { select: { status: true } } },
   });
@@ -97,7 +98,7 @@ export async function updateItemValue(
   }
 
   // Editing implies accepting the corrected version, so the item is approved.
-  await prisma.cRMChangeItem.update({
+  await db.cRMChangeItem.update({
     where: { id: itemId },
     data: {
       afterValue: parsed.data as Prisma.InputJsonValue,
@@ -106,8 +107,9 @@ export async function updateItemValue(
     },
   });
 
-  const meeting = await getMeetingContext(meetingId);
-  await appendTimelineEvent(prisma, {
+  const meeting = await getMeetingContext(db, meetingId);
+  await appendTimelineEvent(db, {
+    organizationId: org.id,
     companyId: meeting.companyId,
     opportunityId: meeting.opportunityId,
     type: "proposal_item_edited",
@@ -127,8 +129,8 @@ export async function applyProposalAction(
   proposalId: string,
   meetingId: string,
 ) {
-  const user = await requireUser();
-  await applyProposal(proposalId, user.id);
+  const { user, org, db } = await requireOrgContext();
+  await applyProposal(db, org.id, proposalId, user.id);
   revalidatePath(`/meetings/${meetingId}`);
 }
 
@@ -136,14 +138,15 @@ export async function rejectProposalAction(
   proposalId: string,
   meetingId: string,
 ) {
-  const user = await requireUser();
-  await prisma.cRMChangeProposal.update({
+  const { user, org, db } = await requireOrgContext();
+  await db.cRMChangeProposal.update({
     where: { id: proposalId },
     data: { status: "rejected", reviewedBy: user.id, reviewedAt: new Date() },
   });
 
-  const meeting = await getMeetingContext(meetingId);
-  await appendTimelineEvent(prisma, {
+  const meeting = await getMeetingContext(db, meetingId);
+  await appendTimelineEvent(db, {
+    organizationId: org.id,
     companyId: meeting.companyId,
     opportunityId: meeting.opportunityId,
     type: "proposal_rejected",

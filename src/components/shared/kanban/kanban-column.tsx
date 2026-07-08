@@ -5,19 +5,22 @@ import {
   KanbanCard,
   type KanbanOpportunity,
 } from "@/components/shared/kanban/kanban-card";
-import { formatCurrency } from "@/lib/currency";
-import type { OpportunityStage } from "@prisma/client";
+import { formatCurrencyValue } from "@/lib/format";
 
 export function KanbanColumn({
-  stage,
+  stageId,
   label,
   opportunities,
+  currency,
+  locale,
 }: {
-  stage: OpportunityStage;
+  stageId: string;
   label: string;
   opportunities: KanbanOpportunity[];
+  currency: string;
+  locale: string;
 }) {
-  const { setNodeRef, isOver } = useDroppable({ id: stage });
+  const { setNodeRef, isOver } = useDroppable({ id: stageId });
   const totalValue = opportunities.reduce(
     (total, opportunity) => total + (opportunity.estimatedValue ?? 0),
     0,
@@ -43,14 +46,19 @@ export function KanbanColumn({
             Valor
           </p>
           <p className="mt-1 text-xs font-semibold">
-            {formatCurrency(totalValue)}
+            {formatCurrencyValue(totalValue, currency, locale)}
           </p>
         </div>
       </div>
 
       <div className="flex min-h-20 flex-1 flex-col gap-2">
         {opportunities.map((opportunity) => (
-          <KanbanCard key={opportunity.id} opportunity={opportunity} />
+          <KanbanCard
+            key={opportunity.id}
+            opportunity={opportunity}
+            currency={currency}
+            locale={locale}
+          />
         ))}
         {opportunities.length === 0 && (
           <div className="text-muted-foreground bg-background/70 flex flex-1 items-center justify-center rounded-md border border-dashed p-4 text-center text-xs">

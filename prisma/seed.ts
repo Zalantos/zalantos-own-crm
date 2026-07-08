@@ -2,6 +2,7 @@ import "dotenv/config";
 import { PrismaClient } from "@prisma/client";
 import { PrismaPg } from "@prisma/adapter-pg";
 import bcrypt from "bcryptjs";
+import { DEFAULT_PIPELINE_STAGES } from "../src/lib/pipeline/stages";
 
 const adapter = new PrismaPg({ connectionString: process.env.DATABASE_URL });
 const prisma = new PrismaClient({ adapter });
@@ -12,7 +13,41 @@ function daysFromNow(days: number) {
   return date;
 }
 
-async function seedAdminUser() {
+// La migración multi_tenant_foundation ya crea la org Zalantos y sus 12
+// etapas (ids deterministas stage_zal_<key>) sobre datos existentes; en una
+// BD nueva (migrate reset) ese INSERT también corre, así que acá alcanza con
+// asegurarla por upsert (idempotente) y traer las etapas.
+async function seedOrganization() {
+  const org = await prisma.organization.upsert({
+    where: { slug: "zalantos" },
+    update: {},
+    create: {
+      id: "org_zalantos",
+      name: "Zalantos",
+      slug: "zalantos",
+      currency: "CLP",
+      timezone: "America/Santiago",
+      locale: "es-CL",
+    },
+  });
+
+  for (const stage of DEFAULT_PIPELINE_STAGES) {
+    await prisma.pipelineStage.upsert({
+      where: { organizationId_key: { organizationId: org.id, key: stage.key } },
+      update: {},
+      create: { ...stage, organizationId: org.id },
+    });
+  }
+
+  const stages = await prisma.pipelineStage.findMany({
+    where: { organizationId: org.id },
+  });
+  const stageIdByKey = new Map(stages.map((stage) => [stage.key, stage.id]));
+
+  return { org, stageIdByKey };
+}
+
+async function seedAdminUser(organizationId: string) {
   const email = process.env.ADMIN_EMAIL;
   const password = process.env.ADMIN_PASSWORD;
 
@@ -32,6 +67,8 @@ async function seedAdminUser() {
       passwordHash,
       name: "Admin",
       role: "ADMIN",
+      organizationId,
+      isSuperAdmin: true,
     },
   });
   await prisma.teamMember.upsert({
@@ -42,6 +79,7 @@ async function seedAdminUser() {
       name: admin.name ?? admin.email,
     },
     create: {
+      organizationId,
       name: admin.name ?? admin.email,
       email: admin.email,
       userId: admin.id,
@@ -52,8 +90,16 @@ async function seedAdminUser() {
 }
 
 async function main() {
+  const { org, stageIdByKey } = await seedOrganization();
+  const organizationId = org.id;
+  const stageId = (key: string) => {
+    const id = stageIdByKey.get(key);
+    if (!id) throw new Error(`Etapa desconocida en seed: ${key}`);
+    return id;
+  };
+
   // ---------- Admin user ----------
-  await seedAdminUser();
+  await seedAdminUser(organizationId);
 
   // ---------- Companies ----------
   const apv = await prisma.company.upsert({
@@ -61,6 +107,7 @@ async function main() {
     update: {},
     create: {
       id: "seed-company-apv",
+      organizationId,
       name: "APV Ventanas",
       website: "https://apvventanas.cl",
       industry: "Manufactura / Construcción",
@@ -82,6 +129,7 @@ async function main() {
     update: {},
     create: {
       id: "seed-company-polpaico",
+      organizationId,
       name: "Polpaico",
       website: "https://polpaico.cl",
       industry: "Materiales de construcción / Cemento",
@@ -103,6 +151,7 @@ async function main() {
     update: {},
     create: {
       id: "seed-company-repopack",
+      organizationId,
       name: "Repopack / Temática Chile",
       website: "https://repopack.cl",
       industry: "Empaques / Retail",
@@ -125,6 +174,7 @@ async function main() {
     update: {},
     create: {
       id: "seed-person-apv-dm",
+      organizationId,
       companyId: apv.id,
       firstName: "Rodrigo",
       lastName: "Fuentes",
@@ -141,6 +191,7 @@ async function main() {
     update: {},
     create: {
       id: "seed-person-apv-sponsor",
+      organizationId,
       companyId: apv.id,
       firstName: "Camila",
       lastName: "Soto",
@@ -157,6 +208,7 @@ async function main() {
     update: {},
     create: {
       id: "seed-person-polpaico-dm",
+      organizationId,
       companyId: polpaico.id,
       firstName: "Francisca",
       lastName: "Muñoz",
@@ -172,6 +224,7 @@ async function main() {
     update: {},
     create: {
       id: "seed-person-polpaico-sponsor",
+      organizationId,
       companyId: polpaico.id,
       firstName: "Ignacio",
       lastName: "Reyes",
@@ -187,6 +240,7 @@ async function main() {
     update: {},
     create: {
       id: "seed-person-repopack-dm",
+      organizationId,
       companyId: repopack.id,
       firstName: "Valentina",
       lastName: "Pizarro",
@@ -203,9 +257,10 @@ async function main() {
     update: {},
     create: {
       id: "seed-opp-apv-propuesta",
+      organizationId,
       companyId: apv.id,
       name: "Automatización de cotizaciones APV",
-      stage: "propuesta_principal",
+      stageId: stageId("propuesta_principal"),
       estimatedValue: 8500000,
       probability: 60,
       source: "referido",
@@ -226,9 +281,10 @@ async function main() {
     update: {},
     create: {
       id: "seed-opp-polpaico-discovery",
+      organizationId,
       companyId: polpaico.id,
       name: "CRM comercial para fuerza de ventas Polpaico",
-      stage: "reunion_discovery",
+      stageId: stageId("reunion_discovery"),
       estimatedValue: 15000000,
       probability: 30,
       source: "outbound",
@@ -249,9 +305,10 @@ async function main() {
     update: {},
     create: {
       id: "seed-opp-polpaico-negociacion",
+      organizationId,
       companyId: polpaico.id,
       name: "Sprint 0 - Diagnóstico procesos logísticos",
-      stage: "negociacion",
+      stageId: stageId("negociacion"),
       estimatedValue: 4000000,
       probability: 70,
       source: "referido",
@@ -270,9 +327,10 @@ async function main() {
     update: {},
     create: {
       id: "seed-opp-repopack-lead",
+      organizationId,
       companyId: repopack.id,
       name: "Tienda online Repopack",
-      stage: "lead_identificado",
+      stageId: stageId("lead_identificado"),
       estimatedValue: 3000000,
       probability: 10,
       source: "evento",
@@ -290,9 +348,10 @@ async function main() {
     update: {},
     create: {
       id: "seed-opp-repopack-ganado",
+      organizationId,
       companyId: repopack.id,
       name: "Rediseño catálogo digital Repopack",
-      stage: "ganado",
+      stageId: stageId("ganado"),
       estimatedValue: 2200000,
       probability: 100,
       source: "referido",
@@ -310,9 +369,10 @@ async function main() {
     update: {},
     create: {
       id: "seed-opp-repopack-perdido",
+      organizationId,
       companyId: repopack.id,
       name: "Integración ERP Repopack",
-      stage: "perdido",
+      stageId: stageId("perdido"),
       estimatedValue: 6000000,
       probability: 0,
       source: "outbound",
@@ -329,6 +389,7 @@ async function main() {
     update: {},
     create: {
       id: "seed-activity-apv-overdue",
+      organizationId,
       companyId: apv.id,
       opportunityId: "seed-opp-apv-propuesta",
       type: "follow_up",
@@ -343,6 +404,7 @@ async function main() {
     update: {},
     create: {
       id: "seed-activity-polpaico-call",
+      organizationId,
       companyId: polpaico.id,
       opportunityId: "seed-opp-polpaico-discovery",
       personId: polpaicoSponsor.id,
@@ -358,6 +420,7 @@ async function main() {
     update: {},
     create: {
       id: "seed-activity-repopack-completed",
+      organizationId,
       companyId: repopack.id,
       opportunityId: "seed-opp-repopack-ganado",
       type: "meeting",
@@ -372,6 +435,7 @@ async function main() {
     update: {},
     create: {
       id: "seed-activity-apv-task",
+      organizationId,
       companyId: apv.id,
       personId: apvSponsor.id,
       type: "task",
@@ -387,6 +451,7 @@ async function main() {
     update: {},
     create: {
       id: "seed-note-polpaico-discovery",
+      organizationId,
       opportunityId: "seed-opp-polpaico-discovery",
       title: "Notas de discovery call",
       body: "Participaron Francisca (Gerenta TI) e Ignacio (Jefe de Proyectos).\n\nDolor principal: cada zona de ventas usa una planilla distinta para trackear oportunidades, no hay forecast consolidado a nivel nacional.\n\nDecisión de compra pasa por Francisca, pero el presupuesto lo aprueba gerencia general. Ignacio es el sponsor day-to-day.\n\nPróximos pasos: preparar propuesta de Sprint 0 enfocada en mapear los procesos de las 3 zonas más grandes.",
@@ -398,6 +463,7 @@ async function main() {
     update: {},
     create: {
       id: "seed-note-apv-context",
+      organizationId,
       companyId: apv.id,
       title: "Contexto comercial APV",
       body: "APV Ventanas está creciendo ~20% anual y el equipo comercial (5 personas) ya no da abasto con Excel. Rodrigo (Gerente Comercial) es el decisor y quiere ver ROI concreto en reducción de tiempo de cotización.",
@@ -407,7 +473,8 @@ async function main() {
   // ---------- Custom field example ----------
   await prisma.customFieldDefinition.upsert({
     where: {
-      entityType_fieldName: {
+      organizationId_entityType_fieldName: {
+        organizationId,
         entityType: "opportunity",
         fieldName: "fuenteLead",
       },
@@ -415,6 +482,7 @@ async function main() {
     update: {},
     create: {
       id: "seed-customfield-fuente-lead",
+      organizationId,
       entityType: "opportunity",
       fieldName: "fuenteLead",
       fieldLabel: "Fuente del lead",
@@ -430,6 +498,7 @@ async function main() {
     update: {},
     create: {
       id: "seed-workflow-discovery",
+      organizationId,
       name: "Resumen post reunión discovery",
       description:
         'Cuando una oportunidad pasa a "reunión discovery", crea una tarea para enviar el resumen de la reunión.',
@@ -455,6 +524,7 @@ async function main() {
     update: {},
     create: {
       id: "seed-workflow-propuesta",
+      organizationId,
       name: "Seguimiento de propuesta principal",
       description:
         'Cuando una oportunidad pasa a "propuesta principal", crea una tarea de seguimiento.',
@@ -480,6 +550,7 @@ async function main() {
     update: {},
     create: {
       id: "seed-workflow-overdue",
+      organizationId,
       name: "Alerta de próximo paso vencido",
       description:
         "Si el próximo paso de una oportunidad abierta está vencido, crea una tarea de seguimiento. Se evalúa vía el endpoint de cron /api/cron/check-overdue.",

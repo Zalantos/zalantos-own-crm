@@ -6,8 +6,7 @@ import {
   toUIMessageStream,
   type UIMessage,
 } from "ai";
-import { getCurrentUser } from "@/lib/session";
-import { prisma } from "@/lib/prisma";
+import { getOrgContext } from "@/lib/tenant";
 import { agentConfig } from "@/lib/agent/config";
 import { resolveAgentModel } from "@/lib/agent/model";
 import { resolvePageContext, type PageContext } from "@/lib/agent/context";
@@ -25,10 +24,11 @@ type ChatRequestBody = {
 };
 
 export async function POST(req: Request) {
-  const user = await getCurrentUser();
-  if (!user?.id) {
+  const ctx = await getOrgContext();
+  if (!ctx) {
     return Response.json({ error: "No autenticado" }, { status: 401 });
   }
+  const { user, org, db } = ctx;
   const userId = user.id;
 
   const { messages, threadId, context }: ChatRequestBody = await req.json();
@@ -36,7 +36,7 @@ export async function POST(req: Request) {
     return Response.json({ error: "Falta threadId" }, { status: 400 });
   }
 
-  const thread = await prisma.agentChatThread.findUnique({
+  const thread = await db.agentChatThread.findUnique({
     where: { id: threadId },
     select: { id: true, userId: true, title: true },
   });
@@ -51,31 +51,30 @@ export async function POST(req: Request) {
       .map((part) => (part.type === "text" ? part.text : ""))
       .join(" ")
       .trim();
-    await prisma.$transaction([
-      prisma.agentChatMessage.upsert({
-        where: { id: userMessage.id },
-        create: {
-          id: userMessage.id,
-          threadId,
-          role: "user",
-          parts: userMessage.parts as unknown as Prisma.InputJsonValue,
-        },
-        update: {
-          parts: userMessage.parts as unknown as Prisma.InputJsonValue,
-        },
-      }),
-      prisma.agentChatThread.update({
-        where: { id: threadId },
-        data: thread.title ? {} : { title: text.slice(0, 120) || null },
-      }),
-    ]);
+    await db.agentChatMessage.upsert({
+      where: { id: userMessage.id },
+      create: {
+        id: userMessage.id,
+        organizationId: org.id,
+        threadId,
+        role: "user",
+        parts: userMessage.parts as unknown as Prisma.InputJsonValue,
+      },
+      update: {
+        parts: userMessage.parts as unknown as Prisma.InputJsonValue,
+      },
+    });
+    await db.agentChatThread.update({
+      where: { id: threadId },
+      data: thread.title ? {} : { title: text.slice(0, 120) || null },
+    });
   }
 
-  const pageContext = context ? await resolvePageContext(context) : null;
+  const pageContext = context ? await resolvePageContext(db, context) : null;
 
   // The latest attachments of the thread ride along every turn (excerpt only);
   // the model pages through longer documents with read_attachment.
-  const attachments = await prisma.agentAttachment.findMany({
+  const attachments = await db.agentAttachment.findMany({
     where: { threadId, status: "extracted" },
     orderBy: { createdAt: "desc" },
     take: 5,
@@ -96,11 +95,18 @@ export async function POST(req: Request) {
   const result = streamText({
     model: resolveAgentModel(),
     system: buildAgentSystemPrompt({
+      orgName: org.brandName ?? org.name,
       pageContext,
       attachments: promptAttachments,
     }),
     messages: await convertToModelMessages(recentMessages),
-    tools: buildAgentTools({ userId, threadId, pageContext }),
+    tools: buildAgentTools({
+      organizationId: org.id,
+      db,
+      userId,
+      threadId,
+      pageContext,
+    }),
     stopWhen: stepCountIs(agentConfig.maxSteps),
   });
 
@@ -117,10 +123,11 @@ export async function POST(req: Request) {
       originalMessages: messages,
       onFinish: async ({ responseMessage }) => {
         try {
-          await prisma.agentChatMessage.upsert({
+          await db.agentChatMessage.upsert({
             where: { id: responseMessage.id },
             create: {
               id: responseMessage.id,
+              organizationId: org.id,
               threadId,
               role: "assistant",
               parts: responseMessage.parts as unknown as Prisma.InputJsonValue,

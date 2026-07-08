@@ -1,7 +1,6 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { prisma } from "@/lib/prisma";
-import { requireUser } from "@/lib/session";
+import { requireOrgContext } from "@/lib/tenant";
 import { PageHeader } from "@/components/shared/page-header";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -20,13 +19,16 @@ export default async function CompanyDetailPage({
   params: Promise<{ id: string }>;
 }) {
   const { id } = await params;
-  const user = await requireUser();
+  const { user, db } = await requireOrgContext();
 
-  const company = await prisma.company.findUnique({
+  const company = await db.company.findUnique({
     where: { id },
     include: {
       people: { orderBy: { createdAt: "desc" } },
-      opportunities: { orderBy: { createdAt: "desc" } },
+      opportunities: {
+        orderBy: { createdAt: "desc" },
+        include: { stage: { select: { label: true, isWon: true, isLost: true } } },
+      },
     },
   });
   if (!company) notFound();

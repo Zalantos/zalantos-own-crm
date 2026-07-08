@@ -8,21 +8,6 @@ datasource db {
 
 // ---------- Enums ----------
 
-enum OpportunityStage {
-  lead_identificado
-  investigacion_realizada
-  primer_contacto
-  reunion_discovery
-  dolor_validado
-  sprint_0_ofrecido
-  sprint_0_aceptado
-  diagnostico_realizado
-  propuesta_principal
-  negociacion
-  ganado
-  perdido
-}
-
 enum EntityType {
   company
   person
@@ -65,26 +50,139 @@ enum Role {
   MEMBER
 }
 
+// ---------- Multi-tenancy ----------
+
+// Cada empresa cliente del SaaS. Los settings viven inline (pocos campos,
+// sin billing) para evitar un join extra por request.
+model Organization {
+  id       String  @id @default(cuid())
+  name     String
+  slug     String  @unique
+  isActive Boolean @default(true)
+
+  currency    String  @default("CLP") // ISO 4217
+  timezone    String  @default("America/Santiago") // IANA
+  locale      String  @default("es-CL") // BCP 47, solo afecta formateo Intl
+  brandName   String? // fallback: name
+  logoUrl     String?
+  accentColor String  @default("#0f766e")
+
+  // Gateway de integraciones por org; si es null se usa el env global.
+  integrationGatewayUrl    String?
+  // Cifrado AES-256-GCM con SETTINGS_ENCRYPTION_KEY; nunca se muestra en UI.
+  integrationGatewaySecret String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  users                  User[]
+  pipelineStages         PipelineStage[]
+  invitations            Invitation[]
+  passwordResetTokens    PasswordResetToken[]
+  companies              Company[]
+  people                 Person[]
+  opportunities          Opportunity[]
+  activities             Activity[]
+  notes                  Note[]
+  savedViews             SavedView[]
+  customFieldDefinitions CustomFieldDefinition[]
+  customFieldValues      CustomFieldValue[]
+  workflows              Workflow[]
+  workflowLogs           WorkflowLog[]
+  integrationDeliveries  IntegrationDelivery[]
+  teamMembers            TeamMember[]
+  meetings               Meeting[]
+  evidence               Evidence[]
+  changeProposals        CRMChangeProposal[]
+  changeItems            CRMChangeItem[]
+  agentChatThreads       AgentChatThread[]
+  agentChatMessages      AgentChatMessage[]
+  agentAttachments       AgentAttachment[]
+  timelineEvents         TimelineEvent[]
+
+  @@map("organizations")
+}
+
+// Etapas del pipeline configurables por organización (reemplaza al enum
+// OpportunityStage). `key` es un slug estable que usan el agente y webhooks.
+model PipelineStage {
+  id             String       @id @default(cuid())
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  key            String
+  label          String
+  sortOrder      Int
+  color          String?
+  isWon          Boolean      @default(false)
+  isLost         Boolean      @default(false)
+  // Retirar en vez de borrar cuando la etapa tiene oportunidades.
+  isActive       Boolean      @default(true)
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+
+  opportunities Opportunity[]
+
+  @@unique([organizationId, key])
+  @@unique([organizationId, sortOrder])
+  @@index([organizationId])
+  @@map("pipeline_stages")
+}
+
+model Invitation {
+  id             String       @id @default(cuid())
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  email          String
+  role           Role         @default(MEMBER)
+  // sha256 del token; el token crudo solo se muestra/envía una vez.
+  tokenHash      String       @unique
+  invitedById    String?
+  expiresAt      DateTime
+  acceptedAt     DateTime?
+  createdAt      DateTime     @default(now())
+
+  @@index([organizationId, email])
+  @@map("invitations")
+}
+
+model PasswordResetToken {
+  id             String        @id @default(cuid())
+  // Nullable: los super-admins sin org también pueden resetear password.
+  organizationId String?
+  organization   Organization? @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  userId         String
+  user           User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  tokenHash      String        @unique
+  expiresAt      DateTime
+  usedAt         DateTime?
+  createdAt      DateTime      @default(now())
+
+  @@index([userId])
+  @@map("password_reset_tokens")
+}
+
 // ---------- Core CRM entities ----------
 
 model Company {
-  id          String   @id @default(cuid())
-  name        String
-  website     String?
-  industry    String?
-  size        String?
-  country     String?
-  city        String?
-  linkedinUrl String?
-  description String?  @db.Text
-  icpScore    Int?
-  fitScore    Int?
-  painScore   Int?
-  status      String   @default("active")
-  createdById String?
-  createdBy   User?    @relation(fields: [createdById], references: [id], onDelete: SetNull)
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  id             String       @id @default(cuid())
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  name           String
+  website        String?
+  industry       String?
+  size           String?
+  country        String?
+  city           String?
+  linkedinUrl    String?
+  description    String?      @db.Text
+  icpScore       Int?
+  fitScore       Int?
+  painScore      Int?
+  status         String       @default("active")
+  createdById    String?
+  createdBy      User?        @relation(fields: [createdById], references: [id], onDelete: SetNull)
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
 
   people         Person[]
   opportunities  Opportunity[]
@@ -93,113 +191,124 @@ model Company {
   meetings       Meeting[]
   timelineEvents TimelineEvent[]
 
-  @@index([name])
-  @@index([status])
+  @@index([organizationId, name])
+  @@index([organizationId, status])
   @@index([createdById])
   @@map("companies")
 }
 
 model Person {
-  id              String   @id @default(cuid())
+  id              String       @id @default(cuid())
+  organizationId  String
+  organization    Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
   companyId       String?
-  company         Company? @relation(fields: [companyId], references: [id], onDelete: SetNull)
+  company         Company?     @relation(fields: [companyId], references: [id], onDelete: SetNull)
   firstName       String
   lastName        String
   email           String?
   phone           String?
   roleTitle       String?
   linkedinUrl     String?
-  isDecisionMaker Boolean  @default(false)
-  isSponsor       Boolean  @default(false)
-  notes           String?  @db.Text
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
+  isDecisionMaker Boolean      @default(false)
+  isSponsor       Boolean      @default(false)
+  notes           String?      @db.Text
+  createdAt       DateTime     @default(now())
+  updatedAt       DateTime     @updatedAt
 
   activities                   Activity[]
   notesRel                     Note[]
   opportunitiesAsDecisionMaker Opportunity[] @relation("OpportunityDecisionMaker")
   opportunitiesAsSponsor       Opportunity[] @relation("OpportunitySponsor")
 
+  @@index([organizationId])
   @@index([companyId])
   @@index([email])
   @@map("people")
 }
 
 model Opportunity {
-  id                String           @id @default(cuid())
+  id                String        @id @default(cuid())
+  organizationId    String
+  organization      Organization  @relation(fields: [organizationId], references: [id], onDelete: Restrict)
   companyId         String
-  company           Company          @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  company           Company       @relation(fields: [companyId], references: [id], onDelete: Cascade)
   name              String
-  stage             OpportunityStage @default(lead_identificado)
-  estimatedValue    Decimal?         @db.Decimal(14, 2)
+  stageId           String
+  stage             PipelineStage @relation(fields: [stageId], references: [id], onDelete: Restrict)
+  estimatedValue    Decimal?      @db.Decimal(14, 2)
   probability       Int?
   source            String?
-  mainPain          String?          @db.Text
+  mainPain          String?       @db.Text
   urgency           String?
   decisionMakerId   String?
-  decisionMaker     Person?          @relation("OpportunityDecisionMaker", fields: [decisionMakerId], references: [id], onDelete: SetNull)
+  decisionMaker     Person?       @relation("OpportunityDecisionMaker", fields: [decisionMakerId], references: [id], onDelete: SetNull)
   sponsorId         String?
-  sponsor           Person?          @relation("OpportunitySponsor", fields: [sponsorId], references: [id], onDelete: SetNull)
+  sponsor           Person?       @relation("OpportunitySponsor", fields: [sponsorId], references: [id], onDelete: SetNull)
   nextStep          String?
   nextStepDueDate   DateTime?
   expectedCloseDate DateTime?
-  status            String           @default("open")
+  status            String        @default("open")
   lossReason        String?
-  createdAt         DateTime         @default(now())
-  updatedAt         DateTime         @updatedAt
+  createdAt         DateTime      @default(now())
+  updatedAt         DateTime      @updatedAt
 
   activities Activity[]
   notes      Note[]
   meetings   Meeting[]
 
+  @@index([organizationId, stageId])
+  @@index([organizationId, status])
   @@index([companyId])
-  @@index([stage])
-  @@index([status])
   @@index([nextStepDueDate])
   @@map("opportunities")
 }
 
 model Activity {
-  id            String       @id @default(cuid())
-  companyId     String?
-  company       Company?     @relation(fields: [companyId], references: [id], onDelete: SetNull)
-  personId      String?
-  person        Person?      @relation(fields: [personId], references: [id], onDelete: SetNull)
-  opportunityId String?
-  opportunity   Opportunity? @relation(fields: [opportunityId], references: [id], onDelete: SetNull)
-  assigneeId    String?
-  assignee      TeamMember?  @relation("ActivityAssignee", fields: [assigneeId], references: [id], onDelete: SetNull)
-  type          String
-  title         String
-  description   String?      @db.Text
-  dueDate       DateTime?
-  completedAt   DateTime?
-  status        String       @default("pending")
-  createdAt     DateTime     @default(now())
-  updatedAt     DateTime     @updatedAt
+  id             String       @id @default(cuid())
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  companyId      String?
+  company        Company?     @relation(fields: [companyId], references: [id], onDelete: SetNull)
+  personId       String?
+  person         Person?      @relation(fields: [personId], references: [id], onDelete: SetNull)
+  opportunityId  String?
+  opportunity    Opportunity? @relation(fields: [opportunityId], references: [id], onDelete: SetNull)
+  assigneeId     String?
+  assignee       TeamMember?  @relation("ActivityAssignee", fields: [assigneeId], references: [id], onDelete: SetNull)
+  type           String
+  title          String
+  description    String?      @db.Text
+  dueDate        DateTime?
+  completedAt    DateTime?
+  status         String       @default("pending")
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
 
+  @@index([organizationId, status])
+  @@index([organizationId, dueDate])
   @@index([companyId])
   @@index([personId])
   @@index([opportunityId])
   @@index([assigneeId])
-  @@index([status])
-  @@index([dueDate])
   @@map("activities")
 }
 
 model Note {
-  id            String       @id @default(cuid())
-  companyId     String?
-  company       Company?     @relation(fields: [companyId], references: [id], onDelete: SetNull)
-  personId      String?
-  person        Person?      @relation(fields: [personId], references: [id], onDelete: SetNull)
-  opportunityId String?
-  opportunity   Opportunity? @relation(fields: [opportunityId], references: [id], onDelete: SetNull)
-  title         String?
-  body          String       @db.Text
-  createdAt     DateTime     @default(now())
-  updatedAt     DateTime     @updatedAt
+  id             String       @id @default(cuid())
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  companyId      String?
+  company        Company?     @relation(fields: [companyId], references: [id], onDelete: SetNull)
+  personId       String?
+  person         Person?      @relation(fields: [personId], references: [id], onDelete: SetNull)
+  opportunityId  String?
+  opportunity    Opportunity? @relation(fields: [opportunityId], references: [id], onDelete: SetNull)
+  title          String?
+  body           String       @db.Text
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
 
+  @@index([organizationId])
   @@index([companyId])
   @@index([personId])
   @@index([opportunityId])
@@ -209,41 +318,50 @@ model Note {
 // ---------- Views / persistence ----------
 
 model SavedView {
-  id                 String     @id @default(cuid())
+  id                 String       @id @default(cuid())
+  organizationId     String
+  organization       Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  // Compartidas por org en v1; se registra el creador para permisos futuros.
+  createdById        String?
+  createdBy          User?        @relation(fields: [createdById], references: [id], onDelete: SetNull)
   name               String
   entityType         EntityType
   filtersJson        Json?
   sortJson           Json?
   visibleColumnsJson Json?
-  createdAt          DateTime   @default(now())
-  updatedAt          DateTime   @updatedAt
+  createdAt          DateTime     @default(now())
+  updatedAt          DateTime     @updatedAt
 
-  @@index([entityType])
+  @@index([organizationId, entityType])
   @@map("saved_views")
 }
 
 // ---------- Custom fields ----------
 
 model CustomFieldDefinition {
-  id          String          @id @default(cuid())
-  entityType  EntityType
-  fieldName   String
-  fieldLabel  String
-  fieldType   CustomFieldType
-  optionsJson Json?
-  isRequired  Boolean         @default(false)
-  createdAt   DateTime        @default(now())
-  updatedAt   DateTime        @updatedAt
+  id             String          @id @default(cuid())
+  organizationId String
+  organization   Organization    @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  entityType     EntityType
+  fieldName      String
+  fieldLabel     String
+  fieldType      CustomFieldType
+  optionsJson    Json?
+  isRequired     Boolean         @default(false)
+  createdAt      DateTime        @default(now())
+  updatedAt      DateTime        @updatedAt
 
   values CustomFieldValue[]
 
-  @@unique([entityType, fieldName])
-  @@index([entityType])
+  @@unique([organizationId, entityType, fieldName])
+  @@index([organizationId, entityType])
   @@map("custom_field_definitions")
 }
 
 model CustomFieldValue {
   id                String                @id @default(cuid())
+  organizationId    String
+  organization      Organization          @relation(fields: [organizationId], references: [id], onDelete: Restrict)
   entityType        EntityType
   entityId          String
   fieldDefinitionId String
@@ -257,6 +375,7 @@ model CustomFieldValue {
   updatedAt         DateTime              @updatedAt
 
   @@unique([entityType, entityId, fieldDefinitionId])
+  @@index([organizationId])
   @@index([entityType, entityId])
   @@index([fieldDefinitionId])
   @@map("custom_field_values")
@@ -265,34 +384,39 @@ model CustomFieldValue {
 // ---------- Workflows ----------
 
 model Workflow {
-  id             String     @id @default(cuid())
+  id             String       @id @default(cuid())
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
   name           String
-  description    String?    @db.Text
+  description    String?      @db.Text
   triggerEntity  EntityType
   triggerEvent   String
   conditionsJson Json
   actionsJson    Json
-  isActive       Boolean    @default(true)
-  createdAt      DateTime   @default(now())
-  updatedAt      DateTime   @updatedAt
+  isActive       Boolean      @default(true)
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
 
   logs WorkflowLog[]
 
-  @@index([triggerEntity, triggerEvent])
+  @@index([organizationId, triggerEntity, triggerEvent])
   @@index([isActive])
   @@map("workflows")
 }
 
 model WorkflowLog {
-  id         String     @id @default(cuid())
-  workflowId String
-  workflow   Workflow   @relation(fields: [workflowId], references: [id], onDelete: Cascade)
-  entityType EntityType
-  entityId   String
-  status     String
-  message    String?    @db.Text
-  createdAt  DateTime   @default(now())
+  id             String       @id @default(cuid())
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  workflowId     String
+  workflow       Workflow     @relation(fields: [workflowId], references: [id], onDelete: Cascade)
+  entityType     EntityType
+  entityId       String
+  status         String
+  message        String?      @db.Text
+  createdAt      DateTime     @default(now())
 
+  @@index([organizationId])
   @@index([workflowId])
   @@index([entityType, entityId])
   @@map("workflow_logs")
@@ -301,23 +425,26 @@ model WorkflowLog {
 // ---------- Integrations ----------
 
 model IntegrationDelivery {
-  id                   String     @id @default(cuid())
+  id                   String       @id @default(cuid())
+  organizationId       String
+  organization         Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
   type                 String
   channel              String
   entityType           EntityType
   entityId             String
   recipientJson        Json
   payloadJson          Json
-  dedupeKey            String     @unique
+  dedupeKey            String
   // pending | sent | failed
-  status               String     @default("pending")
-  attempts             Int        @default(0)
-  lastError            String?    @db.Text
+  status               String       @default("pending")
+  attempts             Int          @default(0)
+  lastError            String?      @db.Text
   providerResponseJson Json?
   sentAt               DateTime?
-  createdAt            DateTime   @default(now())
-  updatedAt            DateTime   @updatedAt
+  createdAt            DateTime     @default(now())
+  updatedAt            DateTime     @updatedAt
 
+  @@unique([organizationId, dedupeKey])
   @@index([status])
   @@index([type])
   @@index([channel])
@@ -329,18 +456,26 @@ model IntegrationDelivery {
 // ---------- Auth ----------
 
 model User {
-  id           String   @id @default(cuid())
-  email        String   @unique
-  passwordHash String
-  name         String?
-  role         Role     @default(MEMBER)
-  isActive     Boolean  @default(true)
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
+  id             String        @id @default(cuid())
+  // Nullable SOLO para super-admins sin tenant (CHECK en SQL). Un super-admin
+  // puede además pertenecer a una org (ej. el admin de Zalantos).
+  organizationId String?
+  organization   Organization? @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  email          String        @unique
+  passwordHash   String
+  name           String?
+  role           Role          @default(MEMBER)
+  isActive       Boolean       @default(true)
+  isSuperAdmin   Boolean       @default(false)
+  createdAt      DateTime      @default(now())
+  updatedAt      DateTime      @updatedAt
 
-  teamMember       TeamMember?
-  createdCompanies Company[]
+  teamMember          TeamMember?
+  createdCompanies    Company[]
+  createdSavedViews   SavedView[]
+  passwordResetTokens PasswordResetToken[]
 
+  @@index([organizationId])
   @@map("users")
 }
 
@@ -348,17 +483,20 @@ model User {
 // incluir personas sin cuenta en el software; el vínculo a User es opcional
 // y habilita el filtro "Mis tareas".
 model TeamMember {
-  id        String   @id @default(cuid())
-  name      String
-  email     String?
-  userId    String?  @unique
-  user      User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
-  isActive  Boolean  @default(true)
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  id             String       @id @default(cuid())
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  name           String
+  email          String?
+  userId         String?      @unique
+  user           User?        @relation(fields: [userId], references: [id], onDelete: SetNull)
+  isActive       Boolean      @default(true)
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
 
   assignedActivities Activity[] @relation("ActivityAssignee")
 
+  @@index([organizationId])
   @@map("team_members")
 }
 
@@ -366,6 +504,8 @@ model TeamMember {
 
 model Meeting {
   id               String           @id @default(cuid())
+  organizationId   String
+  organization     Organization     @relation(fields: [organizationId], references: [id], onDelete: Restrict)
   companyId        String
   company          Company          @relation(fields: [companyId], references: [id], onDelete: Cascade)
   opportunityId    String?
@@ -389,6 +529,7 @@ model Meeting {
   evidence  Evidence[]
   proposals CRMChangeProposal[]
 
+  @@index([organizationId])
   @@index([companyId])
   @@index([opportunityId])
   @@index([processingStatus])
@@ -396,28 +537,33 @@ model Meeting {
 }
 
 model Evidence {
-  id            String   @id @default(cuid())
-  meetingId     String
-  meeting       Meeting  @relation(fields: [meetingId], references: [id], onDelete: Cascade)
+  id             String       @id @default(cuid())
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  meetingId      String
+  meeting        Meeting      @relation(fields: [meetingId], references: [id], onDelete: Cascade)
   // audio | video | pdf | docx | txt | md | transcript
-  type          String
-  filename      String
-  mimeType      String
+  type           String
+  filename       String
+  mimeType       String
   // Object key in Cloudflare R2 (empty for inline manual transcripts).
-  storagePath   String
-  sizeBytes     Int?
-  extractedText String?  @db.Text
+  storagePath    String
+  sizeBytes      Int?
+  extractedText  String?      @db.Text
   // uploaded | extracting | extracted | failed
-  status        String   @default("uploaded")
-  uploadedBy    String
-  uploadedAt    DateTime @default(now())
+  status         String       @default("uploaded")
+  uploadedBy     String
+  uploadedAt     DateTime     @default(now())
 
+  @@index([organizationId])
   @@index([meetingId])
   @@map("evidence")
 }
 
 model CRMChangeProposal {
   id             String         @id @default(cuid())
+  organizationId String
+  organization   Organization   @relation(fields: [organizationId], references: [id], onDelete: Restrict)
   // Optional since proposals can also originate from the agent chat.
   meetingId      String?
   meeting        Meeting?       @relation(fields: [meetingId], references: [id], onDelete: Cascade)
@@ -440,6 +586,7 @@ model CRMChangeProposal {
 
   items CRMChangeItem[]
 
+  @@index([organizationId])
   @@index([meetingId])
   @@index([status])
   @@index([chatThreadId])
@@ -447,25 +594,28 @@ model CRMChangeProposal {
 }
 
 model CRMChangeItem {
-  id          String            @id @default(cuid())
-  proposalId  String
-  proposal    CRMChangeProposal @relation(fields: [proposalId], references: [id], onDelete: Cascade)
+  id             String            @id @default(cuid())
+  organizationId String
+  organization   Organization      @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  proposalId     String
+  proposal       CRMChangeProposal @relation(fields: [proposalId], references: [id], onDelete: Cascade)
   // stage_change | create_task | add_contact | update_pain | add_note |
   // update_sponsor | update_decision_maker | update_field
-  type        String
+  type           String
   // Target entity type: company | opportunity | person | activity | note
-  entity      String
+  entity         String
   // Logical reference (no FK); null when the item creates a new entity.
-  entityId    String?
-  beforeValue Json?
-  afterValue  Json?
-  confidence  Float
-  explanation String            @db.Text
-  approved    Boolean           @default(false)
+  entityId       String?
+  beforeValue    Json?
+  afterValue     Json?
+  confidence     Float
+  explanation    String            @db.Text
+  approved       Boolean           @default(false)
   // pending | approved | rejected | applied | failed
-  status      String            @default("pending")
-  appliedAt   DateTime?
+  status         String            @default("pending")
+  appliedAt      DateTime?
 
+  @@index([organizationId])
   @@index([proposalId])
   @@map("crm_change_items")
 }
@@ -473,70 +623,82 @@ model CRMChangeItem {
 // ---------- Agente IA (copiloto) ----------
 
 model AgentChatThread {
-  id          String      @id @default(cuid())
-  userId      String
-  title       String?
+  id             String       @id @default(cuid())
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  userId         String
+  title          String?
   // Page context captured when the thread was opened (e.g. company being viewed).
-  contextType EntityType?
-  contextId   String?
-  createdAt   DateTime    @default(now())
-  updatedAt   DateTime    @updatedAt
+  contextType    EntityType?
+  contextId      String?
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
 
   messages AgentChatMessage[]
 
+  @@index([organizationId])
   @@index([userId, updatedAt])
   @@map("agent_chat_threads")
 }
 
 model AgentChatMessage {
-  id       String          @id @default(cuid())
-  threadId String
-  thread   AgentChatThread @relation(fields: [threadId], references: [id], onDelete: Cascade)
+  id             String          @id @default(cuid())
+  organizationId String
+  organization   Organization    @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  threadId       String
+  thread         AgentChatThread @relation(fields: [threadId], references: [id], onDelete: Cascade)
   // user | assistant
-  role     String
+  role           String
   // AI SDK UIMessage.parts stored verbatim so the UI re-renders tool cards on reload.
-  parts    Json
-  createdAt DateTime       @default(now())
+  parts          Json
+  createdAt      DateTime        @default(now())
 
+  @@index([organizationId])
   @@index([threadId, createdAt])
   @@map("agent_chat_messages")
 }
 
 model AgentAttachment {
-  id            String   @id @default(cuid())
+  id             String       @id @default(cuid())
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
   // Logical ref to AgentChatThread (no FK, mirrors Evidence's storage shape).
-  threadId      String
-  filename      String
-  mimeType      String
+  threadId       String
+  filename       String
+  mimeType       String
   // Object key in R2; empty when R2 isn't configured (text-only fallback).
-  storagePath   String
-  sizeBytes     Int?
-  extractedText String?  @db.Text
+  storagePath    String
+  sizeBytes      Int?
+  extractedText  String?      @db.Text
   // uploaded | extracted | failed
-  status        String   @default("uploaded")
-  uploadedBy    String
-  createdAt     DateTime @default(now())
+  status         String       @default("uploaded")
+  uploadedBy     String
+  createdAt      DateTime     @default(now())
 
+  @@index([organizationId])
   @@index([threadId])
   @@map("agent_attachments")
 }
 
 model TimelineEvent {
-  id            String   @id @default(cuid())
-  companyId     String
-  company       Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
-  opportunityId String?
+  id             String       @id @default(cuid())
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  companyId      String
+  company        Company      @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  opportunityId  String?
   // meeting_created | proposal_applied | note_added | stage_changed | task_created
-  type          String
-  title         String
-  summary       String?  @db.Text
+  type           String
+  title          String
+  summary        String?      @db.Text
   // Reference back to the source record (meeting | proposal | note | ...).
-  refType       String?
-  refId         String?
-  actorId       String?
-  metadata      Json?
-  occurredAt    DateTime @default(now())
+  refType        String?
+  refId          String?
+  actorId        String?
+  metadata       Json?
+  occurredAt     DateTime     @default(now())
 
+  @@index([organizationId])
   @@index([companyId, occurredAt])
   @@index([opportunityId])
   @@map("timeline_events")

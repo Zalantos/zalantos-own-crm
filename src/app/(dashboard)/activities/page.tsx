@@ -1,7 +1,6 @@
 import Link from "next/link";
 import type { Prisma } from "@prisma/client";
-import { prisma } from "@/lib/prisma";
-import { getCurrentUser } from "@/lib/session";
+import { requireOrgContext } from "@/lib/tenant";
 import { getActiveTeamMembers } from "@/lib/team";
 import { PageHeader } from "@/components/shared/page-header";
 import { ActivityRow } from "@/components/shared/activities/activity-row";
@@ -38,7 +37,7 @@ export default async function ActivitiesPage({
   const filter = params.filter ?? "upcoming";
   const assignee = params.assignee;
 
-  const currentUser = await getCurrentUser();
+  const { user, db } = await requireOrgContext();
 
   const now = new Date();
   const statusWhere: Prisma.ActivityWhereInput =
@@ -50,7 +49,7 @@ export default async function ActivitiesPage({
 
   const assigneeWhere: Prisma.ActivityWhereInput =
     assignee === "me"
-      ? { assignee: { userId: currentUser?.id ?? "" } }
+      ? { assignee: { userId: user.id } }
       : assignee === "none"
         ? { assigneeId: null }
         : assignee
@@ -58,7 +57,7 @@ export default async function ActivitiesPage({
           : {};
 
   const [activities, teamMembers] = await Promise.all([
-    prisma.activity.findMany({
+    db.activity.findMany({
       where: { ...statusWhere, ...assigneeWhere },
       include: {
         company: true,
@@ -69,7 +68,7 @@ export default async function ActivitiesPage({
       orderBy:
         filter === "completed" ? { completedAt: "desc" } : { dueDate: "asc" },
     }),
-    getActiveTeamMembers(),
+    getActiveTeamMembers(db),
   ]);
 
   const isMine = assignee === "me";

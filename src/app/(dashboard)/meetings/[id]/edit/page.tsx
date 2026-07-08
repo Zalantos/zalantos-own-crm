@@ -1,5 +1,5 @@
 import { notFound } from "next/navigation";
-import { prisma } from "@/lib/prisma";
+import { requireOrgContext } from "@/lib/tenant";
 import { PageHeader } from "@/components/shared/page-header";
 import { MeetingForm } from "../../meeting-form";
 
@@ -9,9 +9,10 @@ export default async function EditMeetingPage({
   params: Promise<{ id: string }>;
 }) {
   const { id } = await params;
+  const { db } = await requireOrgContext();
 
   const [meeting, companies] = await Promise.all([
-    prisma.meeting.findUnique({
+    db.meeting.findUnique({
       where: { id },
       select: {
         id: true,
@@ -23,7 +24,7 @@ export default async function EditMeetingPage({
         participants: true,
       },
     }),
-    prisma.company.findMany({
+    db.company.findMany({
       orderBy: { name: "asc" },
       select: {
         id: true,

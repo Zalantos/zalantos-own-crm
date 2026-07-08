@@ -1,4 +1,4 @@
-import { prisma } from "@/lib/prisma";
+import { requireOrgContext } from "@/lib/tenant";
 import { PageHeader } from "@/components/shared/page-header";
 import { CustomFieldsFormSection } from "@/components/shared/custom-fields/custom-fields-form-section";
 import { PersonForm } from "../person-form";
@@ -9,7 +9,8 @@ export default async function NewPersonPage({
   searchParams: Promise<{ companyId?: string }>;
 }) {
   const { companyId } = await searchParams;
-  const companies = await prisma.company.findMany({
+  const { db } = await requireOrgContext();
+  const companies = await db.company.findMany({
     orderBy: { name: "asc" },
   });
 

@@ -1,5 +1,4 @@
 import { z } from "zod";
-import { OpportunityStage } from "@prisma/client";
 
 // Validation for a human-edited CRMChangeItem.afterValue, keyed by item type.
 // Mirrors the payload shapes that apply.ts expects for each type.
@@ -25,8 +24,10 @@ export const ITEM_AFTER_VALUE_SCHEMAS: Record<string, z.ZodType> = {
   update_pain: z.object({
     value: z.string().min(1, "El dolor no puede estar vacío"),
   }),
+  // El valor es el `key` de una PipelineStage de la org; se valida contra las
+  // etapas reales al aplicar (apply.ts) y al editar (proposal-item-editor).
   stage_change: z.object({
-    value: z.enum(OpportunityStage),
+    value: z.string().min(1),
   }),
   update_next_step: z.object({
     nextStep: z.string().min(1, "El próximo paso no puede estar vacío"),

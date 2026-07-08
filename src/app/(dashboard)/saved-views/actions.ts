@@ -1,8 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { prisma } from "@/lib/prisma";
-import { requireUser } from "@/lib/session";
+import { requireOrgContext } from "@/lib/tenant";
 import type { EntityType } from "@prisma/client";
 
 export async function createSavedView(
@@ -11,17 +10,23 @@ export async function createSavedView(
   filtersJson: Record<string, string>,
   path: string,
 ) {
-  await requireUser();
+  const { user, org, db } = await requireOrgContext();
   if (!name.trim()) return;
 
-  await prisma.savedView.create({
-    data: { entityType, name: name.trim(), filtersJson },
+  await db.savedView.create({
+    data: {
+      organizationId: org.id,
+      createdById: user.id,
+      entityType,
+      name: name.trim(),
+      filtersJson,
+    },
   });
   revalidatePath(path);
 }
 
 export async function deleteSavedView(id: string, path: string) {
-  await requireUser();
-  await prisma.savedView.delete({ where: { id } });
+  const { db } = await requireOrgContext();
+  await db.savedView.delete({ where: { id } });
   revalidatePath(path);
 }

@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { prisma } from "@/lib/prisma";
+import { requireOrgContext } from "@/lib/tenant";
 import { PageHeader } from "@/components/shared/page-header";
 
 export default async function SearchPage({
@@ -9,14 +9,15 @@ export default async function SearchPage({
 }) {
   const { q } = await searchParams;
   const query = q?.trim();
+  const { db } = await requireOrgContext();
 
   const [companies, people, opportunities] = query
     ? await Promise.all([
-        prisma.company.findMany({
+        db.company.findMany({
           where: { name: { contains: query, mode: "insensitive" } },
           take: 10,
         }),
-        prisma.person.findMany({
+        db.person.findMany({
           where: {
             OR: [
               { firstName: { contains: query, mode: "insensitive" } },
@@ -26,7 +27,7 @@ export default async function SearchPage({
           },
           take: 10,
         }),
-        prisma.opportunity.findMany({
+        db.opportunity.findMany({
           where: { name: { contains: query, mode: "insensitive" } },
           include: { company: true },
           take: 10,

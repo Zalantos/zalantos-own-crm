@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useDraggable } from "@dnd-kit/core";
 import { CSS } from "@dnd-kit/utilities";
 import { Badge } from "@/components/ui/badge";
-import { formatCurrency } from "@/lib/currency";
+import { formatCurrencyValue } from "@/lib/format";
 import type { Opportunity, Company } from "@prisma/client";
 
 export type KanbanOpportunity = Omit<Opportunity, "estimatedValue"> & {
@@ -14,8 +14,12 @@ export type KanbanOpportunity = Omit<Opportunity, "estimatedValue"> & {
 
 export function KanbanCard({
   opportunity,
+  currency,
+  locale,
 }: {
   opportunity: KanbanOpportunity;
+  currency: string;
+  locale: string;
 }) {
   const { attributes, listeners, setNodeRef, transform, isDragging } =
     useDraggable({ id: opportunity.id });
@@ -51,7 +55,7 @@ export function KanbanCard({
       <div className="flex flex-wrap items-center gap-1.5">
         {opportunity.estimatedValue !== null && (
           <Badge variant="outline" className="max-w-full truncate">
-            {formatCurrency(opportunity.estimatedValue)}
+            {formatCurrencyValue(opportunity.estimatedValue, currency, locale)}
           </Badge>
         )}
         {isOverdue && <Badge variant="destructive">Próximo paso vencido</Badge>}

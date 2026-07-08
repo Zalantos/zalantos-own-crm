@@ -1,4 +1,4 @@
-import { prisma } from "@/lib/prisma";
+import type { TenantClient } from "@/lib/tenant";
 
 export type AssignableTeamMember = {
   id: string;
@@ -6,8 +6,10 @@ export type AssignableTeamMember = {
   userId: string | null;
 };
 
-export function getActiveTeamMembers(): Promise<AssignableTeamMember[]> {
-  return prisma.teamMember.findMany({
+export function getActiveTeamMembers(
+  db: TenantClient,
+): Promise<AssignableTeamMember[]> {
+  return db.teamMember.findMany({
     where: { isActive: true },
     select: { id: true, name: true, userId: true },
     orderBy: { name: "asc" },

@@ -1,10 +1,14 @@
-import { prisma } from "@/lib/prisma";
+import type { TenantClient } from "@/lib/tenant";
 import { matchesConditions } from "@/lib/workflows/conditions";
 import { executeAction } from "@/lib/workflows/actions";
 import type { Action, Condition, WorkflowEvent } from "@/lib/workflows/types";
 
-export async function evaluateWorkflows(event: WorkflowEvent) {
-  const workflows = await prisma.workflow.findMany({
+export async function evaluateWorkflows(
+  db: TenantClient,
+  organizationId: string,
+  event: WorkflowEvent,
+) {
+  const workflows = await db.workflow.findMany({
     where: {
       isActive: true,
       triggerEntity: event.entityType,
@@ -22,11 +26,12 @@ export async function evaluateWorkflows(event: WorkflowEvent) {
       const actions = workflow.actionsJson as unknown as Action[];
       const messages: string[] = [];
       for (const action of actions) {
-        messages.push(await executeAction(action, event));
+        messages.push(await executeAction(db, organizationId, action, event));
       }
 
-      await prisma.workflowLog.create({
+      await db.workflowLog.create({
         data: {
+          organizationId,
           workflowId: workflow.id,
           entityType: event.entityType,
           entityId: event.entityId,
@@ -35,8 +40,9 @@ export async function evaluateWorkflows(event: WorkflowEvent) {
         },
       });
     } catch (error) {
-      await prisma.workflowLog.create({
+      await db.workflowLog.create({
         data: {
+          organizationId,
           workflowId: workflow.id,
           entityType: event.entityType,
           entityId: event.entityId,

@@ -1,7 +1,5 @@
-import type { OpportunityStage } from "@prisma/client";
 import type { VariantProps } from "class-variance-authority";
 import { Badge, type badgeVariants } from "@/components/ui/badge";
-import { OPPORTUNITY_STAGE_LABELS } from "@/lib/zod/opportunity";
 
 const OPPORTUNITY_STATUS_CONFIG: Record<
   string,
@@ -21,13 +19,22 @@ export function OpportunityStatusBadge({ status }: { status: string }) {
   return <Badge variant={config.variant}>{config.label}</Badge>;
 }
 
-export function OpportunityStageBadge({ stage }: { stage: OpportunityStage }) {
-  const isWon = stage === "ganado";
-  const isLost = stage === "perdido";
+export type OpportunityStageBadgeStage = {
+  label: string;
+  isWon: boolean;
+  isLost: boolean;
+};
 
+export function OpportunityStageBadge({
+  stage,
+}: {
+  stage: OpportunityStageBadgeStage;
+}) {
   return (
-    <Badge variant={isWon ? "success" : isLost ? "destructive" : "outline"}>
-      {OPPORTUNITY_STAGE_LABELS[stage]}
+    <Badge
+      variant={stage.isWon ? "success" : stage.isLost ? "destructive" : "outline"}
+    >
+      {stage.label}
     </Badge>
   );
 }

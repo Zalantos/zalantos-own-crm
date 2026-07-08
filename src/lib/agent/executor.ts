@@ -1,4 +1,5 @@
 import type { Tool, ToolSet } from "ai";
+import type { TenantClient } from "@/lib/tenant";
 import type { ResolvedPageContext } from "./context";
 import { buildReadTools } from "./tools/read";
 import { buildWriteSafeTools } from "./tools/write-safe";
@@ -6,6 +7,8 @@ import { buildProposalTools } from "./tools/write-proposal";
 import { buildAttachmentTools } from "./tools/attachments";
 
 export type AgentToolContext = {
+  organizationId: string;
+  db: TenantClient;
   userId: string;
   threadId: string;
   pageContext: ResolvedPageContext | null;
@@ -36,7 +39,7 @@ function withErrorCapture(name: string, toolDefinition: Tool): Tool {
 // CRMChangeProposal rows — there is no code path from them to a direct write.
 export function buildAgentTools(ctx: AgentToolContext): ToolSet {
   const tools: ToolSet = {
-    ...buildReadTools(),
+    ...buildReadTools(ctx),
     ...buildWriteSafeTools(ctx),
     ...buildProposalTools(ctx),
     ...buildAttachmentTools(ctx),

@@ -1,15 +1,15 @@
-import { prisma } from "@/lib/prisma";
+import type { TenantClient } from "@/lib/tenant";
 import { buildCompanySnapshot } from "@/lib/agent/snapshot";
 
 // Thin wrapper over the shared company snapshot: adds the meeting being
 // processed and excludes it from the prior-meetings list.
-export async function buildCrmSnapshot(meetingId: string) {
-  const meeting = await prisma.meeting.findUnique({
+export async function buildCrmSnapshot(db: TenantClient, meetingId: string) {
+  const meeting = await db.meeting.findUnique({
     where: { id: meetingId },
   });
   if (!meeting) throw new Error(`Meeting no encontrada: ${meetingId}`);
 
-  const base = await buildCompanySnapshot(meeting.companyId, {
+  const base = await buildCompanySnapshot(db, meeting.companyId, {
     excludeMeetingId: meetingId,
   });
 

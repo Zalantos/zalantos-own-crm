@@ -440,6 +440,22 @@ async function wipeCrmData() {
 }
 
 async function main() {
+  // El CRM ahora es multi-tenant: este import histórico siempre corrió (y
+  // sigue corriendo) contra la organización Zalantos.
+  const org = await prisma.organization.findUniqueOrThrow({
+    where: { slug: "zalantos" },
+  });
+  const organizationId = org.id;
+  const stages = await prisma.pipelineStage.findMany({
+    where: { organizationId },
+  });
+  const stageIdByKey = new Map(stages.map((stage) => [stage.key, stage.id]));
+  const stageId = (key: string) => {
+    const id = stageIdByKey.get(key);
+    if (!id) throw new Error(`Etapa desconocida en import: ${key}`);
+    return id;
+  };
+
   await wipeCrmData();
 
   const companyIds = new Map<string, string>();
@@ -448,6 +464,7 @@ async function main() {
   for (const seed of companies) {
     const company = await prisma.company.create({
       data: {
+        organizationId,
         name: seed.name,
         industry: seed.industry,
         size: seed.size,
@@ -460,6 +477,7 @@ async function main() {
     if (seed.contact) {
       const person = await prisma.person.create({
         data: {
+          organizationId,
           companyId: company.id,
           firstName: seed.contact.firstName,
           lastName: seed.contact.lastName,
@@ -476,13 +494,15 @@ async function main() {
   // Campo custom para el monto recurrente mensual que Notion traía aparte.
   const montoRecurrenteDef = await prisma.customFieldDefinition.upsert({
     where: {
-      entityType_fieldName: {
+      organizationId_entityType_fieldName: {
+        organizationId,
         entityType: "opportunity",
         fieldName: "montoRecurrente",
       },
     },
     update: {},
     create: {
+      organizationId,
       entityType: "opportunity",
       fieldName: "montoRecurrente",
       fieldLabel: "Monto recurrente (CLP/mes)",
@@ -495,9 +515,10 @@ async function main() {
     const companyId = companyIds.get(seed.companyKey)!;
     const opportunity = await prisma.opportunity.create({
       data: {
+        organizationId,
         companyId,
         name: seed.name,
-        stage: seed.stage,
+        stageId: stageId(seed.stage),
         status: seed.status,
         probability: seed.probability,
         estimatedValue: seed.estimatedValue,
@@ -513,6 +534,7 @@ async function main() {
     if (seed.montoRecurrente !== undefined) {
       await prisma.customFieldValue.create({
         data: {
+          organizationId,
           entityType: "opportunity",
           entityId: opportunity.id,
           fieldDefinitionId: montoRecurrenteDef.id,
@@ -542,6 +564,7 @@ async function main() {
 
     await prisma.activity.create({
       data: {
+        organizationId,
         companyId,
         opportunityId,
         type: seed.type,

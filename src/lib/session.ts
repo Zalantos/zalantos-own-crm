@@ -1,6 +1,6 @@
 import { redirect } from "next/navigation";
 import { auth } from "@/lib/auth";
-import { prisma } from "@/lib/prisma";
+import { prismaSystem } from "@/lib/prisma";
 
 export async function getCurrentUser() {
   const session = await auth();
@@ -13,9 +13,17 @@ export async function requireUser() {
     redirect("/login");
   }
 
-  const dbUser = await prisma.user.findUnique({
+  // La BD es la fuente de verdad (el JWT puede quedar stale hasta 10h).
+  const dbUser = await prismaSystem.user.findUnique({
     where: { id: user.id },
-    select: { email: true, name: true, role: true, isActive: true },
+    select: {
+      email: true,
+      name: true,
+      role: true,
+      isActive: true,
+      organizationId: true,
+      isSuperAdmin: true,
+    },
   });
 
   if (!dbUser?.isActive) {
@@ -27,12 +35,22 @@ export async function requireUser() {
     email: dbUser.email,
     name: dbUser.name,
     role: dbUser.role,
+    organizationId: dbUser.organizationId,
+    isSuperAdmin: dbUser.isSuperAdmin,
   };
 }
 
 export async function requireAdmin() {
   const user = await requireUser();
   if (user.role !== "ADMIN") {
+    redirect("/dashboard");
+  }
+  return user;
+}
+
+export async function requireSuperAdmin() {
+  const user = await requireUser();
+  if (!user.isSuperAdmin) {
     redirect("/dashboard");
   }
   return user;

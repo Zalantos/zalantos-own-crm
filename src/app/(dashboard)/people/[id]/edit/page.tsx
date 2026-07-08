@@ -1,5 +1,5 @@
 import { notFound } from "next/navigation";
-import { prisma } from "@/lib/prisma";
+import { requireOrgContext } from "@/lib/tenant";
 import { PageHeader } from "@/components/shared/page-header";
 import { CustomFieldsFormSection } from "@/components/shared/custom-fields/custom-fields-form-section";
 import { PersonForm } from "../../person-form";
@@ -10,9 +10,10 @@ export default async function EditPersonPage({
   params: Promise<{ id: string }>;
 }) {
   const { id } = await params;
+  const { db } = await requireOrgContext();
   const [person, companies] = await Promise.all([
-    prisma.person.findUnique({ where: { id } }),
-    prisma.company.findMany({ orderBy: { name: "asc" } }),
+    db.person.findUnique({ where: { id } }),
+    db.company.findMany({ orderBy: { name: "asc" } }),
   ]);
   if (!person) notFound();
 

@@ -1,5 +1,6 @@
 import { NextResponse, type NextRequest } from "next/server";
-import { prisma } from "@/lib/prisma";
+import { prismaSystem } from "@/lib/prisma";
+import { forOrg } from "@/lib/tenant";
 import { runPipeline } from "@/lib/meeting-intelligence/pipeline";
 import {
   isAuthorized,
@@ -18,30 +19,41 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  const stuck = await prisma.meeting.findMany({
-    where: {
-      processingStatus: {
-        in: ["pending", "extracting", "transcribing", "analyzing"],
-      },
-    },
-    orderBy: { createdAt: "asc" },
-    take: 10,
-    select: { id: true },
+  const orgs = await prismaSystem.organization.findMany({
+    where: { isActive: true },
+    select: { id: true, slug: true },
   });
 
+  let checked = 0;
   let processed = 0;
   const errors: { meetingId: string; error: string }[] = [];
-  for (const meeting of stuck) {
-    try {
-      await runPipeline(meeting.id);
-      processed += 1;
-    } catch (error) {
-      errors.push({
-        meetingId: meeting.id,
-        error: error instanceof Error ? error.message : "Error desconocido",
-      });
+
+  for (const org of orgs) {
+    const db = forOrg(org.id);
+    const stuck = await db.meeting.findMany({
+      where: {
+        processingStatus: {
+          in: ["pending", "extracting", "transcribing", "analyzing"],
+        },
+      },
+      orderBy: { createdAt: "asc" },
+      take: 10,
+      select: { id: true },
+    });
+    checked += stuck.length;
+
+    for (const meeting of stuck) {
+      try {
+        await runPipeline(db, org.id, meeting.id);
+        processed += 1;
+      } catch (error) {
+        errors.push({
+          meetingId: meeting.id,
+          error: error instanceof Error ? error.message : "Error desconocido",
+        });
+      }
     }
   }
 
-  return NextResponse.json({ checked: stuck.length, processed, errors });
+  return NextResponse.json({ checked, processed, errors });
 }

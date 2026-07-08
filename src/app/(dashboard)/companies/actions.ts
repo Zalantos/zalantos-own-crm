@@ -2,8 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
-import { prisma } from "@/lib/prisma";
-import { requireUser } from "@/lib/session";
+import { requireOrgContext, withOrgTransaction } from "@/lib/tenant";
 import { companyCreateSchema, companyUpdateSchema } from "@/lib/zod/company";
 import {
   deleteCustomFieldValues,
@@ -19,7 +18,7 @@ export async function createCompany(
   _prevState: FormState,
   formData: FormData,
 ): Promise<FormState> {
-  const user = await requireUser();
+  const { user, org, db } = await requireOrgContext();
 
   const parsed = companyCreateSchema.safeParse(Object.fromEntries(formData));
   if (!parsed.success) {
@@ -29,10 +28,10 @@ export async function createCompany(
     };
   }
 
-  const company = await prisma.company.create({
-    data: { ...parsed.data, createdById: user.id },
+  const company = await db.company.create({
+    data: { ...parsed.data, organizationId: org.id, createdById: user.id },
   });
-  await upsertCustomFieldValues("company", company.id, formData);
+  await upsertCustomFieldValues(db, org.id, "company", company.id, formData);
   revalidatePath("/companies");
   redirect(`/companies/${company.id}`);
 }
@@ -41,7 +40,7 @@ export async function updateCompany(
   _prevState: FormState,
   formData: FormData,
 ): Promise<FormState> {
-  await requireUser();
+  const { org, db } = await requireOrgContext();
 
   const parsed = companyUpdateSchema.safeParse(Object.fromEntries(formData));
   if (!parsed.success) {
@@ -53,19 +52,19 @@ export async function updateCompany(
 
   const { id, ...data } = parsed.data;
   try {
-    await prisma.company.update({ where: { id }, data });
+    await db.company.update({ where: { id }, data });
   } catch (error) {
     handleMutationError(error);
   }
-  await upsertCustomFieldValues("company", id, formData);
+  await upsertCustomFieldValues(db, org.id, "company", id, formData);
   revalidatePath("/companies");
   revalidatePath(`/companies/${id}`);
   redirect(`/companies/${id}`);
 }
 
 export async function deleteCompany(id: string) {
-  const user = await requireUser();
-  const company = await prisma.company.findUnique({
+  const { user, org, db } = await requireOrgContext();
+  const company = await db.company.findUnique({
     where: { id },
     select: { createdById: true },
   });
@@ -80,16 +79,17 @@ export async function deleteCompany(id: string) {
   }
 
   try {
-    await prisma.$transaction(async (tx) => {
+    await withOrgTransaction(org.id, async (tx) => {
       const opportunities = await tx.opportunity.findMany({
-        where: { companyId: id },
+        where: { companyId: id, organizationId: org.id },
         select: { id: true },
       });
 
-      await deleteCustomFieldValues(tx, "company", id);
+      await deleteCustomFieldValues(tx, org.id, "company", id);
       if (opportunities.length > 0) {
         await deleteCustomFieldValues(
           tx,
+          org.id,
           "opportunity",
           opportunities.map((opportunity) => opportunity.id),
         );
@@ -97,7 +97,7 @@ export async function deleteCompany(id: string) {
 
       // Opportunities (and their activities/notes via SET NULL) cascade at
       // the DB level once the company row is removed.
-      await tx.company.delete({ where: { id } });
+      await tx.company.delete({ where: { id, organizationId: org.id } });
     });
   } catch (error) {
     handleMutationError(error);

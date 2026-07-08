@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { prisma } from "@/lib/prisma";
+import { requireOrgContext } from "@/lib/tenant";
 import { PageHeader } from "@/components/shared/page-header";
 import { DataTable } from "@/components/shared/data-table";
 import { Button } from "@/components/ui/button";
@@ -15,8 +15,9 @@ export default async function PeoplePage({
   searchParams: Promise<{ q?: string }>;
 }) {
   const { q } = await searchParams;
+  const { db } = await requireOrgContext();
 
-  const people = await prisma.person.findMany({
+  const people = await db.person.findMany({
     where: q
       ? {
           OR: [

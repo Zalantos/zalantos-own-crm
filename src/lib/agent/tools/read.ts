@@ -1,17 +1,16 @@
 import { tool } from "ai";
 import { z } from "zod";
-import { prisma } from "@/lib/prisma";
 import { describeFieldsForModel } from "@/lib/agent/field-registry";
 import {
   buildCompanySnapshot,
   snapshotCustomFields,
 } from "@/lib/agent/snapshot";
+import type { AgentToolContext } from "@/lib/agent/executor";
 
 const entitySchema = z.enum(["company", "opportunity", "person"]);
 
-// Read tools don't need the per-turn context; kept as a builder for symmetry
-// with the other tool groups.
-export function buildReadTools() {
+export function buildReadTools(ctx: AgentToolContext) {
+  const db = ctx.db;
   return {
     search_crm: tool({
       description:
@@ -27,14 +26,14 @@ export function buildReadTools() {
         const take = limit ?? 10;
         const [companies, people, opportunities] = await Promise.all([
           !entity || entity === "company"
-            ? prisma.company.findMany({
+            ? db.company.findMany({
                 where: { name: { contains: query, mode: "insensitive" } },
                 select: { id: true, name: true, status: true },
                 take,
               })
             : [],
           !entity || entity === "person"
-            ? prisma.person.findMany({
+            ? db.person.findMany({
                 where: {
                   OR: [
                     { firstName: { contains: query, mode: "insensitive" } },
@@ -54,12 +53,12 @@ export function buildReadTools() {
               })
             : [],
           !entity || entity === "opportunity"
-            ? prisma.opportunity.findMany({
+            ? db.opportunity.findMany({
                 where: { name: { contains: query, mode: "insensitive" } },
                 select: {
                   id: true,
                   name: true,
-                  stage: true,
+                  stage: { select: { key: true, label: true } },
                   companyId: true,
                   company: { select: { name: true } },
                 },
@@ -80,7 +79,8 @@ export function buildReadTools() {
           opportunities: opportunities.map((o) => ({
             id: o.id,
             name: o.name,
-            stage: o.stage,
+            stage: o.stage.key,
+            stageLabel: o.stage.label,
             companyId: o.companyId,
             companyName: o.company.name,
           })),
@@ -98,7 +98,7 @@ export function buildReadTools() {
       execute: async ({ entity, id }) => {
         switch (entity) {
           case "company": {
-            const company = await prisma.company.findUnique({
+            const company = await db.company.findUnique({
               where: { id },
               include: {
                 people: {
@@ -110,18 +110,22 @@ export function buildReadTools() {
                   },
                 },
                 opportunities: {
-                  select: { id: true, name: true, stage: true },
+                  select: {
+                    id: true,
+                    name: true,
+                    stage: { select: { key: true, label: true } },
+                  },
                 },
               },
             });
             if (!company) return { error: `Empresa no encontrada: ${id}` };
             return {
               ...company,
-              customFields: await snapshotCustomFields("company", id),
+              customFields: await snapshotCustomFields(db, "company", id),
             };
           }
           case "opportunity": {
-            const opportunity = await prisma.opportunity.findUnique({
+            const opportunity = await db.opportunity.findUnique({
               where: { id },
               include: {
                 company: { select: { id: true, name: true } },
@@ -138,18 +142,18 @@ export function buildReadTools() {
             return {
               ...opportunity,
               estimatedValue: opportunity.estimatedValue?.toString() ?? null,
-              customFields: await snapshotCustomFields("opportunity", id),
+              customFields: await snapshotCustomFields(db, "opportunity", id),
             };
           }
           case "person": {
-            const person = await prisma.person.findUnique({
+            const person = await db.person.findUnique({
               where: { id },
               include: { company: { select: { id: true, name: true } } },
             });
             if (!person) return { error: `Persona no encontrada: ${id}` };
             return {
               ...person,
-              customFields: await snapshotCustomFields("person", id),
+              customFields: await snapshotCustomFields(db, "person", id),
             };
           }
         }
@@ -162,7 +166,7 @@ export function buildReadTools() {
       inputSchema: z.object({
         companyId: z.string().min(1),
       }),
-      execute: async ({ companyId }) => buildCompanySnapshot(companyId),
+      execute: async ({ companyId }) => buildCompanySnapshot(db, companyId),
     }),
 
     list_writable_fields: tool({
@@ -173,7 +177,7 @@ export function buildReadTools() {
       }),
       execute: async ({ entity }) => ({
         entity,
-        fields: await describeFieldsForModel(entity),
+        fields: await describeFieldsForModel(db, entity),
       }),
     }),
   };

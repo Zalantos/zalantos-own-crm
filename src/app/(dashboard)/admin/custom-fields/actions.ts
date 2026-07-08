@@ -1,8 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { prisma } from "@/lib/prisma";
-import { requireAdmin } from "@/lib/session";
+import { requireOrgAdminContext } from "@/lib/tenant";
 import { z } from "zod";
 import { CustomFieldType, EntityType } from "@prisma/client";
 import { handleMutationError } from "@/lib/prisma-errors";
@@ -25,7 +24,7 @@ export async function createCustomFieldDefinition(
   _prevState: CustomFieldFormState,
   formData: FormData,
 ): Promise<CustomFieldFormState> {
-  await requireAdmin();
+  const { org, db } = await requireOrgAdminContext();
 
   const parsed = definitionSchema.safeParse(Object.fromEntries(formData));
   if (!parsed.success) {
@@ -39,8 +38,9 @@ export async function createCustomFieldDefinition(
         .filter(Boolean)
     : undefined;
 
-  await prisma.customFieldDefinition.create({
+  await db.customFieldDefinition.create({
     data: {
+      organizationId: org.id,
       entityType: parsed.data.entityType,
       fieldName: parsed.data.fieldName,
       fieldLabel: parsed.data.fieldLabel,
@@ -54,9 +54,9 @@ export async function createCustomFieldDefinition(
 }
 
 export async function deleteCustomFieldDefinition(id: string) {
-  await requireAdmin();
+  const { db } = await requireOrgAdminContext();
   try {
-    await prisma.customFieldDefinition.delete({ where: { id } });
+    await db.customFieldDefinition.delete({ where: { id } });
   } catch (error) {
     handleMutationError(error);
   }

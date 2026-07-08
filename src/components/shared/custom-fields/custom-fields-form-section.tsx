@@ -1,4 +1,5 @@
 import { mergeCustomFields } from "@/lib/custom-fields/merge";
+import { requireOrgContext } from "@/lib/tenant";
 import { CustomFieldInput } from "@/components/shared/custom-fields/custom-field-input";
 import type { EntityType } from "@prisma/client";
 
@@ -9,7 +10,8 @@ export async function CustomFieldsFormSection({
   entityType: EntityType;
   entityId?: string;
 }) {
-  const fields = await mergeCustomFields(entityType, entityId);
+  const { db } = await requireOrgContext();
+  const fields = await mergeCustomFields(db, entityType, entityId);
   if (fields.length === 0) return null;
 
   return (

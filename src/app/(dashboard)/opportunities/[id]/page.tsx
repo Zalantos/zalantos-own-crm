@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { prisma } from "@/lib/prisma";
+import { requireOrgContext } from "@/lib/tenant";
+import { getOrgStages } from "@/lib/pipeline/stages";
 import { PageHeader } from "@/components/shared/page-header";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -12,7 +13,7 @@ import { CustomFieldsDetailSection } from "@/components/shared/custom-fields/cus
 import { StageSelect } from "@/components/shared/kanban/stage-select";
 import { CompanyTimeline } from "@/components/shared/timeline/company-timeline";
 import { StatCard } from "@/components/shared/stat-card";
-import { formatCurrency } from "@/lib/currency";
+import { formatCurrencyValue } from "@/lib/format";
 
 export default async function OpportunityDetailPage({
   params,
@@ -20,11 +21,15 @@ export default async function OpportunityDetailPage({
   params: Promise<{ id: string }>;
 }) {
   const { id } = await params;
+  const { org, db } = await requireOrgContext();
 
-  const opportunity = await prisma.opportunity.findUnique({
-    where: { id },
-    include: { company: true, decisionMaker: true, sponsor: true },
-  });
+  const [opportunity, stages] = await Promise.all([
+    db.opportunity.findUnique({
+      where: { id },
+      include: { company: true, decisionMaker: true, sponsor: true },
+    }),
+    getOrgStages(db),
+  ]);
   if (!opportunity) notFound();
 
   const isOverdue =
@@ -41,7 +46,8 @@ export default async function OpportunityDetailPage({
           <>
             <StageSelect
               opportunityId={opportunity.id}
-              currentStage={opportunity.stage}
+              currentStageId={opportunity.stageId}
+              stages={stages}
             />
             <Button
               variant="secondary"
@@ -92,7 +98,7 @@ export default async function OpportunityDetailPage({
           label="Valor estimado"
           value={
             opportunity.estimatedValue
-              ? formatCurrency(opportunity.estimatedValue.toString())
+              ? formatCurrencyValue(opportunity.estimatedValue.toString(), org.currency, org.locale)
               : "—"
           }
         />

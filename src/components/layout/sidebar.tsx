@@ -9,6 +9,7 @@ import {
   ADMIN_SECTION,
   CRM_SECTION,
   HOME_ITEM,
+  SUPERADMIN_SECTION,
 } from "@/components/layout/nav-config";
 
 function NavLink({
@@ -38,14 +39,25 @@ function NavLink({
   );
 }
 
-export function Sidebar({ role }: { role: Role }) {
+export function Sidebar({
+  role,
+  isSuperAdmin,
+  brandName,
+}: {
+  role: Role;
+  isSuperAdmin?: boolean;
+  brandName: string;
+}) {
   const pathname = usePathname();
-  const sections =
-    role === "ADMIN" ? [CRM_SECTION, ADMIN_SECTION] : [CRM_SECTION];
+  const sections = [
+    CRM_SECTION,
+    ...(role === "ADMIN" ? [ADMIN_SECTION] : []),
+    ...(isSuperAdmin ? [SUPERADMIN_SECTION] : []),
+  ];
 
   return (
     <aside className="bg-sidebar border-sidebar-border text-sidebar-foreground hidden w-56 shrink-0 flex-col border-r p-4 md:flex">
-      <div className="mb-6 px-2 text-lg font-semibold">CRM Zalantos</div>
+      <div className="mb-6 truncate px-2 text-lg font-semibold">{brandName}</div>
       <nav className="flex flex-1 flex-col gap-6">
         <div className="space-y-1">
           <NavLink {...HOME_ITEM} isActive={pathname === HOME_ITEM.href} />

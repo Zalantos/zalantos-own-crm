@@ -1,5 +1,4 @@
-import { getCurrentUser } from "@/lib/session";
-import { prisma } from "@/lib/prisma";
+import { getOrgContext } from "@/lib/tenant";
 import {
   classifyEvidence,
   extractText,
@@ -23,10 +22,11 @@ function r2Available(): boolean {
 }
 
 export async function POST(req: Request) {
-  const user = await getCurrentUser();
-  if (!user?.id) {
+  const ctx = await getOrgContext();
+  if (!ctx) {
     return Response.json({ error: "No autenticado" }, { status: 401 });
   }
+  const { user, org, db } = ctx;
 
   const formData = await req.formData();
   const file = formData.get("file");
@@ -39,7 +39,7 @@ export async function POST(req: Request) {
     );
   }
 
-  const thread = await prisma.agentChatThread.findUnique({
+  const thread = await db.agentChatThread.findUnique({
     where: { id: threadId },
     select: { userId: true },
   });
@@ -104,8 +104,9 @@ export async function POST(req: Request) {
     }
   }
 
-  const attachment = await prisma.agentAttachment.create({
+  const attachment = await db.agentAttachment.create({
     data: {
+      organizationId: org.id,
       threadId,
       filename: file.name,
       mimeType: file.type || "application/octet-stream",

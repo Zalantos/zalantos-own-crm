@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { prisma } from "@/lib/prisma";
+import { requireOrgContext } from "@/lib/tenant";
 import { PageHeader } from "@/components/shared/page-header";
 import { DataTable } from "@/components/shared/data-table";
 import { Button } from "@/components/ui/button";
@@ -21,8 +21,9 @@ export default async function CompaniesPage({
   searchParams: Promise<{ q?: string; industry?: string; status?: string }>;
 }) {
   const { q, industry, status } = await searchParams;
+  const { org, db } = await requireOrgContext();
 
-  const companies = await prisma.company.findMany({
+  const companies = await db.company.findMany({
     where: {
       ...(q ? { name: { contains: q, mode: "insensitive" as const } } : {}),
       ...(industry ? { industry: { equals: industry } } : {}),
@@ -31,13 +32,13 @@ export default async function CompaniesPage({
     orderBy: { createdAt: "desc" },
   });
 
-  const industries = await prisma.company.findMany({
+  const industries = await db.company.findMany({
     distinct: ["industry"],
     select: { industry: true },
     where: { industry: { not: null } },
   });
 
-  const savedViews = await prisma.savedView.findMany({
+  const savedViews = await db.savedView.findMany({
     where: { entityType: "company" },
     orderBy: { name: "asc" },
   });
@@ -46,7 +47,7 @@ export default async function CompaniesPage({
     <div>
       <PageHeader
         title="Empresas"
-        description="Cuentas y prospectos comerciales de Zalantos"
+        description={`Cuentas y prospectos comerciales de ${org.brandName ?? org.name}`}
         actions={
           <Button render={<Link href="/companies/new" />}>Nueva empresa</Button>
         }

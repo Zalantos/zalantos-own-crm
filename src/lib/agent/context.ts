@@ -1,5 +1,4 @@
-import { prisma } from "@/lib/prisma";
-import { OPPORTUNITY_STAGE_LABELS } from "@/lib/zod/opportunity";
+import type { TenantClient } from "@/lib/tenant";
 
 export type PageContext = {
   entityType: "company" | "opportunity" | "person";
@@ -17,11 +16,12 @@ export type ResolvedPageContext = {
 // "este deal" / "esta empresa" resolve to concrete ids. Returns null when the
 // record no longer exists (stale context is not an error).
 export async function resolvePageContext(
+  db: TenantClient,
   context: PageContext,
 ): Promise<ResolvedPageContext | null> {
   switch (context.entityType) {
     case "company": {
-      const company = await prisma.company.findUnique({
+      const company = await db.company.findUnique({
         where: { id: context.entityId },
         select: { id: true, name: true, industry: true, status: true },
       });
@@ -33,25 +33,25 @@ export async function resolvePageContext(
       };
     }
     case "opportunity": {
-      const opportunity = await prisma.opportunity.findUnique({
+      const opportunity = await db.opportunity.findUnique({
         where: { id: context.entityId },
         select: {
           id: true,
           name: true,
-          stage: true,
+          stage: { select: { label: true } },
           companyId: true,
           company: { select: { name: true } },
         },
       });
       if (!opportunity) return null;
       return {
-        description: `El usuario está viendo la oportunidad "${opportunity.name}" (id ${opportunity.id}, etapa: ${OPPORTUNITY_STAGE_LABELS[opportunity.stage] ?? opportunity.stage}) de la empresa "${opportunity.company.name}" (id ${opportunity.companyId}).`,
+        description: `El usuario está viendo la oportunidad "${opportunity.name}" (id ${opportunity.id}, etapa: ${opportunity.stage.label}) de la empresa "${opportunity.company.name}" (id ${opportunity.companyId}).`,
         companyId: opportunity.companyId,
         opportunityId: opportunity.id,
       };
     }
     case "person": {
-      const person = await prisma.person.findUnique({
+      const person = await db.person.findUnique({
         where: { id: context.entityId },
         select: {
           id: true,

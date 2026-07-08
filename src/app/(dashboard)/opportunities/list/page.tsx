@@ -1,5 +1,6 @@
 import Link from "next/link";
-import { prisma } from "@/lib/prisma";
+import { requireOrgContext } from "@/lib/tenant";
+import { getOrgStages } from "@/lib/pipeline/stages";
 import { PageHeader } from "@/components/shared/page-header";
 import { DataTable } from "@/components/shared/data-table";
 import { Button } from "@/components/ui/button";
@@ -12,14 +13,13 @@ import {
 } from "@/components/ui/select";
 import { SavedViewSelector } from "@/components/shared/saved-view-selector";
 import { OpportunityStageBadge } from "@/components/shared/opportunities/status-badge";
-import { formatCurrency } from "@/lib/currency";
-import {
-  OPPORTUNITY_STAGES,
-  OPPORTUNITY_STAGE_LABELS,
-} from "@/lib/zod/opportunity";
-import type { Company, Opportunity } from "@prisma/client";
+import { formatCurrencyValue } from "@/lib/format";
+import type { Company, Opportunity, PipelineStage } from "@prisma/client";
 
-type OpportunityRow = Opportunity & { company: Company };
+type OpportunityRow = Opportunity & {
+  company: Company;
+  stage: Pick<PipelineStage, "label" | "isWon" | "isLost">;
+};
 
 export default async function OpportunitiesListPage({
   searchParams,
@@ -32,24 +32,30 @@ export default async function OpportunitiesListPage({
   }>;
 }) {
   const { stage, urgency, status, overdue } = await searchParams;
+  const { org, db } = await requireOrgContext();
 
-  const opportunities = await prisma.opportunity.findMany({
-    where: {
-      ...(stage ? { stage: stage as Opportunity["stage"] } : {}),
-      ...(urgency ? { urgency } : {}),
-      ...(status ? { status } : {}),
-      ...(overdue === "1"
-        ? { nextStepDueDate: { lt: new Date() }, status: "open" }
-        : {}),
-    },
-    include: { company: true },
-    orderBy: { createdAt: "desc" },
-  });
-
-  const savedViews = await prisma.savedView.findMany({
-    where: { entityType: "opportunity" },
-    orderBy: { name: "asc" },
-  });
+  const [opportunities, savedViews, stages] = await Promise.all([
+    db.opportunity.findMany({
+      where: {
+        ...(stage ? { stageId: stage } : {}),
+        ...(urgency ? { urgency } : {}),
+        ...(status ? { status } : {}),
+        ...(overdue === "1"
+          ? { nextStepDueDate: { lt: new Date() }, status: "open" }
+          : {}),
+      },
+      include: {
+        company: true,
+        stage: { select: { label: true, isWon: true, isLost: true } },
+      },
+      orderBy: { createdAt: "desc" },
+    }),
+    db.savedView.findMany({
+      where: { entityType: "opportunity" },
+      orderBy: { name: "asc" },
+    }),
+    getOrgStages(db),
+  ]);
 
   return (
     <div>
@@ -74,9 +80,9 @@ export default async function OpportunitiesListPage({
           </SelectTrigger>
           <SelectContent>
             <SelectItem value="">Todas las etapas</SelectItem>
-            {OPPORTUNITY_STAGES.map((s) => (
-              <SelectItem key={s} value={s}>
-                {OPPORTUNITY_STAGE_LABELS[s]}
+            {stages.map((s) => (
+              <SelectItem key={s.id} value={s.id}>
+                {s.label}
               </SelectItem>
             ))}
           </SelectContent>
@@ -141,7 +147,7 @@ export default async function OpportunitiesListPage({
             header: "Valor",
             cell: (row) =>
               row.estimatedValue
-                ? formatCurrency(row.estimatedValue.toString())
+                ? formatCurrencyValue(row.estimatedValue.toString(), org.currency, org.locale)
                 : "—",
           },
           {

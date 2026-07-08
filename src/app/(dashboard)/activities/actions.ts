@@ -1,8 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { prisma } from "@/lib/prisma";
-import { requireUser } from "@/lib/session";
+import { requireOrgContext } from "@/lib/tenant";
 import {
   activityCreateSchema,
   activityUpdateSchema,
@@ -27,16 +26,19 @@ export async function createActivity(
   _prevState: ActivityFormState,
   formData: FormData,
 ): Promise<ActivityFormState> {
-  const user = await requireUser();
+  const { user, org, db } = await requireOrgContext();
 
   const parsed = activityCreateSchema.safeParse(Object.fromEntries(formData));
   if (!parsed.success) {
     return { error: "La actividad no pudo guardarse. Revisa los campos." };
   }
 
-  const activity = await prisma.activity.create({ data: parsed.data });
+  const activity = await db.activity.create({
+    data: { ...parsed.data, organizationId: org.id },
+  });
   if (activity.companyId) {
-    await appendTimelineEvent(prisma, {
+    await appendTimelineEvent(db, {
+      organizationId: org.id,
       companyId: activity.companyId,
       opportunityId: activity.opportunityId,
       type: "task_created",
@@ -56,7 +58,7 @@ export async function updateActivity(
   _prevState: ActivityFormState,
   formData: FormData,
 ): Promise<ActivityFormState> {
-  await requireUser();
+  const { db } = await requireOrgContext();
 
   const parsed = activityUpdateSchema.safeParse(Object.fromEntries(formData));
   if (!parsed.success) {
@@ -66,7 +68,7 @@ export async function updateActivity(
   const { id, ...data } = parsed.data;
   let activity;
   try {
-    activity = await prisma.activity.update({ where: { id }, data });
+    activity = await db.activity.update({ where: { id }, data });
   } catch (error) {
     handleMutationError(error);
   }
@@ -76,10 +78,10 @@ export async function updateActivity(
 }
 
 export async function assignActivity(id: string, assigneeId: string | null) {
-  const user = await requireUser();
+  const { user, org, db } = await requireOrgContext();
   let activity;
   try {
-    activity = await prisma.activity.update({
+    activity = await db.activity.update({
       where: { id },
       data: { assigneeId },
       include: { assignee: { select: { name: true } } },
@@ -88,7 +90,8 @@ export async function assignActivity(id: string, assigneeId: string | null) {
     handleMutationError(error);
   }
   if (activity.companyId) {
-    await appendTimelineEvent(prisma, {
+    await appendTimelineEvent(db, {
+      organizationId: org.id,
       companyId: activity.companyId,
       opportunityId: activity.opportunityId,
       type: "task_assigned",
@@ -107,10 +110,10 @@ export async function assignActivity(id: string, assigneeId: string | null) {
 }
 
 export async function completeActivity(id: string) {
-  await requireUser();
+  const { db } = await requireOrgContext();
   let activity;
   try {
-    activity = await prisma.activity.update({
+    activity = await db.activity.update({
       where: { id },
       data: { status: "completed", completedAt: new Date() },
     });
@@ -123,10 +126,10 @@ export async function completeActivity(id: string) {
 }
 
 export async function reopenActivity(id: string) {
-  await requireUser();
+  const { db } = await requireOrgContext();
   let activity;
   try {
-    activity = await prisma.activity.update({
+    activity = await db.activity.update({
       where: { id },
       data: { status: "pending", completedAt: null },
     });
@@ -139,10 +142,10 @@ export async function reopenActivity(id: string) {
 }
 
 export async function deleteActivity(id: string) {
-  await requireUser();
+  const { db } = await requireOrgContext();
   let activity;
   try {
-    activity = await prisma.activity.delete({ where: { id } });
+    activity = await db.activity.delete({ where: { id } });
   } catch (error) {
     handleMutationError(error);
   }

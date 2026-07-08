@@ -1,5 +1,4 @@
-import { prisma } from "@/lib/prisma";
-import { requireAdmin } from "@/lib/session";
+import { requireOrgAdminContext } from "@/lib/tenant";
 import { PageHeader } from "@/components/shared/page-header";
 import { Badge } from "@/components/ui/badge";
 import {
@@ -18,9 +17,9 @@ import {
 } from "./user-row-actions";
 
 export default async function UsersAdminPage() {
-  await requireAdmin();
+  const { db } = await requireOrgAdminContext();
 
-  const users = await prisma.user.findMany({
+  const users = await db.user.findMany({
     orderBy: [{ isActive: "desc" }, { createdAt: "asc" }],
     select: {
       id: true,

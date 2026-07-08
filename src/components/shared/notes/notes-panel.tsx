@@ -1,4 +1,4 @@
-import { prisma } from "@/lib/prisma";
+import { requireOrgContext } from "@/lib/tenant";
 import { NoteItem } from "@/components/shared/notes/note-item";
 import { NoteCreateForm } from "@/components/shared/notes/note-create-form";
 
@@ -11,7 +11,8 @@ export async function NotesPanel({
   personId?: string;
   opportunityId?: string;
 }) {
-  const notes = await prisma.note.findMany({
+  const { db } = await requireOrgContext();
+  const notes = await db.note.findMany({
     where: { companyId, personId, opportunityId },
     orderBy: { createdAt: "desc" },
   });

@@ -1,8 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { prisma } from "@/lib/prisma";
-import { requireUser } from "@/lib/session";
+import { requireOrgContext } from "@/lib/tenant";
 import { noteCreateSchema, noteUpdateSchema } from "@/lib/zod/note";
 import { handleMutationError } from "@/lib/prisma-errors";
 import { appendTimelineEvent } from "@/lib/timeline";
@@ -24,16 +23,19 @@ export async function createNote(
   _prevState: NoteFormState,
   formData: FormData,
 ): Promise<NoteFormState> {
-  const user = await requireUser();
+  const { user, org, db } = await requireOrgContext();
 
   const parsed = noteCreateSchema.safeParse(Object.fromEntries(formData));
   if (!parsed.success) {
     return { error: "La nota no pudo guardarse. Revisa los campos." };
   }
 
-  const note = await prisma.note.create({ data: parsed.data });
+  const note = await db.note.create({
+    data: { ...parsed.data, organizationId: org.id },
+  });
   if (note.companyId) {
-    await appendTimelineEvent(prisma, {
+    await appendTimelineEvent(db, {
+      organizationId: org.id,
       companyId: note.companyId,
       opportunityId: note.opportunityId,
       type: "note_added",
@@ -49,7 +51,7 @@ export async function updateNote(
   _prevState: NoteFormState,
   formData: FormData,
 ): Promise<NoteFormState> {
-  await requireUser();
+  const { db } = await requireOrgContext();
 
   const parsed = noteUpdateSchema.safeParse(Object.fromEntries(formData));
   if (!parsed.success) {
@@ -59,7 +61,7 @@ export async function updateNote(
   const { id, ...data } = parsed.data;
   let note;
   try {
-    note = await prisma.note.update({ where: { id }, data });
+    note = await db.note.update({ where: { id }, data });
   } catch (error) {
     handleMutationError(error);
   }
@@ -67,10 +69,10 @@ export async function updateNote(
 }
 
 export async function deleteNote(id: string) {
-  await requireUser();
+  const { db } = await requireOrgContext();
   let note;
   try {
-    note = await prisma.note.delete({ where: { id } });
+    note = await db.note.delete({ where: { id } });
   } catch (error) {
     handleMutationError(error);
   }

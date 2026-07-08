@@ -1,8 +1,7 @@
 import { tool } from "ai";
 import { z } from "zod";
-import { OpportunityStage } from "@prisma/client";
-import { prisma } from "@/lib/prisma";
-import { OPPORTUNITY_STAGE_LABELS } from "@/lib/zod/opportunity";
+import type { TenantClient } from "@/lib/tenant";
+import { getOrgStages, stagesByKey } from "@/lib/pipeline/stages";
 import {
   coerceFieldValue,
   getWritableFields,
@@ -21,10 +20,14 @@ function formatValue(value: unknown): string {
 }
 
 // Looks up the target record and the companyId a proposal must hang from.
-async function loadTarget(entity: AgentEntity, entityId: string) {
+async function loadTarget(
+  db: TenantClient,
+  entity: AgentEntity,
+  entityId: string,
+) {
   switch (entity) {
     case "company": {
-      const record = await prisma.company.findUnique({
+      const record = await db.company.findUnique({
         where: { id: entityId },
       });
       if (!record) throw new Error(`Empresa no encontrada: ${entityId}`);
@@ -34,17 +37,20 @@ async function loadTarget(entity: AgentEntity, entityId: string) {
       };
     }
     case "opportunity": {
-      const record = await prisma.opportunity.findUnique({
+      const record = await db.opportunity.findUnique({
         where: { id: entityId },
+        include: { stage: { select: { key: true, label: true } } },
       });
       if (!record) throw new Error(`Oportunidad no encontrada: ${entityId}`);
+      // El registry expone "stage" como key string; aplanamos la relación.
+      const { stage, ...rest } = record;
       return {
-        record: record as unknown as Record<string, unknown>,
+        record: { ...rest, stage: stage.key } as Record<string, unknown>,
         companyId: record.companyId,
       };
     }
     case "person": {
-      const record = await prisma.person.findUnique({
+      const record = await db.person.findUnique({
         where: { id: entityId },
       });
       if (!record) throw new Error(`Persona no encontrada: ${entityId}`);
@@ -93,9 +99,9 @@ export function buildProposalTools(ctx: AgentToolContext) {
           ),
       }),
       execute: async ({ entity, entityId, updates, reason }) => {
-        const fields = await getWritableFields(entity);
-        const { record, companyId } = await loadTarget(entity, entityId);
-        const customValues = await snapshotCustomFields(entity, entityId);
+        const fields = await getWritableFields(ctx.db, entity);
+        const { record, companyId } = await loadTarget(ctx.db, entity, entityId);
+        const customValues = await snapshotCustomFields(ctx.db, entity, entityId);
 
         const items = [];
         for (const update of updates) {
@@ -132,7 +138,7 @@ export function buildProposalTools(ctx: AgentToolContext) {
           });
         }
 
-        return createAgentProposal({
+        return createAgentProposal(ctx.db, ctx.organizationId, {
           threadId: ctx.threadId,
           companyId,
           opportunityId:
@@ -146,22 +152,35 @@ export function buildProposalTools(ctx: AgentToolContext) {
 
     change_stage: tool({
       description:
-        "Propone un cambio de etapa de una oportunidad. NO lo aplica: crea una propuesta que el usuario aprueba en el chat.",
+        "Propone un cambio de etapa de una oportunidad. NO lo aplica: crea una propuesta que el usuario aprueba en el chat. El valor de `stage` es el key de una etapa según list_writable_fields.",
       inputSchema: z.object({
         opportunityId: z.string().min(1),
-        stage: z.enum(OpportunityStage),
+        stage: z.string().min(1),
         reason: z.string().min(1),
       }),
       execute: async ({ opportunityId, stage, reason }) => {
-        const opportunity = await prisma.opportunity.findUnique({
+        const opportunity = await ctx.db.opportunity.findUnique({
           where: { id: opportunityId },
-          select: { id: true, name: true, stage: true, companyId: true },
+          select: {
+            id: true,
+            name: true,
+            stage: { select: { key: true, label: true } },
+            companyId: true,
+          },
         });
         if (!opportunity) {
           return { error: `Oportunidad no encontrada: ${opportunityId}` };
         }
 
-        return createAgentProposal({
+        const stages = stagesByKey(await getOrgStages(ctx.db));
+        const target = stages.get(stage);
+        if (!target) {
+          return {
+            error: `Etapa inválida "${stage}". Etapas válidas: ${[...stages.keys()].join(", ")}`,
+          };
+        }
+
+        return createAgentProposal(ctx.db, ctx.organizationId, {
           threadId: ctx.threadId,
           companyId: opportunity.companyId,
           opportunityId,
@@ -170,14 +189,12 @@ export function buildProposalTools(ctx: AgentToolContext) {
               type: "stage_change",
               entity: "opportunity",
               entityId: opportunityId,
-              beforeValue: { value: opportunity.stage },
-              afterValue: { value: stage },
+              beforeValue: { value: opportunity.stage.key },
+              afterValue: { value: target.key },
               explanation: reason,
               label: `Etapa de "${opportunity.name}"`,
-              before:
-                OPPORTUNITY_STAGE_LABELS[opportunity.stage] ??
-                opportunity.stage,
-              after: OPPORTUNITY_STAGE_LABELS[stage] ?? stage,
+              before: opportunity.stage.label,
+              after: target.label,
             },
           ],
         });
@@ -199,7 +216,7 @@ export function buildProposalTools(ctx: AgentToolContext) {
         reason: z.string().min(1),
       }),
       execute: async ({ companyId, reason, ...contact }) => {
-        const company = await prisma.company.findUnique({
+        const company = await ctx.db.company.findUnique({
           where: { id: companyId },
           select: { id: true, name: true },
         });
@@ -209,7 +226,7 @@ export function buildProposalTools(ctx: AgentToolContext) {
 
         const fullName =
           `${contact.firstName} ${contact.lastName ?? ""}`.trim();
-        return createAgentProposal({
+        return createAgentProposal(ctx.db, ctx.organizationId, {
           threadId: ctx.threadId,
           companyId,
           opportunityId: ctx.pageContext?.opportunityId,

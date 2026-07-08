@@ -1,4 +1,4 @@
-import { prisma } from "@/lib/prisma";
+import { requireOrgContext } from "@/lib/tenant";
 import { getActiveTeamMembers } from "@/lib/team";
 import { ActivityCreateForm } from "@/components/shared/activities/activity-create-form";
 import { ActivityRow } from "@/components/shared/activities/activity-row";
@@ -12,13 +12,15 @@ export async function ActivitiesPanel({
   personId?: string;
   opportunityId?: string;
 }) {
+  const { db } = await requireOrgContext();
+
   const [activities, teamMembers] = await Promise.all([
-    prisma.activity.findMany({
+    db.activity.findMany({
       where: { companyId, personId, opportunityId },
       include: { assignee: { select: { id: true, name: true } } },
       orderBy: [{ status: "asc" }, { dueDate: "asc" }],
     }),
-    getActiveTeamMembers(),
+    getActiveTeamMembers(db),
   ]);
 
   return (

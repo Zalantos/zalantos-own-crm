@@ -1,4 +1,4 @@
-import { prisma } from "@/lib/prisma";
+import { withOrgTransaction, type TenantClient } from "@/lib/tenant";
 import { getObjectBuffer } from "@/lib/meeting-intelligence/storage/r2";
 import {
   classifyEvidence,
@@ -16,8 +16,12 @@ import type { Prisma } from "@prisma/client";
 // Orchestrates evidence → text → transcript → AI → proposal for one meeting.
 // Each phase advances Meeting.processingStatus and is safe to re-run: evidence
 // that already has extractedText is skipped, so a retry resumes where it left off.
-export async function runPipeline(meetingId: string): Promise<void> {
-  const meeting = await prisma.meeting.findUnique({
+export async function runPipeline(
+  db: TenantClient,
+  organizationId: string,
+  meetingId: string,
+): Promise<void> {
+  const meeting = await db.meeting.findUnique({
     where: { id: meetingId },
     include: { evidence: true },
   });
@@ -25,7 +29,7 @@ export async function runPipeline(meetingId: string): Promise<void> {
 
   try {
     // --- Extract text from documents ---
-    await prisma.meeting.update({
+    await db.meeting.update({
       where: { id: meetingId },
       data: { processingStatus: "extracting", processingError: null },
     });
@@ -36,7 +40,7 @@ export async function runPipeline(meetingId: string): Promise<void> {
       if (kind !== "text") continue;
       const buffer = await getObjectBuffer(ev.storagePath);
       const text = await extractText(ev.type, buffer);
-      await prisma.evidence.update({
+      await db.evidence.update({
         where: { id: ev.id },
         data: { extractedText: text, status: "extracted" },
       });
@@ -48,13 +52,13 @@ export async function runPipeline(meetingId: string): Promise<void> {
       if (ev.extractedText) continue;
       const { kind } = classifyEvidence(ev.filename, ev.mimeType);
       if (kind !== "audio" && kind !== "video") continue;
-      await prisma.meeting.update({
+      await db.meeting.update({
         where: { id: meetingId },
         data: { processingStatus: "transcribing" },
       });
       const buffer = await getObjectBuffer(ev.storagePath);
       const transcript = await transcribeAudio(buffer, ev.filename);
-      await prisma.evidence.update({
+      await db.evidence.update({
         where: { id: ev.id },
         data: { extractedText: transcript, status: "extracted" },
       });
@@ -64,7 +68,7 @@ export async function runPipeline(meetingId: string): Promise<void> {
     }
 
     // --- Assemble combined text for the model ---
-    const refreshed = await prisma.evidence.findMany({
+    const refreshed = await db.evidence.findMany({
       where: { meetingId },
       orderBy: { uploadedAt: "asc" },
     });
@@ -78,7 +82,7 @@ export async function runPipeline(meetingId: string): Promise<void> {
     }
 
     // --- AI reasoning ---
-    await prisma.meeting.update({
+    await db.meeting.update({
       where: { id: meetingId },
       data: {
         processingStatus: "analyzing",
@@ -86,7 +90,7 @@ export async function runPipeline(meetingId: string): Promise<void> {
       },
     });
 
-    const snapshot = await buildCrmSnapshot(meetingId);
+    const snapshot = await buildCrmSnapshot(db, meetingId);
     const { analysis, model, raw } = await defaultReasoningProvider.analyze({
       snapshot,
       transcript: combined,
@@ -103,15 +107,17 @@ export async function runPipeline(meetingId: string): Promise<void> {
     });
 
     // --- Persist proposal + items ---
-    await prisma.$transaction(async (tx) => {
+    await withOrgTransaction(organizationId, async (tx) => {
       await tx.cRMChangeProposal.create({
         data: {
+          organizationId,
           meetingId,
           confidence: analysis.confidence,
           model,
           rawModelOutput: raw as unknown as Prisma.InputJsonValue,
           items: {
             create: items.map((item) => ({
+              organizationId,
               type: item.type,
               entity: item.entity,
               entityId: item.entityId,
@@ -127,7 +133,7 @@ export async function runPipeline(meetingId: string): Promise<void> {
       });
 
       await tx.meeting.update({
-        where: { id: meetingId },
+        where: { id: meetingId, organizationId },
         data: {
           processingStatus: "ready",
           aiSummary: buildAiSummary(analysis) as unknown as Prisma.InputJsonValue,
@@ -135,7 +141,7 @@ export async function runPipeline(meetingId: string): Promise<void> {
       });
     });
   } catch (error) {
-    await prisma.meeting.update({
+    await db.meeting.update({
       where: { id: meetingId },
       data: {
         processingStatus: "failed",

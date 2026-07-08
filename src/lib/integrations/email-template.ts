@@ -4,6 +4,9 @@ type EmailDetail = {
 };
 
 type NotificationEmailInput = {
+  // Branding por organización (nombre y color de acento).
+  brandName?: string;
+  accentColor?: string;
   eyebrow: string;
   title: string;
   intro: string;
@@ -14,6 +17,9 @@ type NotificationEmailInput = {
   ctaUrl: string;
   footer?: string;
 };
+
+const DEFAULT_BRAND_NAME = "CRM Zalantos";
+const DEFAULT_ACCENT_COLOR = "#0f766e";
 
 const toneStyles = {
   warning: {
@@ -65,9 +71,11 @@ function renderDetails(details: EmailDetail[]) {
 
 export function renderNotificationEmail(input: NotificationEmailInput) {
   const tone = toneStyles[input.statusTone];
+  const brandName = input.brandName ?? DEFAULT_BRAND_NAME;
+  const accentColor = input.accentColor ?? DEFAULT_ACCENT_COLOR;
   const footer =
     input.footer ??
-    "Este aviso fue enviado automaticamente por el CRM de Zalantos.";
+    `Este aviso fue enviado automaticamente por ${brandName}.`;
 
   return `<!doctype html>
 <html lang="es">
@@ -84,20 +92,20 @@ export function renderNotificationEmail(input: NotificationEmailInput) {
           <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width: 620px; border-collapse: collapse;">
             <tr>
               <td style="padding: 0 0 14px 0;">
-                <div style="font-size: 14px; font-weight: 700; color: #0f172a;">CRM Zalantos</div>
+                <div style="font-size: 14px; font-weight: 700; color: #0f172a;">${escapeHtml(brandName)}</div>
               </td>
             </tr>
             <tr>
               <td style="background: #ffffff; border: 1px solid #e2e8f0; border-radius: 14px; overflow: hidden;">
-                <div style="height: 6px; background: #0f766e;"></div>
+                <div style="height: 6px; background: ${escapeHtml(accentColor)};"></div>
                 <div style="padding: 28px;">
-                  <div style="font-size: 12px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; color: #0f766e; margin-bottom: 10px;">${escapeHtml(input.eyebrow)}</div>
+                  <div style="font-size: 12px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; color: ${escapeHtml(accentColor)}; margin-bottom: 10px;">${escapeHtml(input.eyebrow)}</div>
                   <h1 style="margin: 0 0 12px 0; color: #0f172a; font-size: 24px; line-height: 1.25; font-weight: 700;">${escapeHtml(input.title)}</h1>
                   <p style="margin: 0; color: #475569; font-size: 15px; line-height: 1.6;">${escapeHtml(input.intro)}</p>
                   <div style="display: inline-block; margin-top: 18px; padding: 8px 12px; background: ${tone.background}; color: ${tone.color}; border: 1px solid ${tone.border}; border-radius: 999px; font-size: 13px; font-weight: 700;">${escapeHtml(input.statusLabel)}</div>
                   ${renderDetails(input.details)}
                   <div style="margin-top: 26px;">
-                    <a href="${escapeHtml(input.ctaUrl)}" style="display: inline-block; background: #0f766e; color: #ffffff; text-decoration: none; font-size: 14px; font-weight: 700; padding: 12px 18px; border-radius: 8px;">${escapeHtml(input.ctaLabel)}</a>
+                    <a href="${escapeHtml(input.ctaUrl)}" style="display: inline-block; background: ${escapeHtml(accentColor)}; color: #ffffff; text-decoration: none; font-size: 14px; font-weight: 700; padding: 12px 18px; border-radius: 8px;">${escapeHtml(input.ctaLabel)}</a>
                   </div>
                 </div>
               </td>

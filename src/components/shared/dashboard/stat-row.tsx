@@ -6,7 +6,7 @@ import {
   VideoIcon,
 } from "lucide-react";
 import { StatCard } from "@/components/shared/stat-card";
-import { formatCurrency } from "@/lib/currency";
+import { formatCurrencyValue } from "@/lib/format";
 
 export function StatRow({
   companyCount,
@@ -15,6 +15,8 @@ export function StatRow({
   overdueActivityCount,
   meetingsReadyCount,
   meetingsTotalCount,
+  currency,
+  locale,
 }: {
   companyCount: number;
   openOpportunityCount: number;
@@ -22,6 +24,8 @@ export function StatRow({
   overdueActivityCount: number;
   meetingsReadyCount: number;
   meetingsTotalCount: number;
+  currency: string;
+  locale: string;
 }) {
   return (
     <div className="grid grid-cols-2 gap-4 md:grid-cols-3 xl:grid-cols-5">
@@ -33,7 +37,7 @@ export function StatRow({
       />
       <StatCard
         label="Valor de pipeline"
-        value={formatCurrency(pipelineValue)}
+        value={formatCurrencyValue(pipelineValue, currency, locale)}
         icon={CircleDollarSignIcon}
       />
       <StatCard

@@ -1,4 +1,5 @@
-import { prisma } from "@/lib/prisma";
+import { requireOrgContext } from "@/lib/tenant";
+import { getOrgStages } from "@/lib/pipeline/stages";
 import { PageHeader } from "@/components/shared/page-header";
 import { CustomFieldsFormSection } from "@/components/shared/custom-fields/custom-fields-form-section";
 import { OpportunityForm } from "../opportunity-form";
@@ -9,9 +10,11 @@ export default async function NewOpportunityPage({
   searchParams: Promise<{ companyId?: string }>;
 }) {
   const { companyId } = await searchParams;
-  const [companies, people] = await Promise.all([
-    prisma.company.findMany({ orderBy: { name: "asc" } }),
-    prisma.person.findMany({ orderBy: { firstName: "asc" } }),
+  const { db } = await requireOrgContext();
+  const [companies, people, stages] = await Promise.all([
+    db.company.findMany({ orderBy: { name: "asc" } }),
+    db.person.findMany({ orderBy: { firstName: "asc" } }),
+    getOrgStages(db),
   ]);
 
   return (
@@ -20,6 +23,7 @@ export default async function NewOpportunityPage({
       <OpportunityForm
         companies={companies}
         people={people}
+        stages={stages}
         defaultCompanyId={companyId}
         customFieldsSection={
           <CustomFieldsFormSection entityType="opportunity" />

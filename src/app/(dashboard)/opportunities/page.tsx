@@ -1,14 +1,19 @@
 import Link from "next/link";
-import { prisma } from "@/lib/prisma";
+import { requireOrgContext } from "@/lib/tenant";
+import { getOrgStages } from "@/lib/pipeline/stages";
 import { PageHeader } from "@/components/shared/page-header";
 import { Button } from "@/components/ui/button";
 import { KanbanBoard } from "@/components/shared/kanban/kanban-board";
 
 export default async function OpportunitiesKanbanPage() {
-  const rows = await prisma.opportunity.findMany({
-    include: { company: true },
-    orderBy: { createdAt: "desc" },
-  });
+  const { org, db } = await requireOrgContext();
+  const [rows, stages] = await Promise.all([
+    db.opportunity.findMany({
+      include: { company: true },
+      orderBy: { createdAt: "desc" },
+    }),
+    getOrgStages(db),
+  ]);
 
   const opportunities = rows.map((row) => ({
     ...row,
@@ -34,7 +39,12 @@ export default async function OpportunitiesKanbanPage() {
           </>
         }
       />
-      <KanbanBoard opportunities={opportunities} />
+      <KanbanBoard
+        opportunities={opportunities}
+        stages={stages}
+        currency={org.currency}
+        locale={org.locale}
+      />
     </div>
   );
 }

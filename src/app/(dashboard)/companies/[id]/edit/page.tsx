@@ -1,6 +1,5 @@
 import { notFound } from "next/navigation";
-import { prisma } from "@/lib/prisma";
-import { requireUser } from "@/lib/session";
+import { requireOrgContext } from "@/lib/tenant";
 import { PageHeader } from "@/components/shared/page-header";
 import { Button } from "@/components/ui/button";
 import { CustomFieldsFormSection } from "@/components/shared/custom-fields/custom-fields-form-section";
@@ -13,8 +12,8 @@ export default async function EditCompanyPage({
   params: Promise<{ id: string }>;
 }) {
   const { id } = await params;
-  const user = await requireUser();
-  const company = await prisma.company.findUnique({ where: { id } });
+  const { user, db } = await requireOrgContext();
+  const company = await db.company.findUnique({ where: { id } });
   if (!company) notFound();
   const canDelete = user.role === "ADMIN" || company.createdById === user.id;
 

@@ -1,8 +1,8 @@
-import { prisma } from "@/lib/prisma";
-import { OpportunityStage, type Prisma } from "@prisma/client";
+import type { Prisma } from "@prisma/client";
+import { withOrgTransaction, type TenantClient } from "@/lib/tenant";
 import { appendTimelineEvent } from "@/lib/timeline";
 import { evaluateWorkflows } from "@/lib/workflows/engine";
-import { OPPORTUNITY_STAGE_LABELS } from "@/lib/zod/opportunity";
+import { getOrgStages, stagesByKey, type StageOption } from "@/lib/pipeline/stages";
 import {
   coerceFieldValue,
   getWritableFields,
@@ -12,6 +12,10 @@ import {
 import { upsertCustomFieldValue } from "@/lib/custom-fields/merge";
 
 type ApplyContext = {
+  db: TenantClient;
+  organizationId: string;
+  // Etapas activas de la org, indexadas por key (los items guardan keys).
+  stages: Map<string, StageOption>;
   companyId: string;
   // Fallback opportunity for items that don't target one explicitly
   // (the meeting's opportunity, or the one the chat proposal was scoped to).
@@ -39,18 +43,17 @@ function asRecord(value: Prisma.JsonValue): Record<string, unknown> {
     : {};
 }
 
-function assertValidStage(value: unknown): OpportunityStage {
-  const stage = String(value);
-  if (!(Object.values(OpportunityStage) as string[]).includes(stage)) {
-    throw new Error(`Etapa inválida: ${stage}`);
+function resolveStage(ctx: ApplyContext, value: unknown): StageOption {
+  const stage = ctx.stages.get(String(value));
+  if (!stage) {
+    throw new Error(`Etapa inválida: ${String(value)}`);
   }
-  return stage as OpportunityStage;
+  return stage;
 }
 
-function stageLabel(value: unknown): string {
+function stageLabel(ctx: ApplyContext, value: unknown): string {
   if (value == null) return "—";
-  const stage = String(value);
-  return OPPORTUNITY_STAGE_LABELS[stage as OpportunityStage] ?? stage;
+  return ctx.stages.get(String(value))?.label ?? String(value);
 }
 
 function formatValue(value: unknown): string {
@@ -68,11 +71,11 @@ function asAgentEntity(entity: string): AgentEntity {
 // Person refs proposed by the model must exist and belong to the company.
 async function assertPersonInCompany(
   tx: Prisma.TransactionClient,
+  ctx: ApplyContext,
   personId: string,
-  companyId: string,
 ): Promise<void> {
   const person = await tx.person.findFirst({
-    where: { id: personId, companyId },
+    where: { id: personId, companyId: ctx.companyId, organizationId: ctx.organizationId },
     select: { id: true },
   });
   if (!person) {
@@ -99,7 +102,7 @@ async function applyFieldUpdate(
   value: unknown,
 ): Promise<void> {
   const entity = asAgentEntity(item.entity);
-  const fields = await getWritableFields(entity);
+  const fields = await getWritableFields(ctx.db, entity);
   const spec = resolveField(fields, entity, field);
   const coerced = coerceFieldValue(spec, field, value);
 
@@ -112,6 +115,7 @@ async function applyFieldUpdate(
   if (spec.customDefinition) {
     await upsertCustomFieldValue(
       tx,
+      ctx.organizationId,
       entity,
       entityId,
       spec.customDefinition,
@@ -121,19 +125,39 @@ async function applyFieldUpdate(
   }
 
   if (spec.type === "personRef" && coerced != null) {
-    await assertPersonInCompany(tx, String(coerced), ctx.companyId);
+    await assertPersonInCompany(tx, ctx, String(coerced));
+  }
+
+  // "stage" en oportunidades viaja como key de PipelineStage y se persiste
+  // como FK (stageId).
+  if (entity === "opportunity" && field === "stage") {
+    const stage = resolveStage(ctx, coerced);
+    await tx.opportunity.update({
+      where: { id: entityId, organizationId: ctx.organizationId },
+      data: { stageId: stage.id },
+    });
+    return;
   }
 
   const data = { [field]: coerced };
   switch (entity) {
     case "company":
-      await tx.company.update({ where: { id: entityId }, data });
+      await tx.company.update({
+        where: { id: entityId, organizationId: ctx.organizationId },
+        data,
+      });
       break;
     case "opportunity":
-      await tx.opportunity.update({ where: { id: entityId }, data });
+      await tx.opportunity.update({
+        where: { id: entityId, organizationId: ctx.organizationId },
+        data,
+      });
       break;
     case "person":
-      await tx.person.update({ where: { id: entityId }, data });
+      await tx.person.update({
+        where: { id: entityId, organizationId: ctx.organizationId },
+        data,
+      });
       break;
   }
 }
@@ -150,6 +174,7 @@ async function applyItem(
   const before = asRecord(item.beforeValue);
 
   const timelineBase = {
+    organizationId: ctx.organizationId,
     companyId: ctx.companyId,
     opportunityId:
       item.entity === "opportunity" && item.entityId
@@ -179,7 +204,7 @@ async function applyItem(
           ? "Cambio de etapa"
           : `Campo actualizado en ${ENTITY_LABELS[item.entity] ?? item.entity}: ${field}`,
         summary: isStage
-          ? `${stageLabel(before.value)} → ${stageLabel(value)}`
+          ? `${stageLabel(ctx, before.value)} → ${stageLabel(ctx, value)}`
           : `${formatValue(before.value)} → ${formatValue(value)}`,
       });
       break;
@@ -188,7 +213,7 @@ async function applyItem(
     case "update_pain": {
       if (!item.entityId) throw new Error("Falta oportunidad destino");
       await tx.opportunity.update({
-        where: { id: item.entityId },
+        where: { id: item.entityId, organizationId: ctx.organizationId },
         data: { mainPain: String(after.value ?? "") },
       });
       await appendTimelineEvent(tx, {
@@ -206,7 +231,7 @@ async function applyItem(
         ? new Date(String(after.nextStepDueDate))
         : null;
       await tx.opportunity.update({
-        where: { id: item.entityId },
+        where: { id: item.entityId, organizationId: ctx.organizationId },
         data: {
           nextStep: String(after.nextStep ?? ""),
           nextStepDueDate: dueDate,
@@ -223,16 +248,16 @@ async function applyItem(
 
     case "stage_change": {
       if (!item.entityId) throw new Error("Falta oportunidad destino");
-      const stage = assertValidStage(after.value);
+      const stage = resolveStage(ctx, after.value);
       await tx.opportunity.update({
-        where: { id: item.entityId },
-        data: { stage },
+        where: { id: item.entityId, organizationId: ctx.organizationId },
+        data: { stageId: stage.id },
       });
       await appendTimelineEvent(tx, {
         ...timelineBase,
         type: "stage_changed",
         title: "Cambio de etapa",
-        summary: `${stageLabel(before.value)} → ${stageLabel(stage)}`,
+        summary: `${stageLabel(ctx, before.value)} → ${stage.label}`,
       });
       break;
     }
@@ -240,6 +265,7 @@ async function applyItem(
     case "add_contact": {
       const person = await tx.person.create({
         data: {
+          organizationId: ctx.organizationId,
           companyId: ctx.companyId,
           firstName: String(after.firstName ?? "").trim() || "Sin nombre",
           lastName: String(after.lastName ?? ""),
@@ -259,7 +285,10 @@ async function applyItem(
         (person.isDecisionMaker || person.isSponsor)
       ) {
         await tx.opportunity.update({
-          where: { id: ctx.defaultOpportunityId },
+          where: {
+            id: ctx.defaultOpportunityId,
+            organizationId: ctx.organizationId,
+          },
           data: {
             ...(person.isDecisionMaker ? { decisionMakerId: person.id } : {}),
             ...(person.isSponsor ? { sponsorId: person.id } : {}),
@@ -281,6 +310,7 @@ async function applyItem(
         after.dueInDays == null ? null : Number(after.dueInDays);
       const task = await tx.activity.create({
         data: {
+          organizationId: ctx.organizationId,
           companyId: ctx.companyId,
           opportunityId: ctx.defaultOpportunityId,
           type: "task",
@@ -307,6 +337,7 @@ async function applyItem(
     case "add_note": {
       const note = await tx.note.create({
         data: {
+          organizationId: ctx.organizationId,
           companyId: ctx.companyId,
           opportunityId: ctx.defaultOpportunityId,
           title: after.title ? String(after.title) : null,
@@ -357,8 +388,8 @@ function stageChangeOf(
 
 // Resolves the company/opportunity a proposal belongs to, falling back to the
 // originating meeting for legacy rows created before the columns existed.
-export async function getProposalContext(proposalId: string) {
-  const proposal = await prisma.cRMChangeProposal.findUnique({
+export async function getProposalContext(db: TenantClient, proposalId: string) {
+  const proposal = await db.cRMChangeProposal.findUnique({
     where: { id: proposalId },
     include: {
       meeting: {
@@ -384,17 +415,22 @@ export async function getProposalContext(proposalId: string) {
 // Applies every approved item of a proposal. Each item is applied in its own
 // transaction so one failure doesn't roll back the rest (item → status=failed).
 export async function applyProposal(
+  db: TenantClient,
+  organizationId: string,
   proposalId: string,
   actorId: string,
 ): Promise<{ applied: number; failed: number }> {
-  const proposal = await prisma.cRMChangeProposal.findUnique({
+  const proposal = await db.cRMChangeProposal.findUnique({
     where: { id: proposalId },
     include: { items: true },
   });
   if (!proposal) throw new Error("Propuesta no encontrada");
 
-  const context = await getProposalContext(proposalId);
+  const context = await getProposalContext(db, proposalId);
   const ctx: ApplyContext = {
+    db,
+    organizationId,
+    stages: stagesByKey(await getOrgStages(db)),
     companyId: context.companyId,
     defaultOpportunityId: context.opportunityId,
     originLabel: context.originLabel,
@@ -410,10 +446,10 @@ export async function applyProposal(
   for (const item of proposal.items) {
     if (!item.approved || item.status === "applied") continue;
     try {
-      await prisma.$transaction(async (tx) => {
+      await withOrgTransaction(organizationId, async (tx) => {
         await applyItem(tx, item, ctx);
         await tx.cRMChangeItem.update({
-          where: { id: item.id },
+          where: { id: item.id, organizationId },
           data: { status: "applied", appliedAt: new Date() },
         });
       });
@@ -422,7 +458,7 @@ export async function applyProposal(
       if (stageChange) stageChanges.push(stageChange);
     } catch (error) {
       failed += 1;
-      await prisma.cRMChangeItem.update({
+      await db.cRMChangeItem.update({
         where: { id: item.id },
         data: { status: "failed" },
       });
@@ -435,12 +471,13 @@ export async function applyProposal(
   const nextStatus =
     failed > 0 || hasRejected ? "partially_approved" : "applied";
 
-  await prisma.cRMChangeProposal.update({
+  await db.cRMChangeProposal.update({
     where: { id: proposalId },
     data: { status: nextStatus, reviewedBy: actorId, reviewedAt: new Date() },
   });
 
-  await appendTimelineEvent(prisma, {
+  await appendTimelineEvent(db, {
+    organizationId,
     companyId: ctx.companyId,
     opportunityId: ctx.defaultOpportunityId,
     type: "proposal_applied",
@@ -453,7 +490,7 @@ export async function applyProposal(
 
   // Fire existing workflow engine for each applied stage change.
   for (const change of stageChanges) {
-    await evaluateWorkflows({
+    await evaluateWorkflows(db, organizationId, {
       entityType: "opportunity",
       entityId: change.opportunityId,
       eventName: "stage_changed",

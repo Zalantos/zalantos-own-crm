@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { prisma } from "@/lib/prisma";
+import { requireOrgContext } from "@/lib/tenant";
 import { PageHeader } from "@/components/shared/page-header";
 import { DataTable } from "@/components/shared/data-table";
 import { Button } from "@/components/ui/button";
@@ -13,7 +13,8 @@ type MeetingRow = Meeting & {
 };
 
 export default async function MeetingsPage() {
-  const meetings = await prisma.meeting.findMany({
+  const { db } = await requireOrgContext();
+  const meetings = await db.meeting.findMany({
     orderBy: { meetingDate: "desc" },
     include: {
       company: { select: { name: true } },

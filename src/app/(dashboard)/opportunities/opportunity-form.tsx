@@ -10,10 +10,7 @@ import {
   updateOpportunity,
   type FormState,
 } from "./actions";
-import {
-  OPPORTUNITY_STAGES,
-  OPPORTUNITY_STAGE_LABELS,
-} from "@/lib/zod/opportunity";
+import type { StageOption } from "@/lib/pipeline/stages";
 import type { Company, Opportunity, Person } from "@prisma/client";
 
 const URGENCY_OPTIONS = ["low", "medium", "high"];
@@ -23,12 +20,14 @@ export function OpportunityForm({
   opportunity,
   companies,
   people,
+  stages,
   defaultCompanyId,
   customFieldsSection,
 }: {
   opportunity?: Opportunity;
   companies: Company[];
   people: Person[];
+  stages: StageOption[];
   defaultCompanyId?: string;
   customFieldsSection?: React.ReactNode;
 }) {
@@ -68,16 +67,16 @@ export function OpportunityForm({
         />
 
         <div className="space-y-2">
-          <Label htmlFor="stage">Etapa</Label>
+          <Label htmlFor="stageId">Etapa</Label>
           <select
-            id="stage"
-            name="stage"
-            defaultValue={opportunity?.stage ?? "lead_identificado"}
+            id="stageId"
+            name="stageId"
+            defaultValue={opportunity?.stageId ?? stages[0]?.id ?? ""}
             className="bg-background h-9 w-full rounded-md border px-3 text-sm"
           >
-            {OPPORTUNITY_STAGES.map((stage) => (
-              <option key={stage} value={stage}>
-                {OPPORTUNITY_STAGE_LABELS[stage]}
+            {stages.map((stage) => (
+              <option key={stage.id} value={stage.id}>
+                {stage.label}
               </option>
             ))}
           </select>

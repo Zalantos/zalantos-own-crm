@@ -3,6 +3,7 @@ import {
   getOpportunityTimeline,
   TYPE_LABELS,
 } from "@/lib/timeline";
+import { requireOrgContext } from "@/lib/tenant";
 import { formatDateTime } from "@/lib/utils";
 
 type TimelineProps =
@@ -10,10 +11,11 @@ type TimelineProps =
   | { opportunityId: string; companyId?: never };
 
 export async function CompanyTimeline(props: TimelineProps) {
+  const { db } = await requireOrgContext();
   const events =
     "opportunityId" in props && props.opportunityId
-      ? await getOpportunityTimeline(props.opportunityId)
-      : await getCompanyTimeline((props as { companyId: string }).companyId);
+      ? await getOpportunityTimeline(db, props.opportunityId)
+      : await getCompanyTimeline(db, (props as { companyId: string }).companyId);
 
   if (events.length === 0) {
     return (

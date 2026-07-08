@@ -24,6 +24,12 @@
 .DS_Store
 *.pem
 
+# playwright mcp session logs
+.playwright-mcp/
+
+# local database dumps (never commit data)
+/backups/
+
 # debug
 npm-debug.log*
 yarn-debug.log*

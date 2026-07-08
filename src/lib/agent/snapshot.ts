@@ -1,16 +1,17 @@
-import { prisma } from "@/lib/prisma";
 import { CUSTOM_FIELD_PREFIX } from "@/lib/agent/field-registry";
 import { mergeCustomFields } from "@/lib/custom-fields/merge";
 import type { EntityType } from "@prisma/client";
+import type { TenantClient } from "@/lib/tenant";
 
 // Compact, serializable view of one company that the model reasons against.
 // Kept bounded on purpose (recent records only) to control token cost.
 // Extracted from the Meeting Intelligence snapshot so chat and pipeline share it.
 export async function buildCompanySnapshot(
+  db: TenantClient,
   companyId: string,
   options: { excludeMeetingId?: string } = {},
 ) {
-  const company = await prisma.company.findUnique({ where: { id: companyId } });
+  const company = await db.company.findUnique({ where: { id: companyId } });
   if (!company) throw new Error(`Empresa no encontrada: ${companyId}`);
 
   const [
@@ -21,19 +22,22 @@ export async function buildCompanySnapshot(
     priorMeetings,
     customFields,
   ] = await Promise.all([
-    prisma.opportunity.findMany({ where: { companyId } }),
-    prisma.person.findMany({ where: { companyId } }),
-    prisma.note.findMany({
+    db.opportunity.findMany({
+      where: { companyId },
+      include: { stage: { select: { key: true, label: true } } },
+    }),
+    db.person.findMany({ where: { companyId } }),
+    db.note.findMany({
       where: { companyId },
       orderBy: { createdAt: "desc" },
       take: 10,
     }),
-    prisma.activity.findMany({
+    db.activity.findMany({
       where: { companyId },
       orderBy: { createdAt: "desc" },
       take: 10,
     }),
-    prisma.meeting.findMany({
+    db.meeting.findMany({
       where: {
         companyId,
         ...(options.excludeMeetingId
@@ -45,7 +49,7 @@ export async function buildCompanySnapshot(
       take: 5,
       select: { id: true, title: true, meetingDate: true, aiSummary: true },
     }),
-    snapshotCustomFields("company", companyId),
+    snapshotCustomFields(db, "company", companyId),
   ]);
 
   return {
@@ -68,7 +72,9 @@ export async function buildCompanySnapshot(
     opportunities: opportunities.map((o) => ({
       id: o.id,
       name: o.name,
-      stage: o.stage,
+      // `stage` es el key de la etapa (coincide con list_writable_fields).
+      stage: o.stage.key,
+      stageLabel: o.stage.label,
       status: o.status,
       mainPain: o.mainPain,
       urgency: o.urgency,
@@ -107,10 +113,11 @@ export async function buildCompanySnapshot(
 // Custom field values keyed as "custom.<fieldName>" so they match the field
 // registry naming the agent uses when proposing updates.
 export async function snapshotCustomFields(
+  db: TenantClient,
   entityType: EntityType,
   entityId: string,
 ): Promise<Record<string, unknown>> {
-  const merged = await mergeCustomFields(entityType, entityId);
+  const merged = await mergeCustomFields(db, entityType, entityId);
   const result: Record<string, unknown> = {};
   for (const { definition, value } of merged) {
     result[`${CUSTOM_FIELD_PREFIX}${definition.fieldName}`] =

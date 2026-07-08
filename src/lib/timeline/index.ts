@@ -1,5 +1,5 @@
-import { prisma } from "@/lib/prisma";
 import type { Prisma } from "@prisma/client";
+import type { TenantClient } from "@/lib/tenant";
 
 export const TYPE_LABELS: Record<string, string> = {
   meeting_created: "Reunión",
@@ -25,6 +25,7 @@ export const TYPE_LABELS: Record<string, string> = {
 const ACTIVITY_PAGE_SIZE = 25;
 
 type TimelineInput = {
+  organizationId: string;
   companyId: string;
   opportunityId?: string | null;
   type: string;
@@ -37,13 +38,15 @@ type TimelineInput = {
 };
 
 // Append-only event log. Accepts a transaction client so it can be written
-// atomically alongside the domain change that produced it.
+// atomically alongside the domain change that produced it. organizationId es
+// explícito porque dentro de una transacción cruda no hay auto-scoping.
 export async function appendTimelineEvent(
-  client: Prisma.TransactionClient | typeof prisma,
+  client: Prisma.TransactionClient | TenantClient,
   input: TimelineInput,
 ) {
   await client.timelineEvent.create({
     data: {
+      organizationId: input.organizationId,
       companyId: input.companyId,
       opportunityId: input.opportunityId ?? null,
       type: input.type,
@@ -57,16 +60,19 @@ export async function appendTimelineEvent(
   });
 }
 
-export async function getCompanyTimeline(companyId: string) {
-  return prisma.timelineEvent.findMany({
+export async function getCompanyTimeline(db: TenantClient, companyId: string) {
+  return db.timelineEvent.findMany({
     where: { companyId },
     orderBy: { occurredAt: "desc" },
     take: 100,
   });
 }
 
-export async function getOpportunityTimeline(opportunityId: string) {
-  return prisma.timelineEvent.findMany({
+export async function getOpportunityTimeline(
+  db: TenantClient,
+  opportunityId: string,
+) {
+  return db.timelineEvent.findMany({
     where: { opportunityId },
     orderBy: { occurredAt: "desc" },
     take: 100,
@@ -86,7 +92,10 @@ export type ActivityFeedFilters = {
 // TimelineEvent has no FK to User (multi-tenant events may outlive an actor
 // record), so actor names are resolved in a second batched lookup rather than
 // a Prisma `include`.
-export async function getActivityFeed(filters: ActivityFeedFilters = {}) {
+export async function getActivityFeed(
+  db: TenantClient,
+  filters: ActivityFeedFilters = {},
+) {
   const page = filters.page && filters.page > 0 ? filters.page : 1;
 
   const where: Prisma.TimelineEventWhereInput = {
@@ -104,21 +113,21 @@ export async function getActivityFeed(filters: ActivityFeedFilters = {}) {
   };
 
   const [events, total] = await Promise.all([
-    prisma.timelineEvent.findMany({
+    db.timelineEvent.findMany({
       where,
       orderBy: { occurredAt: "desc" },
       skip: (page - 1) * ACTIVITY_PAGE_SIZE,
       take: ACTIVITY_PAGE_SIZE,
       include: { company: { select: { name: true } } },
     }),
-    prisma.timelineEvent.count({ where }),
+    db.timelineEvent.count({ where }),
   ]);
 
   const actorIds = [
     ...new Set(events.map((event) => event.actorId).filter((id) => id !== null)),
   ];
   const actors = actorIds.length
-    ? await prisma.user.findMany({
+    ? await db.user.findMany({
         where: { id: { in: actorIds } },
         select: { id: true, name: true, email: true },
       })

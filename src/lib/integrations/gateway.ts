@@ -1,9 +1,18 @@
 import { EntityType, type Prisma } from "@prisma/client";
-import { prisma } from "@/lib/prisma";
+import type { TenantClient } from "@/lib/tenant";
+import { decryptSecret } from "@/lib/crypto";
 
 const DEFAULT_TIMEOUT_MS = 10_000;
 
 type JsonRecord = Record<string, unknown>;
+
+// Subconjunto de Organization que necesita el gateway (settings por org con
+// fallback al env global cuando la org no configuró el suyo).
+export type OrgGatewayConfig = {
+  id: string;
+  integrationGatewayUrl: string | null;
+  integrationGatewaySecret: string | null;
+};
 
 export type DispatchIntegrationEventInput = {
   type: string;
@@ -26,6 +35,14 @@ type GatewayResponse = {
   [key: string]: unknown;
 };
 
+function resolveGatewayConfig(org: OrgGatewayConfig) {
+  const url = org.integrationGatewayUrl ?? process.env.INTEGRATION_GATEWAY_URL;
+  const secret = org.integrationGatewaySecret
+    ? decryptSecret(org.integrationGatewaySecret)
+    : process.env.INTEGRATION_GATEWAY_SECRET;
+  return { url, secret };
+}
+
 async function parseGatewayResponse(response: Response) {
   const text = await response.text();
   if (!text) return null;
@@ -42,8 +59,12 @@ function normalizeError(error: unknown) {
   return String(error);
 }
 
-async function upsertPendingDelivery(input: DispatchIntegrationEventInput) {
-  const existing = await prisma.integrationDelivery.findUnique({
+async function upsertPendingDelivery(
+  db: TenantClient,
+  organizationId: string,
+  input: DispatchIntegrationEventInput,
+) {
+  const existing = await db.integrationDelivery.findFirst({
     where: { dedupeKey: input.dedupeKey },
   });
 
@@ -52,7 +73,7 @@ async function upsertPendingDelivery(input: DispatchIntegrationEventInput) {
   }
 
   if (existing) {
-    const delivery = await prisma.integrationDelivery.update({
+    const delivery = await db.integrationDelivery.update({
       where: { id: existing.id },
       data: {
         type: input.type,
@@ -70,8 +91,9 @@ async function upsertPendingDelivery(input: DispatchIntegrationEventInput) {
     return { delivery, skipped: false };
   }
 
-  const delivery = await prisma.integrationDelivery.create({
+  const delivery = await db.integrationDelivery.create({
     data: {
+      organizationId,
       type: input.type,
       channel: input.channel,
       entityType: input.entityType,
@@ -87,11 +109,12 @@ async function upsertPendingDelivery(input: DispatchIntegrationEventInput) {
 }
 
 async function markFailed(
+  db: TenantClient,
   deliveryId: string,
   error: string,
   providerResponse?: unknown,
 ) {
-  await prisma.integrationDelivery.update({
+  await db.integrationDelivery.update({
     where: { id: deliveryId },
     data: {
       status: "failed",
@@ -105,18 +128,19 @@ async function markFailed(
 }
 
 export async function dispatchIntegrationEvent(
+  db: TenantClient,
+  org: OrgGatewayConfig,
   input: DispatchIntegrationEventInput,
 ): Promise<DispatchIntegrationEventResult> {
-  const { delivery, skipped } = await upsertPendingDelivery(input);
+  const { delivery, skipped } = await upsertPendingDelivery(db, org.id, input);
   if (skipped) return { status: "skipped", deliveryId: delivery.id };
 
-  const gatewayUrl = process.env.INTEGRATION_GATEWAY_URL;
-  const gatewaySecret = process.env.INTEGRATION_GATEWAY_SECRET;
+  const { url: gatewayUrl, secret: gatewaySecret } = resolveGatewayConfig(org);
 
   if (!gatewayUrl || !gatewaySecret) {
     const error =
-      "INTEGRATION_GATEWAY_URL o INTEGRATION_GATEWAY_SECRET no están configurados.";
-    await markFailed(delivery.id, error);
+      "La organización no tiene gateway configurado y falta INTEGRATION_GATEWAY_URL/SECRET.";
+    await markFailed(db, delivery.id, error);
     return { status: "failed", deliveryId: delivery.id, error };
   }
 
@@ -147,7 +171,7 @@ export async function dispatchIntegrationEvent(
     const providerResponse = await parseGatewayResponse(response);
     if (!response.ok) {
       const error = `Gateway respondió HTTP ${response.status}`;
-      await markFailed(delivery.id, error, providerResponse);
+      await markFailed(db, delivery.id, error, providerResponse);
       return { status: "failed", deliveryId: delivery.id, error };
     }
 
@@ -156,11 +180,11 @@ export async function dispatchIntegrationEvent(
         typeof providerResponse.error === "string"
           ? providerResponse.error
           : "Gateway respondió ok=false";
-      await markFailed(delivery.id, error, providerResponse);
+      await markFailed(db, delivery.id, error, providerResponse);
       return { status: "failed", deliveryId: delivery.id, error };
     }
 
-    await prisma.integrationDelivery.update({
+    await db.integrationDelivery.update({
       where: { id: delivery.id },
       data: {
         status: "sent",
@@ -175,7 +199,7 @@ export async function dispatchIntegrationEvent(
     return { status: "sent", deliveryId: delivery.id };
   } catch (error) {
     const message = normalizeError(error);
-    await markFailed(delivery.id, message);
+    await markFailed(db, delivery.id, message);
     return { status: "failed", deliveryId: delivery.id, error: message };
   }
 }

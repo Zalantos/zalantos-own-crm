@@ -1,5 +1,5 @@
 import type { Prisma } from "@prisma/client";
-import { prisma } from "@/lib/prisma";
+import type { TenantClient } from "@/lib/tenant";
 import { agentConfig } from "./config";
 
 export type AgentProposalItemInput = {
@@ -25,14 +25,14 @@ type CreateAgentProposalInput = {
 // The only write path available to "proposal"-classified agent tools: it
 // persists a reviewable CRMChangeProposal. Items start approved so the user
 // only unticks what they disagree with before applying.
-export async function createAgentProposal({
-  threadId,
-  companyId,
-  opportunityId,
-  items,
-}: CreateAgentProposalInput) {
-  const proposal = await prisma.cRMChangeProposal.create({
+export async function createAgentProposal(
+  db: TenantClient,
+  organizationId: string,
+  { threadId, companyId, opportunityId, items }: CreateAgentProposalInput,
+) {
+  const proposal = await db.cRMChangeProposal.create({
     data: {
+      organizationId,
       source: "agent",
       companyId,
       opportunityId: opportunityId ?? null,
@@ -40,7 +40,9 @@ export async function createAgentProposal({
       confidence: 1,
       model: agentConfig.modelSpec,
       items: {
+        // Los creates anidados no pasan por el auto-scoping: org explícita.
         create: items.map((item) => ({
+          organizationId,
           type: item.type,
           entity: item.entity,
           entityId: item.entityId,

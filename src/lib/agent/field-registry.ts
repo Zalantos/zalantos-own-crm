@@ -1,7 +1,7 @@
 import type { CustomFieldDefinition, Prisma } from "@prisma/client";
-import { OpportunityStage } from "@prisma/client";
 import { getFieldDefinitions } from "@/lib/custom-fields/merge";
-import { OPPORTUNITY_STAGE_LABELS } from "@/lib/zod/opportunity";
+import { getOrgStages } from "@/lib/pipeline/stages";
+import type { TenantClient } from "@/lib/tenant";
 
 // Single source of truth for which fields the agent (and proposal apply
 // engine) may write, per entity. Derived instead of hard-coded:
@@ -55,12 +55,6 @@ const COMPANY_FIELDS = {
 
 const OPPORTUNITY_FIELDS = {
   name: { type: "string", label: "Nombre" },
-  stage: {
-    type: "enum",
-    label: "Etapa",
-    enumValues: Object.values(OpportunityStage),
-    enumLabels: OPPORTUNITY_STAGE_LABELS,
-  },
   estimatedValue: { type: "decimal", label: "Valor estimado" },
   probability: { type: "int", label: "Probabilidad (%)", min: 0, max: 100 },
   source: { type: "string", label: "Origen" },
@@ -128,10 +122,24 @@ export function getStaticFields(
 }
 
 export async function getWritableFields(
+  db: TenantClient,
   entity: AgentEntity,
 ): Promise<Record<string, ResolvedField>> {
   const fields: Record<string, ResolvedField> = { ...STATIC_FIELDS[entity] };
-  const definitions = await getFieldDefinitions(entity);
+  // La etapa dejó de ser un enum global: se resuelve contra las etapas
+  // configuradas por la organización (el valor es el `key` de la etapa).
+  if (entity === "opportunity") {
+    const stages = await getOrgStages(db);
+    fields.stage = {
+      type: "enum",
+      label: "Etapa",
+      enumValues: stages.map((stage) => stage.key),
+      enumLabels: Object.fromEntries(
+        stages.map((stage) => [stage.key, stage.label]),
+      ),
+    };
+  }
+  const definitions = await getFieldDefinitions(db, entity);
   for (const definition of definitions) {
     fields[`${CUSTOM_FIELD_PREFIX}${definition.fieldName}`] = {
       ...customFieldSpec(definition),
@@ -224,9 +232,10 @@ function assertRange(spec: FieldSpec, field: string, value: number): void {
 
 // Compact human/model-readable digest for the list_writable_fields tool.
 export async function describeFieldsForModel(
+  db: TenantClient,
   entity: AgentEntity,
 ): Promise<string> {
-  const fields = await getWritableFields(entity);
+  const fields = await getWritableFields(db, entity);
   return Object.entries(fields)
     .map(([name, spec]) => {
       const parts = [`${name} (${spec.type}) — ${spec.label}`];

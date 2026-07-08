@@ -12,8 +12,7 @@ import {
   setItemApproval,
 } from "@/app/(dashboard)/meetings/proposal-actions";
 import { ProposalItemEditor } from "@/components/shared/meeting/proposal-item-editor";
-import { OPPORTUNITY_STAGE_LABELS } from "@/lib/zod/opportunity";
-import type { OpportunityStage } from "@prisma/client";
+import type { StageOption } from "@/lib/pipeline/stages";
 
 export type ReviewItem = {
   id: string;
@@ -54,17 +53,20 @@ function asObj(value: unknown): Record<string, unknown> {
     : {};
 }
 
-function stageLabel(value: unknown): string {
+function stageLabel(stages: StageOption[], value: unknown): string {
   if (value == null) return "—";
-  const stage = String(value);
-  return OPPORTUNITY_STAGE_LABELS[stage as OpportunityStage] ?? stage;
+  const key = String(value);
+  return stages.find((stage) => stage.key === key)?.label ?? key;
 }
 
-function describeAfter(item: ReviewItem): string {
+function describeAfter(item: ReviewItem, stages: StageOption[]): string {
   const a = asObj(item.afterValue);
   switch (item.type) {
     case "update_field": {
       const before = asObj(item.beforeValue).value;
+      if (String(a.field) === "stage") {
+        return `Etapa: ${stageLabel(stages, before)} → ${stageLabel(stages, a.value)}`;
+      }
       return `${String(a.field)}: ${before == null ? "—" : String(before)} → ${String(a.value)}`;
     }
     case "add_contact": {
@@ -78,7 +80,7 @@ function describeAfter(item: ReviewItem): string {
       return String(a.title ?? a.body ?? "");
     case "stage_change": {
       const before = asObj(item.beforeValue).value;
-      return `${stageLabel(before)} → ${stageLabel(a.value)}`;
+      return `${stageLabel(stages, before)} → ${stageLabel(stages, a.value)}`;
     }
     case "update_pain":
       return String(a.value ?? "");
@@ -104,9 +106,11 @@ function confidenceVariant(
 export function ChangeProposalReview({
   proposal,
   meetingId,
+  stages,
 }: {
   proposal: ReviewProposal;
   meetingId: string;
+  stages: StageOption[];
 }) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
@@ -240,10 +244,11 @@ export function ChangeProposalReview({
                     <ProposalItemEditor
                       item={item}
                       meetingId={meetingId}
+                      stages={stages}
                       onDone={() => setEditingId(null)}
                     />
                   ) : (
-                    <p>{describeAfter(item)}</p>
+                    <p>{describeAfter(item, stages)}</p>
                   )}
                   {item.explanation && (
                     <p className="text-muted-foreground text-xs">

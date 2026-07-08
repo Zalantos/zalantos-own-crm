@@ -6,10 +6,7 @@ import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
-import {
-  OPPORTUNITY_STAGES,
-  OPPORTUNITY_STAGE_LABELS,
-} from "@/lib/zod/opportunity";
+import type { StageOption } from "@/lib/pipeline/stages";
 import { updateItemValue } from "@/app/(dashboard)/meetings/proposal-actions";
 import type { ReviewItem } from "@/components/shared/meeting/change-proposal-review";
 
@@ -42,10 +39,12 @@ function toDateInput(value: unknown): string {
 export function ProposalItemEditor({
   item,
   meetingId,
+  stages,
   onDone,
 }: {
   item: ReviewItem;
   meetingId: string;
+  stages: StageOption[];
   onDone: () => void;
 }) {
   const router = useRouter();
@@ -73,7 +72,7 @@ export function ProposalItemEditor({
 
   return (
     <div className="bg-muted/40 space-y-2 rounded-md border p-3">
-      <EditorFields item={item} draft={draft} set={set} />
+      <EditorFields item={item} draft={draft} set={set} stages={stages} />
       <div className="flex justify-end gap-2">
         <Button size="sm" variant="ghost" disabled={pending} onClick={onDone}>
           Cancelar
@@ -90,10 +89,12 @@ function EditorFields({
   item,
   draft,
   set,
+  stages,
 }: {
   item: ReviewItem;
   draft: Record<string, unknown>;
   set: (key: string, value: unknown) => void;
+  stages: StageOption[];
 }) {
   switch (item.type) {
     case "update_field": {
@@ -118,6 +119,7 @@ function EditorFields({
             <StageSelectInput
               value={str(draft.value)}
               onChange={(v) => set("value", v)}
+              stages={stages}
             />
           </Field>
         );
@@ -156,6 +158,7 @@ function EditorFields({
           <StageSelectInput
             value={str(draft.value)}
             onChange={(v) => set("value", v)}
+            stages={stages}
           />
         </Field>
       );
@@ -316,9 +319,11 @@ function Field({
 function StageSelectInput({
   value,
   onChange,
+  stages,
 }: {
   value: string;
   onChange: (value: string) => void;
+  stages: StageOption[];
 }) {
   return (
     <select
@@ -326,9 +331,9 @@ function StageSelectInput({
       onChange={(e) => onChange(e.target.value)}
       className="bg-background h-9 w-full rounded-md border px-3 text-sm"
     >
-      {OPPORTUNITY_STAGES.map((stage) => (
-        <option key={stage} value={stage}>
-          {OPPORTUNITY_STAGE_LABELS[stage]}
+      {stages.map((stage) => (
+        <option key={stage.key} value={stage.key}>
+          {stage.label}
         </option>
       ))}
     </select>

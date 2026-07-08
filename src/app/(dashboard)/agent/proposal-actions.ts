@@ -1,8 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { prisma } from "@/lib/prisma";
-import { requireUser } from "@/lib/session";
+import { requireOrgContext, type TenantClient } from "@/lib/tenant";
 import {
   applyProposal,
   getProposalContext,
@@ -11,15 +10,19 @@ import { appendTimelineEvent } from "@/lib/timeline";
 
 // Agent proposals are tied to a chat thread; only the thread owner can act on
 // them. Meeting proposals are managed from /meetings, not from here.
-async function requireOwnedAgentProposal(proposalId: string, userId: string) {
-  const proposal = await prisma.cRMChangeProposal.findUnique({
+async function requireOwnedAgentProposal(
+  db: TenantClient,
+  proposalId: string,
+  userId: string,
+) {
+  const proposal = await db.cRMChangeProposal.findUnique({
     where: { id: proposalId },
     select: { id: true, source: true, status: true, chatThreadId: true },
   });
   if (!proposal || proposal.source !== "agent" || !proposal.chatThreadId) {
     throw new Error("Propuesta no encontrada");
   }
-  const thread = await prisma.agentChatThread.findUnique({
+  const thread = await db.agentChatThread.findUnique({
     where: { id: proposal.chatThreadId },
     select: { userId: true },
   });
@@ -37,9 +40,9 @@ export type AgentProposalState = {
 export async function getAgentProposalState(
   proposalId: string,
 ): Promise<AgentProposalState> {
-  const user = await requireUser();
-  const proposal = await requireOwnedAgentProposal(proposalId, user.id);
-  const items = await prisma.cRMChangeItem.findMany({
+  const { user, db } = await requireOrgContext();
+  const proposal = await requireOwnedAgentProposal(db, proposalId, user.id);
+  const items = await db.cRMChangeItem.findMany({
     where: { proposalId },
     orderBy: { id: "asc" },
     select: { id: true, approved: true, status: true },
@@ -52,9 +55,9 @@ export async function setAgentItemApproval(
   itemId: string,
   approved: boolean,
 ) {
-  const user = await requireUser();
-  await requireOwnedAgentProposal(proposalId, user.id);
-  await prisma.cRMChangeItem.update({
+  const { user, db } = await requireOrgContext();
+  await requireOwnedAgentProposal(db, proposalId, user.id);
+  await db.cRMChangeItem.update({
     where: { id: itemId, proposalId },
     data: { approved, status: approved ? "approved" : "pending" },
   });
@@ -73,12 +76,12 @@ function entityPaths(context: {
 }
 
 export async function applyAgentProposal(proposalId: string) {
-  const user = await requireUser();
-  await requireOwnedAgentProposal(proposalId, user.id);
+  const { user, org, db } = await requireOrgContext();
+  await requireOwnedAgentProposal(db, proposalId, user.id);
 
-  const result = await applyProposal(proposalId, user.id);
+  const result = await applyProposal(db, org.id, proposalId, user.id);
 
-  const context = await getProposalContext(proposalId);
+  const context = await getProposalContext(db, proposalId);
   for (const path of entityPaths(context)) {
     revalidatePath(path);
   }
@@ -86,20 +89,21 @@ export async function applyAgentProposal(proposalId: string) {
 }
 
 export async function rejectAgentProposal(proposalId: string) {
-  const user = await requireUser();
-  await requireOwnedAgentProposal(proposalId, user.id);
+  const { user, org, db } = await requireOrgContext();
+  await requireOwnedAgentProposal(db, proposalId, user.id);
 
-  await prisma.cRMChangeProposal.update({
+  await db.cRMChangeProposal.update({
     where: { id: proposalId },
     data: { status: "rejected", reviewedBy: user.id, reviewedAt: new Date() },
   });
-  await prisma.cRMChangeItem.updateMany({
+  await db.cRMChangeItem.updateMany({
     where: { proposalId, status: { notIn: ["applied"] } },
     data: { approved: false, status: "rejected" },
   });
 
-  const context = await getProposalContext(proposalId);
-  await appendTimelineEvent(prisma, {
+  const context = await getProposalContext(db, proposalId);
+  await appendTimelineEvent(db, {
+    organizationId: org.id,
     companyId: context.companyId,
     opportunityId: context.opportunityId,
     type: "proposal_rejected",

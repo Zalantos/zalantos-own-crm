@@ -8,6 +8,9 @@ export default NextAuth(authConfig).auth;
 
 export const config = {
   matcher: [
-    "/((?!api/auth|api/cron|_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp|ico)$).*)",
+    // api/meetings/process se autoprotege con CRON_SECRET (worker interno sin
+    // sesión), igual que api/cron — el gate de sesión lo bloquearía antes de
+    // llegar a evaluar el Bearer token.
+    "/((?!api/auth|api/cron|api/meetings/process$|_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp|ico)$).*)",
   ],
 };

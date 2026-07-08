@@ -4,6 +4,9 @@ import {
   HistoryIcon,
   KanbanSquareIcon,
   LayoutDashboardIcon,
+  ListOrderedIcon,
+  SettingsIcon,
+  ShieldIcon,
   SlidersHorizontalIcon,
   UserCogIcon,
   UsersIcon,
@@ -53,7 +56,23 @@ export const ADMIN_SECTION: NavSection = {
       icon: SlidersHorizontalIcon,
     },
     { href: "/admin/workflows", label: "Workflows", icon: WorkflowIcon },
+    {
+      href: "/admin/settings/stages",
+      label: "Etapas del pipeline",
+      icon: ListOrderedIcon,
+    },
+    {
+      href: "/admin/settings/general",
+      label: "Organización",
+      icon: SettingsIcon,
+    },
   ],
+};
+
+// Panel de plataforma (crear/administrar organizaciones) — solo super-admins.
+export const SUPERADMIN_SECTION: NavSection = {
+  label: "Plataforma",
+  items: [{ href: "/superadmin", label: "Organizaciones", icon: ShieldIcon }],
 };
 
 // Los 4 accesos de mayor frecuencia de uso para la barra inferior de mobile;

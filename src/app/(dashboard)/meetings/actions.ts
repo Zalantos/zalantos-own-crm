@@ -3,8 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import type { Prisma } from "@prisma/client";
-import { prisma } from "@/lib/prisma";
-import { requireUser } from "@/lib/session";
+import { requireOrgContext, withOrgTransaction } from "@/lib/tenant";
 import { handleMutationError } from "@/lib/prisma-errors";
 import {
   meetingCreateSchema,
@@ -18,7 +17,7 @@ export async function createMeeting(
   _prevState: FormState,
   formData: FormData,
 ): Promise<FormState> {
-  const user = await requireUser();
+  const { user, org, db } = await requireOrgContext();
 
   const parsed = meetingCreateSchema.safeParse(Object.fromEntries(formData));
   if (!parsed.success) {
@@ -29,15 +28,25 @@ export async function createMeeting(
   }
 
   const { participants, ...data } = parsed.data;
-  const meeting = await prisma.meeting.create({
+  // La empresa debe pertenecer a la org.
+  const company = await db.company.findUnique({
+    where: { id: data.companyId },
+    select: { id: true },
+  });
+  if (!company) {
+    return { error: "La empresa seleccionada no existe." };
+  }
+  const meeting = await db.meeting.create({
     data: {
       ...data,
+      organizationId: org.id,
       participants: parseParticipants(participants) as Prisma.InputJsonValue,
       createdBy: user.id,
     },
   });
 
-  await appendTimelineEvent(prisma, {
+  await appendTimelineEvent(db, {
+    organizationId: org.id,
     companyId: meeting.companyId,
     opportunityId: meeting.opportunityId,
     type: "meeting_created",
@@ -55,7 +64,7 @@ export async function updateMeeting(
   _prevState: FormState,
   formData: FormData,
 ): Promise<FormState> {
-  const user = await requireUser();
+  const { user, org, db } = await requireOrgContext();
 
   const parsed = meetingUpdateSchema.safeParse(Object.fromEntries(formData));
   if (!parsed.success) {
@@ -68,7 +77,7 @@ export async function updateMeeting(
   const { id, participants, ...data } = parsed.data;
   let meeting;
   try {
-    meeting = await prisma.meeting.update({
+    meeting = await db.meeting.update({
       where: { id },
       data: {
         ...data,
@@ -85,7 +94,8 @@ export async function updateMeeting(
     handleMutationError(error);
   }
 
-  await appendTimelineEvent(prisma, {
+  await appendTimelineEvent(db, {
+    organizationId: org.id,
     companyId: meeting.companyId,
     opportunityId: meeting.opportunityId,
     type: "meeting_updated",
@@ -101,16 +111,17 @@ export async function updateMeeting(
 }
 
 export async function deleteMeeting(id: string) {
-  const user = await requireUser();
+  const { user, org, db } = await requireOrgContext();
   try {
-    const meeting = await prisma.meeting.findUnique({
+    const meeting = await db.meeting.findUnique({
       where: { id },
       select: { companyId: true, opportunityId: true, title: true },
     });
-    await prisma.$transaction(async (tx) => {
-      await tx.meeting.delete({ where: { id } });
+    await withOrgTransaction(org.id, async (tx) => {
+      await tx.meeting.delete({ where: { id, organizationId: org.id } });
       if (meeting) {
         await appendTimelineEvent(tx, {
+          organizationId: org.id,
           companyId: meeting.companyId,
           opportunityId: meeting.opportunityId,
           type: "meeting_deleted",

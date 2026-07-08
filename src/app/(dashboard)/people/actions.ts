@@ -2,8 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
-import { prisma } from "@/lib/prisma";
-import { requireUser } from "@/lib/session";
+import { requireOrgContext, withOrgTransaction } from "@/lib/tenant";
 import { personCreateSchema, personUpdateSchema } from "@/lib/zod/person";
 import {
   deleteCustomFieldValues,
@@ -19,7 +18,7 @@ export async function createPerson(
   _prevState: FormState,
   formData: FormData,
 ): Promise<FormState> {
-  await requireUser();
+  const { org, db } = await requireOrgContext();
 
   const parsed = personCreateSchema.safeParse(Object.fromEntries(formData));
   if (!parsed.success) {
@@ -29,8 +28,10 @@ export async function createPerson(
     };
   }
 
-  const person = await prisma.person.create({ data: parsed.data });
-  await upsertCustomFieldValues("person", person.id, formData);
+  const person = await db.person.create({
+    data: { ...parsed.data, organizationId: org.id },
+  });
+  await upsertCustomFieldValues(db, org.id, "person", person.id, formData);
   revalidatePath("/people");
   if (person.companyId) revalidatePath(`/companies/${person.companyId}`);
   redirect(`/people/${person.id}`);
@@ -40,7 +41,7 @@ export async function updatePerson(
   _prevState: FormState,
   formData: FormData,
 ): Promise<FormState> {
-  await requireUser();
+  const { org, db } = await requireOrgContext();
 
   const parsed = personUpdateSchema.safeParse(Object.fromEntries(formData));
   if (!parsed.success) {
@@ -53,11 +54,11 @@ export async function updatePerson(
   const { id, ...data } = parsed.data;
   let person;
   try {
-    person = await prisma.person.update({ where: { id }, data });
+    person = await db.person.update({ where: { id }, data });
   } catch (error) {
     handleMutationError(error);
   }
-  await upsertCustomFieldValues("person", id, formData);
+  await upsertCustomFieldValues(db, org.id, "person", id, formData);
   revalidatePath("/people");
   revalidatePath(`/people/${id}`);
   if (person.companyId) revalidatePath(`/companies/${person.companyId}`);
@@ -65,12 +66,12 @@ export async function updatePerson(
 }
 
 export async function deletePerson(id: string) {
-  await requireUser();
+  const { org } = await requireOrgContext();
   let person;
   try {
-    person = await prisma.$transaction(async (tx) => {
-      await deleteCustomFieldValues(tx, "person", id);
-      return tx.person.delete({ where: { id } });
+    person = await withOrgTransaction(org.id, async (tx) => {
+      await deleteCustomFieldValues(tx, org.id, "person", id);
+      return tx.person.delete({ where: { id, organizationId: org.id } });
     });
   } catch (error) {
     handleMutationError(error);

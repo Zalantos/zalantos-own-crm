@@ -1,5 +1,4 @@
-import { prisma } from "@/lib/prisma";
-import { requireAdmin } from "@/lib/session";
+import { requireOrgAdminContext } from "@/lib/tenant";
 import { PageHeader } from "@/components/shared/page-header";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
@@ -20,21 +19,21 @@ import {
 } from "./team-member-row-actions";
 
 export default async function TeamAdminPage() {
-  const currentUser = await requireAdmin();
+  const { user: currentUser, db } = await requireOrgAdminContext();
 
   const [teamMembers, availableUsers, currentAdminTeamMember] =
     await Promise.all([
-      prisma.teamMember.findMany({
+      db.teamMember.findMany({
         orderBy: [{ isActive: "desc" }, { name: "asc" }],
         include: { user: { select: { name: true, email: true } } },
       }),
       // Usuarios activos que todavía no tienen persona del equipo vinculada.
-      prisma.user.findMany({
+      db.user.findMany({
         where: { isActive: true, teamMember: null },
         select: { id: true, name: true, email: true },
         orderBy: { email: "asc" },
       }),
-      prisma.teamMember.findUnique({
+      db.teamMember.findUnique({
         where: { userId: currentUser.id },
         select: { isActive: true },
       }),

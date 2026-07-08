@@ -2,14 +2,17 @@
 
 import type { UIMessage } from "ai";
 import type { EntityType } from "@prisma/client";
-import { prisma } from "@/lib/prisma";
-import { requireUser } from "@/lib/session";
+import { requireOrgContext, type TenantClient } from "@/lib/tenant";
 import type { PageContext } from "@/lib/agent/context";
 
 // Chat history is personal: every action checks thread ownership.
 
-async function requireOwnedThread(threadId: string, userId: string) {
-  const thread = await prisma.agentChatThread.findUnique({
+async function requireOwnedThread(
+  db: TenantClient,
+  threadId: string,
+  userId: string,
+) {
+  const thread = await db.agentChatThread.findUnique({
     where: { id: threadId },
     select: { id: true, userId: true },
   });
@@ -20,9 +23,10 @@ async function requireOwnedThread(threadId: string, userId: string) {
 }
 
 export async function ensureAgentThread(context?: PageContext | null) {
-  const user = await requireUser();
-  const thread = await prisma.agentChatThread.create({
+  const { user, org, db } = await requireOrgContext();
+  const thread = await db.agentChatThread.create({
     data: {
+      organizationId: org.id,
       userId: user.id,
       contextType: (context?.entityType as EntityType | undefined) ?? null,
       contextId: context?.entityId ?? null,
@@ -33,8 +37,8 @@ export async function ensureAgentThread(context?: PageContext | null) {
 }
 
 export async function listAgentThreads() {
-  const user = await requireUser();
-  return prisma.agentChatThread.findMany({
+  const { user, db } = await requireOrgContext();
+  return db.agentChatThread.findMany({
     where: { userId: user.id },
     orderBy: { updatedAt: "desc" },
     take: 30,
@@ -45,9 +49,9 @@ export async function listAgentThreads() {
 export async function getAgentThreadMessages(
   threadId: string,
 ): Promise<UIMessage[]> {
-  const user = await requireUser();
-  await requireOwnedThread(threadId, user.id);
-  const messages = await prisma.agentChatMessage.findMany({
+  const { user, db } = await requireOrgContext();
+  await requireOwnedThread(db, threadId, user.id);
+  const messages = await db.agentChatMessage.findMany({
     where: { threadId },
     orderBy: { createdAt: "asc" },
   });
@@ -59,7 +63,7 @@ export async function getAgentThreadMessages(
 }
 
 export async function deleteAgentThread(threadId: string) {
-  const user = await requireUser();
-  await requireOwnedThread(threadId, user.id);
-  await prisma.agentChatThread.delete({ where: { id: threadId } });
+  const { user, db } = await requireOrgContext();
+  await requireOwnedThread(db, threadId, user.id);
+  await db.agentChatThread.delete({ where: { id: threadId } });
 }

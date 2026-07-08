@@ -1,4 +1,6 @@
 import { NextResponse, type NextRequest } from "next/server";
+import { prismaSystem } from "@/lib/prisma";
+import { forOrg } from "@/lib/tenant";
 import { runPipeline } from "@/lib/meeting-intelligence/pipeline";
 import {
   isAuthorized,
@@ -26,7 +28,16 @@ export async function POST(request: NextRequest) {
   }
 
   try {
-    await runPipeline(body.meetingId);
+    // Worker interno sin sesión de usuario: la org se resuelve desde la
+    // propia meeting (autorizado por CRON_SECRET, no por membresía).
+    const meeting = await prismaSystem.meeting.findUnique({
+      where: { id: body.meetingId },
+      select: { organizationId: true },
+    });
+    if (!meeting) {
+      return NextResponse.json({ error: "Meeting no encontrada" }, { status: 404 });
+    }
+    await runPipeline(forOrg(meeting.organizationId), meeting.organizationId, body.meetingId);
     return NextResponse.json({ ok: true, meetingId: body.meetingId });
   } catch (error) {
     return NextResponse.json(

@@ -2,8 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { Prisma } from "@prisma/client";
-import { prisma } from "@/lib/prisma";
-import { requireAdmin } from "@/lib/session";
+import { requireOrgAdminContext } from "@/lib/tenant";
 import { teamMemberCreateSchema } from "@/lib/zod/team-member";
 
 export type TeamMemberFormState =
@@ -28,7 +27,7 @@ export async function createTeamMember(
   _prevState: TeamMemberFormState,
   formData: FormData,
 ): Promise<TeamMemberFormState> {
-  await requireAdmin();
+  const { org, db } = await requireOrgAdminContext();
 
   const parsed = teamMemberCreateSchema.safeParse(Object.fromEntries(formData));
   if (!parsed.success) {
@@ -41,7 +40,7 @@ export async function createTeamMember(
   // Al crear desde un usuario de Zalantos se heredan nombre y email si no se
   // escribieron a mano.
   if (userId) {
-    const user = await prisma.user.findUnique({
+    const user = await db.user.findUnique({
       where: { id: userId },
       select: { name: true, email: true },
     });
@@ -57,8 +56,8 @@ export async function createTeamMember(
   }
 
   try {
-    await prisma.teamMember.create({
-      data: { name, email, userId },
+    await db.teamMember.create({
+      data: { organizationId: org.id, name, email, userId },
     });
   } catch (error) {
     return { error: mutationErrorMessage(error) };
@@ -72,10 +71,10 @@ export async function ensureCurrentAdminTeamMember(
   prevState: TeamMemberFormState,
 ): Promise<TeamMemberFormState> {
   void prevState;
-  const user = await requireAdmin();
+  const { user, org, db } = await requireOrgAdminContext();
 
   try {
-    await prisma.teamMember.upsert({
+    await db.teamMember.upsert({
       where: { userId: user.id },
       update: {
         email: user.email,
@@ -83,6 +82,7 @@ export async function ensureCurrentAdminTeamMember(
         name: user.name ?? user.email,
       },
       create: {
+        organizationId: org.id,
         name: user.name ?? user.email,
         email: user.email,
         userId: user.id,
@@ -104,13 +104,13 @@ export async function linkTeamMemberUser(
   _prevState: TeamMemberFormState,
   formData: FormData,
 ): Promise<TeamMemberFormState> {
-  await requireAdmin();
+  const { db } = await requireOrgAdminContext();
 
   const raw = String(formData.get("userId") ?? "").trim();
   const userId = raw || null;
 
   try {
-    await prisma.teamMember.update({
+    await db.teamMember.update({
       where: { id },
       data: { userId },
     });
@@ -130,10 +130,10 @@ export async function toggleTeamMemberActive(
   prevState: TeamMemberFormState,
 ): Promise<TeamMemberFormState> {
   void prevState;
-  await requireAdmin();
+  const { db } = await requireOrgAdminContext();
 
   try {
-    await prisma.teamMember.update({
+    await db.teamMember.update({
       where: { id },
       data: { isActive: nextIsActive },
     });
@@ -152,11 +152,11 @@ export async function deleteTeamMember(
   prevState: TeamMemberFormState,
 ): Promise<TeamMemberFormState> {
   void prevState;
-  await requireAdmin();
+  const { db } = await requireOrgAdminContext();
 
   // Las actividades asignadas quedan sin responsable (FK con SET NULL).
   try {
-    await prisma.teamMember.delete({ where: { id } });
+    await db.teamMember.delete({ where: { id } });
   } catch (error) {
     return { error: mutationErrorMessage(error) };
   }

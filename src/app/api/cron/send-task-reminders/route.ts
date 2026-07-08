@@ -1,6 +1,7 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { EntityType } from "@prisma/client";
-import { prisma } from "@/lib/prisma";
+import { prismaSystem } from "@/lib/prisma";
+import { forOrg, type OrgSettings, type TenantClient } from "@/lib/tenant";
 import {
   isAuthorized,
   isCronSecretConfigured,
@@ -15,14 +16,20 @@ function appUrl() {
     .replace(/\/$/, "");
 }
 
-function dayKey(date: Date) {
-  return date.toISOString().slice(0, 10);
+// Fecha local de la org (YYYY-MM-DD) para el bucket diario del dedupeKey.
+function dayKey(date: Date, timezone: string) {
+  return new Intl.DateTimeFormat("en-CA", {
+    timeZone: timezone,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(date);
 }
 
-function formatDate(date: Date) {
-  return new Intl.DateTimeFormat("es-CL", {
+function formatDate(date: Date, org: OrgSettings) {
+  return new Intl.DateTimeFormat(org.locale, {
     dateStyle: "medium",
-    timeZone: "America/Santiago",
+    timeZone: org.timezone,
   }).format(date);
 }
 
@@ -30,8 +37,11 @@ type ReminderActivity = Awaited<
   ReturnType<typeof findReminderActivities>
 >[number];
 
-async function findReminderActivities(now: Date, dueSoonLimit: Date) {
-  return prisma.activity.findMany({
+async function findReminderActivities(
+  db: TenantClient,
+  dueSoonLimit: Date,
+) {
+  return db.activity.findMany({
     where: {
       status: "pending",
       dueDate: { not: null, lt: dueSoonLimit },
@@ -52,10 +62,14 @@ function reminderType(activity: ReminderActivity, now: Date) {
   return activity.dueDate < now ? "task.overdue" : "task.due_soon";
 }
 
-function buildReminderPayload(activity: ReminderActivity, type: string) {
+function buildReminderPayload(
+  activity: ReminderActivity,
+  type: string,
+  org: OrgSettings,
+) {
   const baseUrl = appUrl();
   const dueDate = activity.dueDate;
-  const dueLabel = dueDate ? formatDate(dueDate) : "sin fecha";
+  const dueLabel = dueDate ? formatDate(dueDate, org) : "sin fecha";
   const isOverdue = type === "task.overdue";
   const assigneeName = activity.assignee?.name ?? "Responsable";
   const context = [
@@ -82,6 +96,8 @@ function buildReminderPayload(activity: ReminderActivity, type: string) {
     subject,
     text,
     html: renderNotificationEmail({
+      brandName: org.brandName ?? org.name,
+      accentColor: org.accentColor,
       eyebrow: "Recordatorio de tarea",
       title: activity.title,
       intro,
@@ -119,6 +135,38 @@ function buildReminderPayload(activity: ReminderActivity, type: string) {
   };
 }
 
+async function runForOrg(
+  org: OrgSettings,
+  now: Date,
+  results: { checked: number; sent: number; failed: number; skipped: number },
+) {
+  const db = forOrg(org.id);
+  const today = dayKey(now, org.timezone);
+  const dueSoonLimit = new Date(now.getTime() + DAY_MS);
+  const activities = await findReminderActivities(db, dueSoonLimit);
+  results.checked += activities.length;
+
+  for (const activity of activities) {
+    const type = reminderType(activity, now);
+    if (!type || !activity.assignee?.email) continue;
+
+    const result = await dispatchIntegrationEvent(db, org, {
+      type,
+      channel: "email",
+      entityType: EntityType.activity,
+      entityId: activity.id,
+      recipient: {
+        name: activity.assignee.name,
+        email: activity.assignee.email,
+      },
+      dedupeKey: `${type}:${activity.id}:${today}:${activity.assignee.id}`,
+      payload: buildReminderPayload(activity, type, org),
+    });
+
+    results[result.status] += 1;
+  }
+}
+
 export async function POST(request: NextRequest) {
   const cronSecret = process.env.CRON_SECRET;
   if (!isCronSecretConfigured(cronSecret)) {
@@ -136,35 +184,18 @@ export async function POST(request: NextRequest) {
   }
 
   const now = new Date();
-  const today = dayKey(now);
-  const dueSoonLimit = new Date(now.getTime() + DAY_MS);
-  const activities = await findReminderActivities(now, dueSoonLimit);
+  const results = { checked: 0, sent: 0, failed: 0, skipped: 0 };
 
-  const results = {
-    checked: activities.length,
-    sent: 0,
-    failed: 0,
-    skipped: 0,
-  };
-
-  for (const activity of activities) {
-    const type = reminderType(activity, now);
-    if (!type || !activity.assignee?.email) continue;
-
-    const result = await dispatchIntegrationEvent({
-      type,
-      channel: "email",
-      entityType: EntityType.activity,
-      entityId: activity.id,
-      recipient: {
-        name: activity.assignee.name,
-        email: activity.assignee.email,
-      },
-      dedupeKey: `${type}:${activity.id}:${today}:${activity.assignee.id}`,
-      payload: buildReminderPayload(activity, type),
-    });
-
-    results[result.status] += 1;
+  // Un fallo en una org no debe frenar los recordatorios de las demás.
+  const orgs = await prismaSystem.organization.findMany({
+    where: { isActive: true },
+  });
+  for (const org of orgs) {
+    try {
+      await runForOrg(org, now, results);
+    } catch (error) {
+      console.error(`[cron] recordatorios fallaron para org ${org.slug}`, error);
+    }
   }
 
   return NextResponse.json(results);

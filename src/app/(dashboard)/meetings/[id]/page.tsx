@@ -1,5 +1,6 @@
 import { notFound } from "next/navigation";
-import { prisma } from "@/lib/prisma";
+import { requireOrgContext } from "@/lib/tenant";
+import { getOrgStages } from "@/lib/pipeline/stages";
 import { PageHeader } from "@/components/shared/page-header";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
@@ -29,18 +30,22 @@ export default async function MeetingDetailPage({
   params: Promise<{ id: string }>;
 }) {
   const { id } = await params;
+  const { db } = await requireOrgContext();
 
-  const meeting = await prisma.meeting.findUnique({
-    where: { id },
-    include: {
-      company: { select: { id: true, name: true } },
-      evidence: { orderBy: { uploadedAt: "asc" } },
-      proposals: {
-        orderBy: { createdAt: "desc" },
-        include: { items: true },
+  const [meeting, stages] = await Promise.all([
+    db.meeting.findUnique({
+      where: { id },
+      include: {
+        company: { select: { id: true, name: true } },
+        evidence: { orderBy: { uploadedAt: "asc" } },
+        proposals: {
+          orderBy: { createdAt: "desc" },
+          include: { items: true },
+        },
       },
-    },
-  });
+    }),
+    getOrgStages(db),
+  ]);
   if (!meeting) notFound();
 
   const summary = (meeting.aiSummary as AiSummary | null) ?? null;
@@ -168,6 +173,7 @@ export default async function MeetingDetailPage({
                 key={proposal.id}
                 proposal={proposal}
                 meetingId={meeting.id}
+                stages={stages}
               />
             ))
           )}

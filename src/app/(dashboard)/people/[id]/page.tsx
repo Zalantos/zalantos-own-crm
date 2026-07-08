@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { prisma } from "@/lib/prisma";
+import { requireOrgContext } from "@/lib/tenant";
 import { PageHeader } from "@/components/shared/page-header";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -17,13 +17,17 @@ export default async function PersonDetailPage({
   params: Promise<{ id: string }>;
 }) {
   const { id } = await params;
+  const { db } = await requireOrgContext();
 
-  const person = await prisma.person.findUnique({
+  const stageInclude = {
+    stage: { select: { label: true, isWon: true, isLost: true } },
+  } as const;
+  const person = await db.person.findUnique({
     where: { id },
     include: {
       company: true,
-      opportunitiesAsDecisionMaker: true,
-      opportunitiesAsSponsor: true,
+      opportunitiesAsDecisionMaker: { include: stageInclude },
+      opportunitiesAsSponsor: { include: stageInclude },
     },
   });
   if (!person) notFound();

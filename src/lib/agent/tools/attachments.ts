@@ -1,6 +1,5 @@
 import { tool } from "ai";
 import { z } from "zod";
-import { prisma } from "@/lib/prisma";
 import type { AgentToolContext } from "@/lib/agent/executor";
 
 const PAGE_SIZE = 12_000;
@@ -22,7 +21,7 @@ export function buildAttachmentTools(ctx: AgentToolContext) {
           .describe("Posición (en caracteres) desde donde leer"),
       }),
       execute: async ({ attachmentId, offset }) => {
-        const attachment = await prisma.agentAttachment.findFirst({
+        const attachment = await ctx.db.agentAttachment.findFirst({
           where: { id: attachmentId, threadId: ctx.threadId },
           select: { filename: true, extractedText: true },
         });

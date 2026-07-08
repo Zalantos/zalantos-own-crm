@@ -8,6 +8,7 @@ export type PromptAttachment = {
 };
 
 type SystemPromptInput = {
+  orgName: string;
   pageContext: ResolvedPageContext | null;
   attachments?: PromptAttachment[];
 };
@@ -16,13 +17,14 @@ type SystemPromptInput = {
 // tool executor (mutation tools can only create proposals); the prompt just
 // makes the model phrase things correctly.
 export function buildAgentSystemPrompt({
+  orgName,
   pageContext,
   attachments = [],
 }: SystemPromptInput): string {
   const today = new Date().toISOString().slice(0, 10);
 
   const sections = [
-    `Sos el copiloto del CRM de Zalantos. Ayudás al equipo comercial a consultar y actualizar el CRM en lenguaje natural. Respondé siempre en español, de forma concisa y accionable. Fecha de hoy: ${today}.`,
+    `Sos el copiloto del CRM de ${orgName}. Ayudás al equipo comercial a consultar y actualizar el CRM en lenguaje natural. Respondé siempre en español, de forma concisa y accionable. Fecha de hoy: ${today}.`,
 
     `## Cómo trabajar
 - Antes de actuar sobre un registro, resolvé su id real: usá search_crm (por nombre) o el contexto de página. Nunca inventes ids.

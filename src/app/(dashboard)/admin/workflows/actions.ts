@@ -1,8 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { prisma } from "@/lib/prisma";
-import { requireAdmin } from "@/lib/session";
+import { requireOrgAdminContext } from "@/lib/tenant";
 import { z } from "zod";
 import { EntityType } from "@prisma/client";
 import { handleMutationError } from "@/lib/prisma-errors";
@@ -22,7 +21,7 @@ export async function createWorkflow(
   _prevState: WorkflowFormState,
   formData: FormData,
 ): Promise<WorkflowFormState> {
-  await requireAdmin();
+  const { org, db } = await requireOrgAdminContext();
 
   const parsed = workflowSchema.safeParse(Object.fromEntries(formData));
   if (!parsed.success) {
@@ -38,8 +37,9 @@ export async function createWorkflow(
     return { error: "Conditions/Actions deben ser JSON válido." };
   }
 
-  await prisma.workflow.create({
+  await db.workflow.create({
     data: {
+      organizationId: org.id,
       name: parsed.data.name,
       description: parsed.data.description,
       triggerEntity: parsed.data.triggerEntity,
@@ -53,9 +53,9 @@ export async function createWorkflow(
 }
 
 export async function toggleWorkflowActive(id: string, isActive: boolean) {
-  await requireAdmin();
+  const { db } = await requireOrgAdminContext();
   try {
-    await prisma.workflow.update({ where: { id }, data: { isActive } });
+    await db.workflow.update({ where: { id }, data: { isActive } });
   } catch (error) {
     handleMutationError(error);
   }
@@ -63,9 +63,9 @@ export async function toggleWorkflowActive(id: string, isActive: boolean) {
 }
 
 export async function deleteWorkflow(id: string) {
-  await requireAdmin();
+  const { db } = await requireOrgAdminContext();
   try {
-    await prisma.workflow.delete({ where: { id } });
+    await db.workflow.delete({ where: { id } });
   } catch (error) {
     handleMutationError(error);
   }

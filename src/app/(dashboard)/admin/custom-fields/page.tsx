@@ -1,5 +1,4 @@
-import { prisma } from "@/lib/prisma";
-import { requireAdmin } from "@/lib/session";
+import { requireOrgAdminContext } from "@/lib/tenant";
 import { PageHeader } from "@/components/shared/page-header";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -15,9 +14,9 @@ const ENTITY_LABELS: Record<string, string> = {
 };
 
 export default async function CustomFieldsAdminPage() {
-  await requireAdmin();
+  const { db } = await requireOrgAdminContext();
 
-  const definitions = await prisma.customFieldDefinition.findMany({
+  const definitions = await db.customFieldDefinition.findMany({
     orderBy: [{ entityType: "asc" }, { createdAt: "asc" }],
   });
 

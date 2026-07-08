@@ -2,8 +2,7 @@
 
 import { after } from "next/server";
 import { revalidatePath } from "next/cache";
-import { prisma } from "@/lib/prisma";
-import { requireUser } from "@/lib/session";
+import { forOrg, requireOrgContext } from "@/lib/tenant";
 import { manualTranscriptSchema } from "@/lib/zod/meeting";
 import { classifyEvidence } from "@/lib/meeting-intelligence/extraction";
 import { runPipeline } from "@/lib/meeting-intelligence/pipeline";
@@ -17,10 +16,11 @@ import type { FormState } from "./types";
 // mammoth, pdf-parse) is intentionally isolated from actions.ts / proposal-
 // actions.ts so that lighter pages (e.g. /meetings/new) don't have to compile
 // this weight just to reach createMeeting.
-function schedulePipeline(meetingId: string) {
+function schedulePipeline(organizationId: string, meetingId: string) {
   after(async () => {
     try {
-      await runPipeline(meetingId);
+      // El request ya terminó: se reconstruye un cliente scoped a la org.
+      await runPipeline(forOrg(organizationId), organizationId, meetingId);
     } catch (error) {
       console.error(`[pipeline] meeting ${meetingId} falló`, error);
     }
@@ -36,11 +36,12 @@ export async function registerEvidence(input: {
   storagePath: string;
   sizeBytes?: number;
 }) {
-  const user = await requireUser();
+  const { user, org, db } = await requireOrgContext();
   const { type, kind } = classifyEvidence(input.filename, input.mimeType);
 
-  await prisma.evidence.create({
+  await db.evidence.create({
     data: {
+      organizationId: org.id,
       meetingId: input.meetingId,
       type,
       filename: input.filename,
@@ -51,7 +52,7 @@ export async function registerEvidence(input: {
     },
   });
 
-  const meeting = await prisma.meeting.update({
+  const meeting = await db.meeting.update({
     where: { id: input.meetingId },
     data: {
       sourceType: kind === "audio" || kind === "video" ? kind : "manual",
@@ -60,7 +61,8 @@ export async function registerEvidence(input: {
     select: { companyId: true, opportunityId: true, title: true },
   });
 
-  await appendTimelineEvent(prisma, {
+  await appendTimelineEvent(db, {
+    organizationId: org.id,
     companyId: meeting.companyId,
     opportunityId: meeting.opportunityId,
     type: "evidence_uploaded",
@@ -81,7 +83,7 @@ export async function addManualTranscript(
   _prevState: FormState,
   formData: FormData,
 ): Promise<FormState> {
-  const user = await requireUser();
+  const { user, org, db } = await requireOrgContext();
   const parsed = manualTranscriptSchema.safeParse(
     Object.fromEntries(formData),
   );
@@ -92,8 +94,9 @@ export async function addManualTranscript(
     };
   }
 
-  await prisma.evidence.create({
+  await db.evidence.create({
     data: {
+      organizationId: org.id,
       meetingId: parsed.data.meetingId,
       type: "transcript",
       filename: "transcripcion-manual.txt",
@@ -105,13 +108,14 @@ export async function addManualTranscript(
     },
   });
 
-  const meeting = await prisma.meeting.update({
+  const meeting = await db.meeting.update({
     where: { id: parsed.data.meetingId },
     data: { processingStatus: "pending" },
     select: { companyId: true, opportunityId: true, title: true },
   });
 
-  await appendTimelineEvent(prisma, {
+  await appendTimelineEvent(db, {
+    organizationId: org.id,
     companyId: meeting.companyId,
     opportunityId: meeting.opportunityId,
     type: "transcript_added",
@@ -122,17 +126,17 @@ export async function addManualTranscript(
     actorId: user.id,
   });
 
-  schedulePipeline(parsed.data.meetingId);
+  schedulePipeline(org.id, parsed.data.meetingId);
   revalidatePath(`/meetings/${parsed.data.meetingId}`);
   return undefined;
 }
 
 export async function reprocessMeeting(meetingId: string) {
-  await requireUser();
-  await prisma.meeting.update({
+  const { org, db } = await requireOrgContext();
+  await db.meeting.update({
     where: { id: meetingId },
     data: { processingStatus: "pending", processingError: null },
   });
-  schedulePipeline(meetingId);
+  schedulePipeline(org.id, meetingId);
   revalidatePath(`/meetings/${meetingId}`);
 }

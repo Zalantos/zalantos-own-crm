@@ -9,6 +9,7 @@ import {
   ADMIN_SECTION,
   BOTTOM_NAV_MORE_ITEMS,
   BOTTOM_NAV_PRIMARY_ITEMS,
+  SUPERADMIN_SECTION,
   type NavItem,
 } from "@/components/layout/nav-config";
 import {
@@ -68,12 +69,19 @@ function MoreNavLink({ href, label, icon: Icon }: NavItem) {
   );
 }
 
-export function BottomNav({ role }: { role: Role }) {
+export function BottomNav({
+  role,
+  isSuperAdmin,
+}: {
+  role: Role;
+  isSuperAdmin?: boolean;
+}) {
   const pathname = usePathname();
-  const moreItems =
-    role === "ADMIN"
-      ? [...BOTTOM_NAV_MORE_ITEMS, ...ADMIN_SECTION.items]
-      : BOTTOM_NAV_MORE_ITEMS;
+  const moreItems = [
+    ...BOTTOM_NAV_MORE_ITEMS,
+    ...(role === "ADMIN" ? ADMIN_SECTION.items : []),
+    ...(isSuperAdmin ? SUPERADMIN_SECTION.items : []),
+  ];
   const isMoreActive = moreItems.some((item) =>
     isItemActive(pathname, item.href),
   );
