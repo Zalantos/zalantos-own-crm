@@ -66,7 +66,14 @@ export async function updatePerson(
 }
 
 export async function deletePerson(id: string) {
-  const { org } = await requireOrgContext();
+  const { org, db } = await requireOrgContext();
+
+  const existingPerson = await db.person.findUnique({ where: { id } });
+  if (!existingPerson) {
+    revalidatePath("/people");
+    redirect("/people");
+  }
+
   let person;
   try {
     person = await withOrgTransaction(org.id, async (tx) => {

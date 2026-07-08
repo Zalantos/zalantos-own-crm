@@ -13,7 +13,14 @@ import { CustomFieldsDetailSection } from "@/components/shared/custom-fields/cus
 import { StageSelect } from "@/components/shared/kanban/stage-select";
 import { CompanyTimeline } from "@/components/shared/timeline/company-timeline";
 import { StatCard } from "@/components/shared/stat-card";
-import { formatCurrencyValue } from "@/lib/format";
+import { createFormatters, formatCurrencyValue } from "@/lib/format";
+
+const CREATED_VIA_LABELS: Record<string, string> = {
+  manual: "Formulario manual",
+  notion_import: "Importación Notion",
+  seed: "Datos demo",
+  legacy: "Registro previo",
+};
 
 export default async function OpportunityDetailPage({
   params,
@@ -26,11 +33,24 @@ export default async function OpportunityDetailPage({
   const [opportunity, stages] = await Promise.all([
     db.opportunity.findUnique({
       where: { id },
-      include: { company: true, decisionMaker: true, sponsor: true },
+      include: {
+        company: true,
+        decisionMaker: true,
+        sponsor: true,
+        createdBy: { select: { name: true, email: true } },
+      },
     }),
     getOrgStages(db),
   ]);
   if (!opportunity) notFound();
+
+  const formatters = createFormatters(org);
+  const createdByLabel =
+    opportunity.createdBy?.name ??
+    opportunity.createdBy?.email ??
+    "Sistema / desconocido";
+  const createdViaLabel =
+    CREATED_VIA_LABELS[opportunity.createdVia] ?? opportunity.createdVia;
 
   const isOverdue =
     opportunity.status === "open" &&
@@ -104,7 +124,7 @@ export default async function OpportunityDetailPage({
         />
       </div>
 
-      <div className="mb-6 grid grid-cols-1 gap-4 sm:grid-cols-2">
+      <div className="mb-6 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
         <Card size="sm">
           <CardContent>
             <p className="text-muted-foreground text-xs">Dolor principal</p>
@@ -134,6 +154,33 @@ export default async function OpportunityDetailPage({
                 Vencido
               </Badge>
             )}
+          </CardContent>
+        </Card>
+        <Card size="sm">
+          <CardContent>
+            <p className="text-muted-foreground text-xs">Trazabilidad</p>
+            <dl className="mt-2 grid gap-1.5 text-sm">
+              <div className="flex justify-between gap-3">
+                <dt className="text-muted-foreground">Creada por</dt>
+                <dd className="text-right">{createdByLabel}</dd>
+              </div>
+              <div className="flex justify-between gap-3">
+                <dt className="text-muted-foreground">Origen</dt>
+                <dd className="text-right">{createdViaLabel}</dd>
+              </div>
+              <div className="flex justify-between gap-3">
+                <dt className="text-muted-foreground">Creada</dt>
+                <dd className="text-right">
+                  {formatters.dateTime(opportunity.createdAt)}
+                </dd>
+              </div>
+              <div className="flex justify-between gap-3">
+                <dt className="text-muted-foreground">Actualizada</dt>
+                <dd className="text-right">
+                  {formatters.dateTime(opportunity.updatedAt)}
+                </dd>
+              </div>
+            </dl>
           </CardContent>
         </Card>
       </div>

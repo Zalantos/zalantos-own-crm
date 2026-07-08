@@ -70,6 +70,8 @@ export async function createOpportunity(
       ...data,
       organizationId: org.id,
       stageId: await resolveStageId(db, stageId),
+      createdById: user.id,
+      createdVia: "manual",
     },
   });
   await upsertCustomFieldValues(db, org.id, "opportunity", opportunity.id, formData);

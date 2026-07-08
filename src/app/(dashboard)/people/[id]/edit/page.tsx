@@ -3,6 +3,7 @@ import { requireOrgContext } from "@/lib/tenant";
 import { PageHeader } from "@/components/shared/page-header";
 import { CustomFieldsFormSection } from "@/components/shared/custom-fields/custom-fields-form-section";
 import { PersonForm } from "../../person-form";
+import { PersonDeleteButton } from "../../person-delete-button";
 
 export default async function EditPersonPage({
   params,
@@ -27,6 +28,12 @@ export default async function EditPersonPage({
           <CustomFieldsFormSection entityType="person" entityId={person.id} />
         }
       />
+      <div className="mt-8 max-w-2xl">
+        <PersonDeleteButton
+          personId={person.id}
+          personName={`${person.firstName} ${person.lastName}`}
+        />
+      </div>
     </div>
   );
 }

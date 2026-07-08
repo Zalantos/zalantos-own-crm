@@ -249,6 +249,9 @@ model Opportunity {
   expectedCloseDate DateTime?
   status            String        @default("open")
   lossReason        String?
+  createdById       String?
+  createdBy         User?         @relation(fields: [createdById], references: [id], onDelete: SetNull)
+  createdVia        String        @default("manual")
   createdAt         DateTime      @default(now())
   updatedAt         DateTime      @updatedAt
 
@@ -259,6 +262,7 @@ model Opportunity {
   @@index([organizationId, stageId])
   @@index([organizationId, status])
   @@index([companyId])
+  @@index([createdById])
   @@index([nextStepDueDate])
   @@map("opportunities")
 }
@@ -472,6 +476,7 @@ model User {
 
   teamMember          TeamMember?
   createdCompanies    Company[]
+  createdOpportunities Opportunity[]
   createdSavedViews   SavedView[]
   passwordResetTokens PasswordResetToken[]
 

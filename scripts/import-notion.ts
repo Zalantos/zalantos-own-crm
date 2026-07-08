@@ -523,6 +523,7 @@ async function main() {
         probability: seed.probability,
         estimatedValue: seed.estimatedValue,
         source: "referido",
+        createdVia: "notion_import",
         decisionMakerId: contactIds.get(seed.companyKey),
         expectedCloseDate: seed.expectedCloseDate
           ? day(seed.expectedCloseDate)
