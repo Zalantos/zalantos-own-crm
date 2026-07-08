@@ -604,8 +604,8 @@ model CRMChangeItem {
   organization   Organization      @relation(fields: [organizationId], references: [id], onDelete: Restrict)
   proposalId     String
   proposal       CRMChangeProposal @relation(fields: [proposalId], references: [id], onDelete: Cascade)
-  // stage_change | create_task | add_contact | update_pain | add_note |
-  // update_sponsor | update_decision_maker | update_field
+  // stage_change | create_task | add_contact | link_contact | update_pain |
+  // add_note | update_sponsor | update_decision_maker | update_field
   type           String
   // Target entity type: company | opportunity | person | activity | note
   entity         String
@@ -615,10 +615,19 @@ model CRMChangeItem {
   afterValue     Json?
   confidence     Float
   explanation    String            @db.Text
+  // Verbatim quote from the transcript/document/user message that justifies
+  // the change (distinct from the free-text explanation).
+  evidence       String?           @db.Text
+  // Existing person the dedup matched; set on link_contact items.
+  duplicateOfId  String?
   approved       Boolean           @default(false)
-  // pending | approved | rejected | applied | failed
+  // pending | approved | rejected | applied | failed | reverted
   status         String            @default("pending")
   appliedAt      DateTime?
+  // What to undo when reverting an applied item:
+  // { createdEntityId?, opportunityId?, prevDecisionMakerId?, prevSponsorId? }.
+  revertData     Json?
+  revertedAt     DateTime?
 
   @@index([organizationId])
   @@index([proposalId])

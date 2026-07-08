@@ -9,9 +9,26 @@ import {
 } from "@/lib/agent/field-registry";
 import { snapshotCustomFields } from "@/lib/agent/snapshot";
 import { createAgentProposal } from "@/lib/agent/proposals";
+import { findExistingPerson } from "@/lib/crm/person-dedup";
 import type { AgentToolContext } from "@/lib/agent/executor";
 
 const entitySchema = z.enum(["company", "opportunity", "person"]);
+
+// Shared input fields the model must supply on every mutation proposal so the
+// reviewer sees a real confidence and a citation, not a blind pre-approval.
+const confidenceSchema = z
+  .number()
+  .min(0)
+  .max(1)
+  .describe(
+    "Tu confianza (0-1) en este cambio. Bajala si inferís o dudás; solo ≥ 0.8 se pre-aprueba.",
+  );
+const evidenceSchema = z
+  .string()
+  .optional()
+  .describe(
+    "Cita textual del mensaje del usuario o documento que justifica el cambio (vacío si no hay una frase concreta).",
+  );
 
 function formatValue(value: unknown): string {
   if (value == null || value === "") return "—";
@@ -97,8 +114,10 @@ export function buildProposalTools(ctx: AgentToolContext) {
           .describe(
             "Justificación del cambio, citando la fuente si viene de un documento",
           ),
+        confidence: confidenceSchema,
+        evidence: evidenceSchema,
       }),
-      execute: async ({ entity, entityId, updates, reason }) => {
+      execute: async ({ entity, entityId, updates, reason, confidence, evidence }) => {
         const fields = await getWritableFields(ctx.db, entity);
         const { record, companyId } = await loadTarget(ctx.db, entity, entityId);
         const customValues = await snapshotCustomFields(ctx.db, entity, entityId);
@@ -130,6 +149,8 @@ export function buildProposalTools(ctx: AgentToolContext) {
             },
             afterValue: { field: update.field, value: update.value },
             explanation: reason,
+            confidence,
+            evidence: evidence ?? null,
             label: spec.label,
             before:
               spec.type === "enum" ? enumLabel(before) : formatValue(before),
@@ -157,8 +178,10 @@ export function buildProposalTools(ctx: AgentToolContext) {
         opportunityId: z.string().min(1),
         stage: z.string().min(1),
         reason: z.string().min(1),
+        confidence: confidenceSchema,
+        evidence: evidenceSchema,
       }),
-      execute: async ({ opportunityId, stage, reason }) => {
+      execute: async ({ opportunityId, stage, reason, confidence, evidence }) => {
         const opportunity = await ctx.db.opportunity.findUnique({
           where: { id: opportunityId },
           select: {
@@ -192,6 +215,8 @@ export function buildProposalTools(ctx: AgentToolContext) {
               beforeValue: { value: opportunity.stage.key },
               afterValue: { value: target.key },
               explanation: reason,
+              confidence,
+              evidence: evidence ?? null,
               label: `Etapa de "${opportunity.name}"`,
               before: opportunity.stage.label,
               after: target.label,
@@ -214,8 +239,10 @@ export function buildProposalTools(ctx: AgentToolContext) {
         isDecisionMaker: z.boolean().optional(),
         isSponsor: z.boolean().optional(),
         reason: z.string().min(1),
+        confidence: confidenceSchema,
+        evidence: evidenceSchema,
       }),
-      execute: async ({ companyId, reason, ...contact }) => {
+      execute: async ({ companyId, reason, confidence, evidence, ...contact }) => {
         const company = await ctx.db.company.findUnique({
           where: { id: companyId },
           select: { id: true, name: true },
@@ -226,6 +253,52 @@ export function buildProposalTools(ctx: AgentToolContext) {
 
         const fullName =
           `${contact.firstName} ${contact.lastName ?? ""}`.trim();
+        const afterValue = {
+          firstName: contact.firstName,
+          lastName: contact.lastName ?? "",
+          email: contact.email ?? null,
+          phone: contact.phone ?? null,
+          roleTitle: contact.roleTitle ?? null,
+          linkedinUrl: null,
+          notes: null,
+          isDecisionMaker: contact.isDecisionMaker ?? false,
+          isSponsor: contact.isSponsor ?? false,
+        };
+
+        // Dedup: if the person already exists, propose linking/completing it
+        // instead of creating a duplicate.
+        const existing = await findExistingPerson(ctx.db, ctx.organizationId, {
+          companyId,
+          email: contact.email ?? null,
+          firstName: contact.firstName,
+          lastName: contact.lastName ?? null,
+        });
+
+        if (existing) {
+          return createAgentProposal(ctx.db, ctx.organizationId, {
+            threadId: ctx.threadId,
+            companyId,
+            opportunityId: ctx.pageContext?.opportunityId,
+            items: [
+              {
+                type: "link_contact",
+                entity: "person",
+                entityId: existing.id,
+                duplicateOfId: existing.id,
+                beforeValue: null,
+                afterValue,
+                explanation: `Ya existe ${existing.firstName} ${existing.lastName}`.trim() +
+                  ` en la empresa; se propone vincularlo/completarlo. ${reason}`.trim(),
+                confidence,
+                evidence: evidence ?? null,
+                label: `Vincular contacto existente en ${company.name}`,
+                before: `${existing.firstName} ${existing.lastName}`.trim(),
+                after: `${fullName}${contact.roleTitle ? ` (${contact.roleTitle})` : ""}`,
+              },
+            ],
+          });
+        }
+
         return createAgentProposal(ctx.db, ctx.organizationId, {
           threadId: ctx.threadId,
           companyId,
@@ -236,18 +309,10 @@ export function buildProposalTools(ctx: AgentToolContext) {
               entity: "person",
               entityId: null,
               beforeValue: null,
-              afterValue: {
-                firstName: contact.firstName,
-                lastName: contact.lastName ?? "",
-                email: contact.email ?? null,
-                phone: contact.phone ?? null,
-                roleTitle: contact.roleTitle ?? null,
-                linkedinUrl: null,
-                notes: null,
-                isDecisionMaker: contact.isDecisionMaker ?? false,
-                isSponsor: contact.isSponsor ?? false,
-              },
+              afterValue,
               explanation: reason,
+              confidence,
+              evidence: evidence ?? null,
               label: `Nuevo contacto en ${company.name}`,
               before: "—",
               after: `${fullName}${contact.roleTitle ? ` (${contact.roleTitle})` : ""}`,

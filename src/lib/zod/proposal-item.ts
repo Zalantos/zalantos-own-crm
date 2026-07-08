@@ -56,4 +56,17 @@ export const ITEM_AFTER_VALUE_SCHEMAS: Record<string, z.ZodType> = {
     isDecisionMaker: z.boolean().optional().default(false),
     isSponsor: z.boolean().optional().default(false),
   }),
+  // Same payload as add_contact; apply.ts fills only the empty fields on the
+  // matched existing person instead of creating a new one.
+  link_contact: z.object({
+    firstName: z.string().min(1, "El nombre es obligatorio"),
+    lastName: z.string().optional().default(""),
+    email: optionalString,
+    phone: optionalString,
+    roleTitle: optionalString,
+    linkedinUrl: optionalString,
+    notes: optionalString,
+    isDecisionMaker: z.boolean().optional().default(false),
+    isSponsor: z.boolean().optional().default(false),
+  }),
 };

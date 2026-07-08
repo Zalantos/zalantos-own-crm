@@ -17,6 +17,7 @@ import {
   applyAgentProposal,
   getAgentProposalState,
   rejectAgentProposal,
+  revertAgentItem,
   setAgentItemApproval,
 } from "@/app/(dashboard)/agent/proposal-actions";
 
@@ -29,6 +30,9 @@ type ProposalToolOutput = {
     before: string;
     after: string;
     explanation: string;
+    evidence?: string | null;
+    confidence?: number;
+    approved?: boolean;
   }[];
   error?: string;
 };
@@ -59,7 +63,21 @@ export function AgentProposalCard({ part }: { part: ToolPart }) {
 
   const [status, setStatus] = useState<string>("pending");
   const [approvals, setApprovals] = useState<Record<string, boolean>>({});
+  const [itemStatus, setItemStatus] = useState<Record<string, string>>({});
   const [loaded, setLoaded] = useState(false);
+
+  function syncState(state: {
+    status: string;
+    items: { id: string; approved: boolean; status: string }[];
+  }) {
+    setStatus(state.status);
+    setApprovals(
+      Object.fromEntries(state.items.map((item) => [item.id, item.approved])),
+    );
+    setItemStatus(
+      Object.fromEntries(state.items.map((item) => [item.id, item.status])),
+    );
+  }
 
   useEffect(() => {
     if (!proposalId) return;
@@ -67,12 +85,7 @@ export function AgentProposalCard({ part }: { part: ToolPart }) {
     getAgentProposalState(proposalId)
       .then((state) => {
         if (cancelled) return;
-        setStatus(state.status);
-        setApprovals(
-          Object.fromEntries(
-            state.items.map((item) => [item.id, item.approved]),
-          ),
-        );
+        syncState(state);
         setLoaded(true);
       })
       .catch(() => setLoaded(true));
@@ -125,8 +138,7 @@ export function AgentProposalCard({ part }: { part: ToolPart }) {
     startTransition(async () => {
       try {
         const result = await applyAgentProposal(proposalId);
-        const state = await getAgentProposalState(proposalId);
-        setStatus(state.status);
+        syncState(await getAgentProposalState(proposalId));
         if (result.failed > 0) {
           toast.warning(
             `${result.applied} cambio(s) aplicado(s), ${result.failed} fallido(s)`,
@@ -149,6 +161,24 @@ export function AgentProposalCard({ part }: { part: ToolPart }) {
         setStatus("rejected");
       } catch {
         toast.error("No se pudo rechazar la propuesta");
+      }
+    });
+  }
+
+  function revert(itemId: string) {
+    if (!proposalId) return;
+    startTransition(async () => {
+      try {
+        const res = await revertAgentItem(proposalId, itemId);
+        if (res.error) {
+          toast.error(res.error);
+          return;
+        }
+        syncState(await getAgentProposalState(proposalId));
+        toast.success("Cambio deshecho");
+        router.refresh();
+      } catch {
+        toast.error("No se pudo deshacer el cambio");
       }
     });
   }
@@ -178,7 +208,7 @@ export function AgentProposalCard({ part }: { part: ToolPart }) {
           <div key={item.id} className="flex items-start gap-2 text-xs">
             {!closed && (
               <Checkbox
-                checked={approvals[item.id] ?? true}
+                checked={approvals[item.id] ?? item.approved ?? false}
                 onCheckedChange={(checked) =>
                   toggleItem(item.id, checked === true)
                 }
@@ -187,7 +217,23 @@ export function AgentProposalCard({ part }: { part: ToolPart }) {
               />
             )}
             <div className="min-w-0 flex-1">
-              <p className="font-medium">{item.label}</p>
+              <p className="flex flex-wrap items-center gap-1.5 font-medium">
+                {item.label}
+                {typeof item.confidence === "number" && (
+                  <span
+                    className={cn(
+                      "rounded-full px-1.5 py-0.5 text-[10px] font-normal",
+                      item.confidence >= 0.8
+                        ? "bg-emerald-100 text-emerald-700"
+                        : item.confidence >= 0.5
+                          ? "bg-amber-100 text-amber-700"
+                          : "bg-muted text-muted-foreground",
+                    )}
+                  >
+                    {Math.round(item.confidence * 100)}%
+                  </span>
+                )}
+              </p>
               <p className="text-muted-foreground flex flex-wrap items-center gap-1">
                 <span className="line-through decoration-1">{item.before}</span>
                 <ArrowRightIcon className="size-3 shrink-0" />
@@ -198,7 +244,28 @@ export function AgentProposalCard({ part }: { part: ToolPart }) {
                   {item.explanation}
                 </p>
               )}
+              {item.evidence && (
+                <p className="text-muted-foreground mt-0.5 border-l-2 pl-2 italic">
+                  “{item.evidence}”
+                </p>
+              )}
             </div>
+            {itemStatus[item.id] === "applied" && (
+              <Button
+                variant="ghost"
+                size="sm"
+                className="h-6 shrink-0 px-2 text-xs"
+                onClick={() => revert(item.id)}
+                disabled={pending || !loaded}
+              >
+                Deshacer
+              </Button>
+            )}
+            {itemStatus[item.id] === "reverted" && (
+              <span className="text-muted-foreground shrink-0 text-[10px]">
+                Deshecho
+              </span>
+            )}
           </div>
         ))}
       </div>

@@ -11,6 +11,9 @@ export type MappedChangeItem = {
   afterValue: unknown;
   confidence: number;
   explanation: string;
+  evidence: string;
+  // Set by the dedup pass when an add_contact is turned into link_contact.
+  duplicateOfId?: string | null;
 };
 
 export type MappingOpportunity = {
@@ -65,6 +68,7 @@ export function mapAnalysisToItems(
         afterValue: { value: u.new_value },
         confidence: u.confidence,
         explanation: u.explanation,
+        evidence: u.evidence,
       });
       continue;
     }
@@ -77,6 +81,7 @@ export function mapAnalysisToItems(
       afterValue: { field: u.field, value: u.new_value },
       confidence: u.confidence,
       explanation: u.explanation,
+      evidence: u.evidence,
     });
   }
 
@@ -99,6 +104,7 @@ export function mapAnalysisToItems(
       },
       confidence: c.confidence,
       explanation: c.explanation,
+      evidence: c.evidence,
     });
   }
 
@@ -116,6 +122,7 @@ export function mapAnalysisToItems(
       },
       confidence: t.confidence,
       explanation: t.explanation,
+      evidence: t.evidence,
     });
   }
 
@@ -128,6 +135,7 @@ export function mapAnalysisToItems(
       afterValue: { title: n.title ?? null, body: n.body },
       confidence: n.confidence,
       explanation: n.explanation,
+      evidence: n.evidence,
     });
   }
 
@@ -143,6 +151,7 @@ export function mapAnalysisToItems(
       afterValue: { value: s.to_stage },
       confidence: s.confidence,
       explanation: s.explanation,
+      evidence: s.evidence,
     });
   }
 
@@ -155,6 +164,7 @@ export function mapAnalysisToItems(
       afterValue: { value: p.pain },
       confidence: p.confidence,
       explanation: p.explanation,
+      evidence: p.evidence,
     });
   }
 
@@ -176,6 +186,7 @@ export function mapAnalysisToItems(
       },
       confidence: n.confidence,
       explanation: n.explanation,
+      evidence: n.evidence,
     });
   }
 

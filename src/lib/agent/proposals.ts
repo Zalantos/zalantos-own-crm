@@ -1,14 +1,21 @@
 import type { Prisma } from "@prisma/client";
 import type { TenantClient } from "@/lib/tenant";
+import { approvalFromConfidence } from "@/lib/crm/proposal-policy";
 import { agentConfig } from "./config";
 
 export type AgentProposalItemInput = {
-  type: "update_field" | "stage_change" | "add_contact";
+  type: "update_field" | "stage_change" | "add_contact" | "link_contact";
   entity: "company" | "opportunity" | "person";
   entityId: string | null;
   beforeValue: Prisma.InputJsonValue | null;
   afterValue: Prisma.InputJsonValue;
   explanation: string;
+  // Model's self-assessed confidence (0-1); drives auto-approval and the card.
+  confidence: number;
+  // Verbatim quote from the user's message/document that justifies the change.
+  evidence?: string | null;
+  // Existing person the dedup matched (set on link_contact items).
+  duplicateOfId?: string | null;
   // Human-readable summary line for the inline chat card.
   label: string;
   before: string;
@@ -30,6 +37,11 @@ export async function createAgentProposal(
   organizationId: string,
   { threadId, companyId, opportunityId, items }: CreateAgentProposalInput,
 ) {
+  // Proposal-level confidence = the least confident item (the weakest link).
+  const proposalConfidence = items.length
+    ? Math.min(...items.map((item) => item.confidence))
+    : 1;
+
   const proposal = await db.cRMChangeProposal.create({
     data: {
       organizationId,
@@ -37,7 +49,7 @@ export async function createAgentProposal(
       companyId,
       opportunityId: opportunityId ?? null,
       chatThreadId: threadId,
-      confidence: 1,
+      confidence: proposalConfidence,
       model: agentConfig.modelSpec,
       items: {
         // Los creates anidados no pasan por el auto-scoping: org explícita.
@@ -48,10 +60,12 @@ export async function createAgentProposal(
           entityId: item.entityId,
           beforeValue: item.beforeValue ?? undefined,
           afterValue: item.afterValue,
-          confidence: 1,
+          confidence: item.confidence,
           explanation: item.explanation,
-          approved: true,
-          status: "approved",
+          evidence: item.evidence || null,
+          duplicateOfId: item.duplicateOfId ?? null,
+          // Pre-approve only high-confidence items; the rest need a tick.
+          ...approvalFromConfidence(item.confidence),
         })),
       },
     },
@@ -67,6 +81,9 @@ export async function createAgentProposal(
       before: items[index].before,
       after: items[index].after,
       explanation: items[index].explanation,
+      evidence: items[index].evidence ?? null,
+      confidence: items[index].confidence,
+      approved: approvalFromConfidence(items[index].confidence).approved,
     })),
   };
 }

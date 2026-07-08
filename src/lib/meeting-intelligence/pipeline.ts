@@ -10,7 +10,10 @@ import { defaultReasoningProvider } from "@/lib/meeting-intelligence/ai/groq";
 import {
   buildAiSummary,
   mapAnalysisToItems,
+  type MappedChangeItem,
 } from "@/lib/meeting-intelligence/ai/mapping";
+import { approvalFromConfidence } from "@/lib/crm/proposal-policy";
+import { dedupeContactItems } from "@/lib/meeting-intelligence/dedup-items";
 import type { Prisma } from "@prisma/client";
 
 // Orchestrates evidence → text → transcript → AI → proposal for one meeting.
@@ -96,7 +99,7 @@ export async function runPipeline(
       transcript: combined,
     });
 
-    const items = mapAnalysisToItems(analysis, {
+    const mapped = mapAnalysisToItems(analysis, {
       companyId: meeting.companyId,
       opportunities: snapshot.opportunities.map((o) => ({
         id: o.id,
@@ -105,6 +108,13 @@ export async function runPipeline(
         nextStepDueDate: o.nextStepDueDate,
       })),
     });
+    // Turn already-existing contacts into link_contact instead of duplicates.
+    const items: MappedChangeItem[] = await dedupeContactItems(
+      db,
+      organizationId,
+      meeting.companyId,
+      mapped,
+    );
 
     // --- Persist proposal + items ---
     await withOrgTransaction(organizationId, async (tx) => {
@@ -127,6 +137,10 @@ export async function runPipeline(
                 undefined) as Prisma.InputJsonValue,
               confidence: item.confidence,
               explanation: item.explanation,
+              evidence: item.evidence || null,
+              duplicateOfId: item.duplicateOfId ?? null,
+              // Pre-approve only high-confidence items; the rest need a tick.
+              ...approvalFromConfidence(item.confidence),
             })),
           },
         },

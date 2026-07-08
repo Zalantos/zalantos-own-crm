@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button";
 import {
   applyProposalAction,
   rejectProposalAction,
+  revertItemAction,
   setAllItemsApproval,
   setItemApproval,
 } from "@/app/(dashboard)/meetings/proposal-actions";
@@ -22,6 +23,8 @@ export type ReviewItem = {
   afterValue: unknown;
   confidence: number;
   explanation: string;
+  evidence?: string | null;
+  duplicateOfId?: string | null;
   approved: boolean;
   status: string;
 };
@@ -37,6 +40,7 @@ export type ReviewProposal = {
 const TYPE_LABELS: Record<string, string> = {
   update_field: "Actualizar campo",
   add_contact: "Nuevo contacto",
+  link_contact: "Vincular contacto existente",
   create_task: "Crear tarea",
   add_note: "Agregar nota",
   stage_change: "Cambio de etapa",
@@ -69,7 +73,8 @@ function describeAfter(item: ReviewItem, stages: StageOption[]): string {
       }
       return `${String(a.field)}: ${before == null ? "—" : String(before)} → ${String(a.value)}`;
     }
-    case "add_contact": {
+    case "add_contact":
+    case "link_contact": {
       const name = `${String(a.firstName ?? "")} ${String(a.lastName ?? "")}`.trim();
       const extras = [a.roleTitle, a.email, a.phone].filter(Boolean).map(String);
       return extras.length ? `${name} (${extras.join(" · ")})` : name;
@@ -119,9 +124,15 @@ export function ChangeProposalReview({
 
   function run(fn: () => Promise<void>, message: string) {
     startTransition(async () => {
-      await fn();
-      toast.success(message);
-      router.refresh();
+      try {
+        await fn();
+        toast.success(message);
+        router.refresh();
+      } catch (error) {
+        toast.error(
+          error instanceof Error ? error.message : "No se pudo completar.",
+        );
+      }
     });
   }
 
@@ -186,7 +197,9 @@ export function ChangeProposalReview({
         </p>
       ) : (
         <ul className="space-y-2">
-          {proposal.items.map((item) => {
+          {[...proposal.items]
+            .sort((a, b) => a.confidence - b.confidence)
+            .map((item) => {
             const canEdit =
               !isFinal &&
               item.status !== "applied" &&
@@ -220,8 +233,14 @@ export function ChangeProposalReview({
                     <Badge variant={confidenceVariant(item.confidence)}>
                       {Math.round(item.confidence * 100)}%
                     </Badge>
+                    {(item.type === "link_contact" || item.duplicateOfId) && (
+                      <Badge variant="outline">Posible duplicado</Badge>
+                    )}
                     {item.status === "applied" && (
                       <Badge variant="default">Aplicado</Badge>
+                    )}
+                    {item.status === "reverted" && (
+                      <Badge variant="outline">Deshecho</Badge>
                     )}
                     {item.status === "failed" && (
                       <Badge variant="destructive">Falló</Badge>
@@ -239,6 +258,22 @@ export function ChangeProposalReview({
                         {editingId === item.id ? "Cerrar" : "Editar"}
                       </Button>
                     )}
+                    {item.status === "applied" && (
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        className="ml-auto h-6 px-2 text-xs"
+                        disabled={pending}
+                        onClick={() =>
+                          run(async () => {
+                            const res = await revertItemAction(item.id, meetingId);
+                            if (res.error) throw new Error(res.error);
+                          }, "Cambio deshecho")
+                        }
+                      >
+                        Deshacer
+                      </Button>
+                    )}
                   </div>
                   {editingId === item.id ? (
                     <ProposalItemEditor
@@ -253,6 +288,11 @@ export function ChangeProposalReview({
                   {item.explanation && (
                     <p className="text-muted-foreground text-xs">
                       {item.explanation}
+                    </p>
+                  )}
+                  {item.evidence && (
+                    <p className="text-muted-foreground border-l-2 pl-2 text-xs italic">
+                      “{item.evidence}”
                     </p>
                   )}
                 </div>

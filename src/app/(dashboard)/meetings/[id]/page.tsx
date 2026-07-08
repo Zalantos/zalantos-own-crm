@@ -63,6 +63,8 @@ export default async function MeetingDetailPage({
       afterValue: item.afterValue,
       confidence: item.confidence,
       explanation: item.explanation,
+      evidence: item.evidence,
+      duplicateOfId: item.duplicateOfId,
       approved: item.approved,
       status: item.status,
     })),

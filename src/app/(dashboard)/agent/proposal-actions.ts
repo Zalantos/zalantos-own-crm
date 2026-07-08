@@ -5,6 +5,7 @@ import { requireOrgContext, type TenantClient } from "@/lib/tenant";
 import {
   applyProposal,
   getProposalContext,
+  revertItem,
 } from "@/lib/meeting-intelligence/apply";
 import { appendTimelineEvent } from "@/lib/timeline";
 
@@ -86,6 +87,27 @@ export async function applyAgentProposal(proposalId: string) {
     revalidatePath(path);
   }
   return result;
+}
+
+export async function revertAgentItem(
+  proposalId: string,
+  itemId: string,
+): Promise<{ error?: string }> {
+  const { user, org, db } = await requireOrgContext();
+  await requireOwnedAgentProposal(db, proposalId, user.id);
+  try {
+    await revertItem(db, org.id, itemId, user.id);
+  } catch (error) {
+    return {
+      error: error instanceof Error ? error.message : "No se pudo deshacer.",
+    };
+  }
+
+  const context = await getProposalContext(db, proposalId);
+  for (const path of entityPaths(context)) {
+    revalidatePath(path);
+  }
+  return {};
 }
 
 export async function rejectAgentProposal(proposalId: string) {

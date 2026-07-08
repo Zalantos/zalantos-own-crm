@@ -162,14 +162,57 @@ async function applyFieldUpdate(
   }
 }
 
+// What to undo when reverting an applied item. Field/stage/pain/next_step
+// items revert from their stored beforeValue, so they return null.
+type RevertData = {
+  createdEntityId?: string;
+  opportunityId?: string | null;
+  prevDecisionMakerId?: string | null;
+  prevSponsorId?: string | null;
+  // Prior mainPain, captured because update_pain items store no beforeValue.
+  prevMainPain?: string | null;
+  // For link_contact: the fields this item filled on the existing person, so
+  // revert only clears what it actually set.
+  filledFields?: string[];
+};
+
+// Links a decision-maker/sponsor contact onto the target opportunity, capturing
+// the prior ids so the link can be undone. Shared by add_contact and link_contact.
+async function linkFlaggedContactToOpportunity(
+  tx: Prisma.TransactionClient,
+  ctx: ApplyContext,
+  person: { id: string; isDecisionMaker: boolean; isSponsor: boolean },
+): Promise<Pick<RevertData, "opportunityId" | "prevDecisionMakerId" | "prevSponsorId">> {
+  if (!ctx.defaultOpportunityId || (!person.isDecisionMaker && !person.isSponsor)) {
+    return {};
+  }
+  const prev = await tx.opportunity.findUnique({
+    where: { id: ctx.defaultOpportunityId, organizationId: ctx.organizationId },
+    select: { decisionMakerId: true, sponsorId: true },
+  });
+  await tx.opportunity.update({
+    where: { id: ctx.defaultOpportunityId, organizationId: ctx.organizationId },
+    data: {
+      ...(person.isDecisionMaker ? { decisionMakerId: person.id } : {}),
+      ...(person.isSponsor ? { sponsorId: person.id } : {}),
+    },
+  });
+  return {
+    opportunityId: ctx.defaultOpportunityId,
+    prevDecisionMakerId: person.isDecisionMaker ? (prev?.decisionMakerId ?? null) : undefined,
+    prevSponsorId: person.isSponsor ? (prev?.sponsorId ?? null) : undefined,
+  };
+}
+
 // Applies one item, throwing on any problem so the caller can mark it failed
 // without touching sibling items. Writes a granular timeline event in the same
-// transaction as the CRM change it describes.
+// transaction as the CRM change it describes. Returns the data needed to undo
+// the change later (null when beforeValue alone is enough).
 async function applyItem(
   tx: Prisma.TransactionClient,
   item: ItemRecord,
   ctx: ApplyContext,
-): Promise<void> {
+): Promise<RevertData | null> {
   const after = asRecord(item.afterValue);
   const before = asRecord(item.beforeValue);
 
@@ -207,11 +250,15 @@ async function applyItem(
           ? `${stageLabel(ctx, before.value)} → ${stageLabel(ctx, value)}`
           : `${formatValue(before.value)} → ${formatValue(value)}`,
       });
-      break;
+      return null;
     }
 
     case "update_pain": {
       if (!item.entityId) throw new Error("Falta oportunidad destino");
+      const prev = await tx.opportunity.findUnique({
+        where: { id: item.entityId, organizationId: ctx.organizationId },
+        select: { mainPain: true },
+      });
       await tx.opportunity.update({
         where: { id: item.entityId, organizationId: ctx.organizationId },
         data: { mainPain: String(after.value ?? "") },
@@ -222,7 +269,7 @@ async function applyItem(
         title: "Dolor principal actualizado",
         summary: String(after.value ?? ""),
       });
-      break;
+      return { opportunityId: item.entityId, prevMainPain: prev?.mainPain ?? null };
     }
 
     case "update_next_step": {
@@ -243,7 +290,7 @@ async function applyItem(
         title: "Próximo paso actualizado",
         summary: `${String(after.nextStep ?? "")}${dueDate ? ` (vence ${dueDate.toLocaleDateString("es-AR")})` : ""}`,
       });
-      break;
+      return null;
     }
 
     case "stage_change": {
@@ -259,7 +306,7 @@ async function applyItem(
         title: "Cambio de etapa",
         summary: `${stageLabel(ctx, before.value)} → ${stage.label}`,
       });
-      break;
+      return null;
     }
 
     case "add_contact": {
@@ -278,23 +325,7 @@ async function applyItem(
           isSponsor: Boolean(after.isSponsor),
         },
       });
-      // A flagged new contact also gets linked on the target opportunity so
-      // decisionMaker/sponsor don't stay stale after the review.
-      if (
-        ctx.defaultOpportunityId &&
-        (person.isDecisionMaker || person.isSponsor)
-      ) {
-        await tx.opportunity.update({
-          where: {
-            id: ctx.defaultOpportunityId,
-            organizationId: ctx.organizationId,
-          },
-          data: {
-            ...(person.isDecisionMaker ? { decisionMakerId: person.id } : {}),
-            ...(person.isSponsor ? { sponsorId: person.id } : {}),
-          },
-        });
-      }
+      const revert = await linkFlaggedContactToOpportunity(tx, ctx, person);
       await appendTimelineEvent(tx, {
         ...timelineBase,
         type: "contact_added",
@@ -302,7 +333,63 @@ async function applyItem(
           `Contacto agregado: ${person.firstName} ${person.lastName}`.trim(),
         summary: person.roleTitle,
       });
-      break;
+      return { createdEntityId: person.id, ...revert };
+    }
+
+    case "link_contact": {
+      if (!item.entityId) throw new Error("Falta contacto destino");
+      const person = await tx.person.findFirst({
+        where: {
+          id: item.entityId,
+          companyId: ctx.companyId,
+          organizationId: ctx.organizationId,
+        },
+      });
+      if (!person) {
+        throw new Error(
+          `El contacto ${item.entityId} no existe o no pertenece a la empresa`,
+        );
+      }
+      // Fill only the fields the existing record is missing; never overwrite.
+      const fillable = ["email", "phone", "roleTitle", "linkedinUrl", "notes"] as const;
+      const data: Record<string, string> = {};
+      const filledFields: string[] = [];
+      for (const field of fillable) {
+        const current = (person as Record<string, unknown>)[field];
+        const proposed = after[field];
+        if ((current == null || current === "") && proposed) {
+          data[field] = String(proposed);
+          filledFields.push(field);
+        }
+      }
+      // Flags are set (not cleared) if the proposal marks them.
+      const flagData: Record<string, boolean> = {};
+      if (after.isDecisionMaker && !person.isDecisionMaker) {
+        flagData.isDecisionMaker = true;
+        filledFields.push("isDecisionMaker");
+      }
+      if (after.isSponsor && !person.isSponsor) {
+        flagData.isSponsor = true;
+        filledFields.push("isSponsor");
+      }
+      if (filledFields.length) {
+        await tx.person.update({
+          where: { id: person.id, organizationId: ctx.organizationId },
+          data: { ...data, ...flagData },
+        });
+      }
+      const merged = { ...person, ...flagData };
+      const revert = await linkFlaggedContactToOpportunity(tx, ctx, merged);
+      await appendTimelineEvent(tx, {
+        ...timelineBase,
+        type: "contact_linked",
+        title:
+          `Contacto vinculado: ${person.firstName} ${person.lastName}`.trim(),
+        summary: filledFields.length
+          ? `Campos completados: ${filledFields.join(", ")}`
+          : "Sin cambios (ya estaba completo)",
+      });
+      return { createdEntityId: undefined, filledFields, ...revert };
     }
 
     case "create_task": {
@@ -331,7 +418,7 @@ async function applyItem(
           ? `Vence ${task.dueDate.toLocaleDateString("es-AR")}`
           : null,
       });
-      break;
+      return { createdEntityId: task.id };
     }
 
     case "add_note": {
@@ -351,7 +438,7 @@ async function applyItem(
         summary:
           note.body.length > 200 ? `${note.body.slice(0, 200)}…` : note.body,
       });
-      break;
+      return { createdEntityId: note.id };
     }
 
     default:
@@ -447,10 +534,14 @@ export async function applyProposal(
     if (!item.approved || item.status === "applied") continue;
     try {
       await withOrgTransaction(organizationId, async (tx) => {
-        await applyItem(tx, item, ctx);
+        const revertData = await applyItem(tx, item, ctx);
         await tx.cRMChangeItem.update({
           where: { id: item.id, organizationId },
-          data: { status: "applied", appliedAt: new Date() },
+          data: {
+            status: "applied",
+            appliedAt: new Date(),
+            revertData: (revertData ?? undefined) as Prisma.InputJsonValue,
+          },
         });
       });
       applied += 1;
@@ -500,4 +591,215 @@ export async function applyProposal(
   }
 
   return { applied, failed };
+}
+
+function asRevertData(value: Prisma.JsonValue): RevertData {
+  return value && typeof value === "object" && !Array.isArray(value)
+    ? (value as RevertData)
+    : {};
+}
+
+// Undoes a single applied item: restores prior field/stage/pain/next-step
+// values from beforeValue, or deletes entities that were created (contacts,
+// tasks, notes) and unwinds their opportunity links. Idempotent-guarded on
+// status === "applied". Mirrors applyItem in reverse.
+export async function revertItem(
+  db: TenantClient,
+  organizationId: string,
+  itemId: string,
+  actorId: string,
+): Promise<void> {
+  const item = await db.cRMChangeItem.findFirst({
+    where: { id: itemId, organizationId },
+    include: { proposal: { select: { id: true } } },
+  });
+  if (!item) throw new Error("Cambio no encontrado");
+  if (item.status !== "applied") {
+    throw new Error("Solo se pueden deshacer cambios aplicados");
+  }
+
+  const context = await getProposalContext(db, item.proposal.id);
+  const ctx: ApplyContext = {
+    db,
+    organizationId,
+    stages: stagesByKey(await getOrgStages(db)),
+    companyId: context.companyId,
+    defaultOpportunityId: context.opportunityId,
+    originLabel: context.originLabel,
+    proposalId: item.proposal.id,
+    actorId,
+  };
+
+  const before = asRecord(item.beforeValue);
+  const after = asRecord(item.afterValue);
+  const revert = asRevertData(item.revertData);
+  const itemRecord: ItemRecord = {
+    id: item.id,
+    type: item.type,
+    entity: item.entity,
+    entityId: item.entityId,
+    beforeValue: item.beforeValue,
+    afterValue: item.afterValue,
+    approved: item.approved,
+    status: item.status,
+  };
+
+  let stageReverted: { opportunityId: string; from: unknown; to: unknown } | null =
+    null;
+
+  await withOrgTransaction(organizationId, async (tx) => {
+    switch (item.type) {
+      case "update_field": {
+        const field = String(after.field);
+        await applyFieldUpdate(tx, itemRecord, ctx, field, before.value ?? null);
+        if (item.entity === "opportunity" && field === "stage" && item.entityId) {
+          stageReverted = {
+            opportunityId: item.entityId,
+            from: after.value,
+            to: before.value,
+          };
+        }
+        break;
+      }
+      case "stage_change": {
+        if (item.entityId && before.value != null) {
+          const stage = resolveStage(ctx, before.value);
+          await tx.opportunity.update({
+            where: { id: item.entityId, organizationId },
+            data: { stageId: stage.id },
+          });
+          stageReverted = {
+            opportunityId: item.entityId,
+            from: after.value,
+            to: before.value,
+          };
+        }
+        break;
+      }
+      case "update_pain": {
+        if (item.entityId) {
+          await tx.opportunity.update({
+            where: { id: item.entityId, organizationId },
+            data: { mainPain: revert.prevMainPain ?? null },
+          });
+        }
+        break;
+      }
+      case "update_next_step": {
+        if (item.entityId) {
+          await tx.opportunity.update({
+            where: { id: item.entityId, organizationId },
+            data: {
+              nextStep: before.nextStep == null ? null : String(before.nextStep),
+              nextStepDueDate: before.nextStepDueDate
+                ? new Date(String(before.nextStepDueDate))
+                : null,
+            },
+          });
+        }
+        break;
+      }
+      case "add_contact": {
+        await restoreOpportunityLinks(tx, organizationId, revert);
+        if (revert.createdEntityId) {
+          await tx.person.delete({
+            where: { id: revert.createdEntityId, organizationId },
+          });
+        }
+        break;
+      }
+      case "link_contact": {
+        await restoreOpportunityLinks(tx, organizationId, revert);
+        // Clear only the fields this item filled on the existing person.
+        if (item.entityId && revert.filledFields?.length) {
+          const data: Record<string, string | null | boolean> = {};
+          for (const field of revert.filledFields) {
+            if (field === "isDecisionMaker" || field === "isSponsor") {
+              data[field] = false;
+            } else {
+              data[field] = null;
+            }
+          }
+          await tx.person.update({
+            where: { id: item.entityId, organizationId },
+            data,
+          });
+        }
+        break;
+      }
+      case "create_task": {
+        if (revert.createdEntityId) {
+          await tx.activity.delete({
+            where: { id: revert.createdEntityId, organizationId },
+          });
+        }
+        break;
+      }
+      case "add_note": {
+        if (revert.createdEntityId) {
+          await tx.note.delete({
+            where: { id: revert.createdEntityId, organizationId },
+          });
+        }
+        break;
+      }
+      default:
+        throw new Error(`No se puede deshacer el tipo: ${item.type}`);
+    }
+
+    await tx.cRMChangeItem.update({
+      where: { id: item.id, organizationId },
+      data: { status: "reverted", revertedAt: new Date() },
+    });
+  });
+
+  await appendTimelineEvent(db, {
+    organizationId,
+    companyId: ctx.companyId,
+    opportunityId:
+      item.entity === "opportunity" && item.entityId
+        ? item.entityId
+        : ctx.defaultOpportunityId,
+    type: "change_reverted",
+    title: "Cambio deshecho",
+    summary: `Se revirtió un cambio de "${ctx.originLabel}".`,
+    refType: "proposal",
+    refId: ctx.proposalId,
+    actorId,
+    metadata: { itemId: item.id, itemType: item.type },
+  });
+
+  if (stageReverted) {
+    const change: { opportunityId: string; from: unknown; to: unknown } =
+      stageReverted;
+    await evaluateWorkflows(db, organizationId, {
+      entityType: "opportunity",
+      entityId: change.opportunityId,
+      eventName: "stage_changed",
+      before: { stage: change.from },
+      after: { stage: change.to },
+    });
+  }
+}
+
+// Restores an opportunity's decisionMaker/sponsor to the ids captured before an
+// add_contact/link_contact set them.
+async function restoreOpportunityLinks(
+  tx: Prisma.TransactionClient,
+  organizationId: string,
+  revert: RevertData,
+): Promise<void> {
+  if (!revert.opportunityId) return;
+  const data: Record<string, string | null> = {};
+  if (revert.prevDecisionMakerId !== undefined) {
+    data.decisionMakerId = revert.prevDecisionMakerId;
+  }
+  if (revert.prevSponsorId !== undefined) {
+    data.sponsorId = revert.prevSponsorId;
+  }
+  if (Object.keys(data).length === 0) return;
+  await tx.opportunity.update({
+    where: { id: revert.opportunityId, organizationId },
+    data,
+  });
 }

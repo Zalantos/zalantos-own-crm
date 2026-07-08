@@ -6,6 +6,9 @@ import { z } from "zod";
 
 const confidence = z.coerce.number().min(0).max(1).optional().default(0.6);
 const explanation = z.string().optional().default("");
+// Verbatim quote from the transcript that justifies the change (not a
+// paraphrase). Empty when the model can't point to a specific span.
+const evidence = z.string().optional().default("");
 
 const summarySchema = z
   .object({
@@ -23,6 +26,7 @@ const updateSchema = z.object({
   new_value: z.unknown(),
   confidence,
   explanation,
+  evidence,
 });
 
 const contactSchema = z.object({
@@ -37,6 +41,7 @@ const contactSchema = z.object({
   is_sponsor: z.boolean().optional().default(false),
   confidence,
   explanation,
+  evidence,
 });
 
 const taskSchema = z.object({
@@ -45,6 +50,7 @@ const taskSchema = z.object({
   due_in_days: z.number().nullable().optional(),
   confidence,
   explanation,
+  evidence,
 });
 
 const noteSchema = z.object({
@@ -52,6 +58,7 @@ const noteSchema = z.object({
   body: z.string(),
   confidence,
   explanation,
+  evidence,
 });
 
 const stageChangeSchema = z
@@ -61,6 +68,7 @@ const stageChangeSchema = z
     to_stage: z.string(),
     confidence,
     explanation,
+    evidence,
   })
   .nullable()
   .optional();
@@ -70,6 +78,7 @@ const painUpdateSchema = z.object({
   pain: z.string(),
   confidence,
   explanation,
+  evidence,
 });
 
 // The prompt demands one of these after every meeting; the schema stays
@@ -81,6 +90,7 @@ const nextStepUpdateSchema = z
     due_date: z.string().nullable().optional(),
     confidence,
     explanation,
+    evidence,
   })
   .nullable()
   .optional();

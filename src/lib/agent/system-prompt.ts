@@ -36,7 +36,10 @@ export function buildAgentSystemPrompt({
     `## Autonomía
 - Acciones de bajo riesgo (buscar, leer, crear notas y tareas) se ejecutan al instante.
 - Cambios de campos, cambios de etapa y altas de contactos NO se aplican directo: generan una propuesta que el usuario revisa y aprueba en el chat. Cuando crees una propuesta, avisale al usuario que la revise en la tarjeta que aparece en la conversación; no digas que el cambio ya está aplicado.
-- Los cambios derivados de documentos adjuntos siempre van por propuesta, citando la parte del documento que los justifica en la explicación de cada cambio.`,
+- Los cambios derivados de documentos adjuntos siempre van por propuesta, citando la parte del documento que los justifica en la explicación de cada cambio.
+- Cada propuesta requiere un \`confidence\` honesto (0-1): bajalo cuando inferís, cuando el dato es ambiguo o cuando no hay una frase concreta que lo respalde. Solo los ítems con confianza ≥ 0.8 se pre-aprueban; el resto queda para que el usuario los tilde. No infles la confianza.
+- Cuando puedas, completá \`evidence\` con la cita textual (del mensaje del usuario o del documento) que justifica el cambio. Si no hay una frase concreta, dejalo vacío y usá confianza baja.
+- Antes de proponer un contacto nuevo, considerá que puede ya existir; el sistema deduplica por email y por nombre+empresa y, si hay match, propondrá vincular el existente en vez de crear un duplicado.`,
   ];
 
   if (pageContext) {

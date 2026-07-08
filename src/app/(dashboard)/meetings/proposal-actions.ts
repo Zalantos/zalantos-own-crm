@@ -3,7 +3,7 @@
 import { revalidatePath } from "next/cache";
 import type { Prisma } from "@prisma/client";
 import { requireOrgContext, type TenantClient } from "@/lib/tenant";
-import { applyProposal } from "@/lib/meeting-intelligence/apply";
+import { applyProposal, revertItem } from "@/lib/meeting-intelligence/apply";
 import { appendTimelineEvent } from "@/lib/timeline";
 import { ITEM_AFTER_VALUE_SCHEMAS } from "@/lib/zod/proposal-item";
 
@@ -132,6 +132,22 @@ export async function applyProposalAction(
   const { user, org, db } = await requireOrgContext();
   await applyProposal(db, org.id, proposalId, user.id);
   revalidatePath(`/meetings/${meetingId}`);
+}
+
+export async function revertItemAction(
+  itemId: string,
+  meetingId: string,
+): Promise<{ error?: string }> {
+  const { user, org, db } = await requireOrgContext();
+  try {
+    await revertItem(db, org.id, itemId, user.id);
+  } catch (error) {
+    return {
+      error: error instanceof Error ? error.message : "No se pudo deshacer.",
+    };
+  }
+  revalidatePath(`/meetings/${meetingId}`);
+  return {};
 }
 
 export async function rejectProposalAction(
