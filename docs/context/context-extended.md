@@ -65,15 +65,22 @@ Propuestas en CRMChangeProposal (source=agent)
 ### Entity context enrichment
 
 ```txt
-Upload en ficha (company/person/opportunity) → R2 presign
+Upload en ficha (company/person/opportunity) → R2 presign (N archivos)
        ↓
-registerContextSource + after(runEntityContextPipeline)
+registerContextSource por archivo (deferProcessing)
        ↓
-extract → analyze → EntityContextProfile + Note (auto)
-                 → CRMChangeProposal (source=enrichment, pending)
+processContextSources + after(runEntityContextPipeline con el lote)
+       ↓
+extract por archivo → UN análisis consolidado del lote
+       → EntityContextProfile + Note (auto)
+       → UNA CRMChangeProposal (source=enrichment, pending)
        ↓
 Usuario revisa propuestas de campos en tab Contexto
 ```
+
+El pipeline acepta varios archivos por corrida: si un archivo falla en
+extracción se marca `failed` y el resto del lote continúa. El cron catch-up
+agrupa fuentes atascadas por entidad y las procesa en lote.
 
 ## Servicios internos
 

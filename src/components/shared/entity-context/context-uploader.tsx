@@ -6,7 +6,10 @@ import { Loader2Icon } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { UploadProgressBar } from "@/components/shared/meeting/meeting-processing-progress";
-import { registerContextSource } from "@/app/(dashboard)/entity-context/actions";
+import {
+  processContextSources,
+  registerContextSource,
+} from "@/app/(dashboard)/entity-context/actions";
 import type { ContextEntityType } from "@/lib/entity-context/types";
 
 type UploadState = {
@@ -103,28 +106,48 @@ export function ContextUploader({
         }),
     });
 
-    await registerContextSource({
+    const { sourceId } = await registerContextSource({
       entityType,
       entityId,
       filename: file.name,
       mimeType: contentType,
       storagePath: key,
       sizeBytes: file.size,
+      // El análisis se dispara una sola vez con el lote completo.
+      deferProcessing: true,
     });
+    return sourceId;
   }
 
   async function handleFiles(files: FileList | null) {
     if (!files || files.length === 0) return;
     setUploading(true);
+    const sourceIds: string[] = [];
     try {
       const fileArray = Array.from(files);
       for (const [index, file] of fileArray.entries()) {
-        await uploadFile(file, index + 1, fileArray.length);
-        toast.success(`"${file.name}" subido. Analizando…`);
+        const sourceId = await uploadFile(file, index + 1, fileArray.length);
+        sourceIds.push(sourceId);
+        toast.success(`"${file.name}" subido.`);
       }
-      router.refresh();
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Error al subir");
+    }
+    try {
+      // Aunque falle una subida intermedia, se analiza lo que sí se subió.
+      if (sourceIds.length > 0) {
+        await processContextSources({ entityType, entityId, sourceIds });
+        toast.success(
+          sourceIds.length === 1
+            ? "Analizando el documento…"
+            : `Analizando ${sourceIds.length} documentos en conjunto…`,
+        );
+        router.refresh();
+      }
+    } catch (error) {
+      toast.error(
+        error instanceof Error ? error.message : "Error al iniciar el análisis",
+      );
     } finally {
       setUploading(false);
       setUploadState(null);

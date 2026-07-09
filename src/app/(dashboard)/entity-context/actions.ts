@@ -13,16 +13,19 @@ import {
 } from "@/lib/entity-context/types";
 import { appendTimelineEvent } from "@/lib/timeline";
 
-function schedulePipeline(organizationId: string, sourceId: string) {
+function schedulePipeline(organizationId: string, sourceIds: string[]) {
   after(async () => {
     try {
       await runEntityContextPipeline(
         forOrg(organizationId),
         organizationId,
-        sourceId,
+        sourceIds,
       );
     } catch (error) {
-      console.error(`[entity-context] source ${sourceId} falló`, error);
+      console.error(
+        `[entity-context] lote [${sourceIds.join(", ")}] falló`,
+        error,
+      );
     }
   });
 }
@@ -36,6 +39,9 @@ export async function registerContextSource(input: {
   sizeBytes?: number;
   sourceType?: string;
   externalRef?: string | null;
+  // Si es true, la fuente queda registrada sin procesar; el caller debe
+  // llamar a processContextSources con el lote completo.
+  deferProcessing?: boolean;
 }) {
   const { user, org, db } = await requireOrgContext();
 
@@ -83,9 +89,46 @@ export async function registerContextSource(input: {
     });
   }
 
-  schedulePipeline(org.id, source.id);
+  if (!input.deferProcessing) {
+    schedulePipeline(org.id, [source.id]);
+  }
   revalidatePath(resolved.revalidatePath);
   return { sourceId: source.id };
+}
+
+// Procesa un lote de fuentes de la misma entidad en una sola corrida del
+// pipeline (un análisis consolidado en lugar de uno por archivo).
+export async function processContextSources(input: {
+  entityType: string;
+  entityId: string;
+  sourceIds: string[];
+}) {
+  const { org, db } = await requireOrgContext();
+
+  if (!isContextEntityType(input.entityType)) {
+    throw new Error("Tipo de entidad inválido");
+  }
+  const entityType = input.entityType as ContextEntityType;
+  const resolved = await resolveContextEntity(db, entityType, input.entityId);
+  if (!resolved) throw new Error("Entidad no encontrada");
+
+  const sources = await db.entityContextSource.findMany({
+    where: {
+      id: { in: input.sourceIds },
+      entityType,
+      entityId: input.entityId,
+    },
+    select: { id: true },
+  });
+  if (sources.length === 0) {
+    throw new Error("No hay fuentes de contexto para procesar");
+  }
+
+  schedulePipeline(
+    org.id,
+    sources.map((source) => source.id),
+  );
+  revalidatePath(resolved.revalidatePath);
 }
 
 export async function reprocessContextSource(sourceId: string) {
@@ -108,7 +151,7 @@ export async function reprocessContextSource(sourceId: string) {
     source.entityType,
     source.entityId,
   );
-  schedulePipeline(org.id, sourceId);
+  schedulePipeline(org.id, [sourceId]);
   if (resolved) revalidatePath(resolved.revalidatePath);
 }
 

@@ -1,4 +1,4 @@
-import type { Prisma } from "@prisma/client";
+import type { EntityContextSource, Prisma } from "@prisma/client";
 import { withOrgTransaction, type TenantClient } from "@/lib/tenant";
 import { getObjectBuffer } from "@/lib/meeting-intelligence/storage/r2";
 import {
@@ -76,103 +76,173 @@ async function upsertContextNote(
   return created.id;
 }
 
+function describeBatch(sources: { filename: string }[]): string {
+  if (sources.length === 1) return sources[0].filename;
+  return `${sources[0].filename} y ${sources.length - 1} documento${sources.length > 2 ? "s" : ""} más`;
+}
+
+async function markSourcesFailed(
+  db: TenantClient,
+  sourceIds: string[],
+  error: unknown,
+): Promise<void> {
+  if (sourceIds.length === 0) return;
+  await db.entityContextSource.updateMany({
+    where: { id: { in: sourceIds } },
+    data: {
+      status: "failed",
+      processingError:
+        error instanceof Error ? error.message : "Error desconocido",
+    },
+  });
+}
+
+// Extrae el texto de una fuente si aún no lo tiene. Devuelve el texto o null
+// si la extracción falló (la fuente queda marcada como failed).
+async function extractSourceText(
+  db: TenantClient,
+  source: EntityContextSource,
+): Promise<string | null> {
+  const existing = source.extractedText ?? "";
+  if (existing.trim()) return existing;
+
+  try {
+    if (!source.storagePath) {
+      throw new Error("La fuente no tiene texto ni archivo en storage.");
+    }
+    const { type, kind } = classifyEvidence(source.filename, source.mimeType);
+    if (kind !== "text") {
+      throw new Error(
+        "Solo se admiten documentos de texto (PDF, DOCX, TXT, MD) en contexto de entidad.",
+      );
+    }
+    const buffer = await getObjectBuffer(source.storagePath);
+    const extractedText = await extractText(type, buffer);
+    if (!extractedText.trim()) {
+      throw new Error("No se pudo extraer texto de la fuente.");
+    }
+    await db.entityContextSource.update({
+      where: { id: source.id },
+      data: { extractedText, status: "extracted" },
+    });
+    return extractedText;
+  } catch (error) {
+    await markSourcesFailed(db, [source.id], error);
+    return null;
+  }
+}
+
 // Extract → analyze → auto profile/note → propose field updates.
+// Acepta un lote de fuentes de la misma entidad: extrae cada archivo por
+// separado y corre UN solo análisis consolidado (un perfil, una nota y una
+// propuesta por lote, en lugar de una por archivo).
 // Safe to re-run: skips extraction when extractedText already exists.
 export async function runEntityContextPipeline(
   db: TenantClient,
   organizationId: string,
-  sourceId: string,
+  sourceIds: string[],
 ): Promise<void> {
-  const source = await db.entityContextSource.findUnique({
-    where: { id: sourceId },
-  });
-  if (!source) throw new Error(`Fuente de contexto no encontrada: ${sourceId}`);
-  if (!isContextEntityType(source.entityType)) {
-    throw new Error(`Tipo de entidad no soportado: ${source.entityType}`);
+  const ids = [...new Set(sourceIds)];
+  if (ids.length === 0) {
+    throw new Error("Se requiere al menos una fuente de contexto.");
   }
 
-  const entityType = source.entityType;
-  const resolved = await resolveContextEntity(db, entityType, source.entityId);
-  if (!resolved) {
-    throw new Error(`Entidad no encontrada: ${entityType}/${source.entityId}`);
+  const sources = await db.entityContextSource.findMany({
+    where: { id: { in: ids } },
+    orderBy: { createdAt: "asc" },
+  });
+  if (sources.length === 0) {
+    throw new Error(`Fuentes de contexto no encontradas: ${ids.join(", ")}`);
   }
+
+  const [first] = sources;
+  if (!isContextEntityType(first.entityType)) {
+    throw new Error(`Tipo de entidad no soportado: ${first.entityType}`);
+  }
+  const entityType = first.entityType;
+  const entityId = first.entityId;
+  if (
+    sources.some(
+      (item) => item.entityType !== entityType || item.entityId !== entityId,
+    )
+  ) {
+    throw new Error(
+      "Todas las fuentes del lote deben pertenecer a la misma entidad.",
+    );
+  }
+
+  const resolved = await resolveContextEntity(db, entityType, entityId);
+  if (!resolved) {
+    await markSourcesFailed(
+      db,
+      sources.map((item) => item.id),
+      new Error("Entidad no encontrada"),
+    );
+    throw new Error(`Entidad no encontrada: ${entityType}/${entityId}`);
+  }
+
+  // --- Extract (por archivo; un fallo no bloquea al resto del lote) ---
+  await db.entityContextSource.updateMany({
+    where: { id: { in: sources.map((item) => item.id) } },
+    data: { status: "extracting", processingError: null },
+  });
+
+  const extracted: { source: EntityContextSource; text: string }[] = [];
+  for (const source of sources) {
+    const text = await extractSourceText(db, source);
+    if (text !== null) extracted.push({ source, text });
+  }
+
+  if (extracted.length === 0) {
+    throw new Error("No se pudo extraer texto de ninguna fuente del lote.");
+  }
+
+  const batchIds = extracted.map((item) => item.source.id);
 
   try {
-    // --- Extract ---
-    await db.entityContextSource.update({
-      where: { id: sourceId },
-      data: { status: "extracting", processingError: null },
-    });
-
-    let extractedText = source.extractedText ?? "";
-    if (!extractedText.trim()) {
-      if (!source.storagePath) {
-        throw new Error("La fuente no tiene texto ni archivo en storage.");
-      }
-      const { type, kind } = classifyEvidence(source.filename, source.mimeType);
-      if (kind !== "text") {
-        throw new Error(
-          "Solo se admiten documentos de texto (PDF, DOCX, TXT, MD) en contexto de entidad.",
-        );
-      }
-      const buffer = await getObjectBuffer(source.storagePath);
-      extractedText = await extractText(type, buffer);
-      await db.entityContextSource.update({
-        where: { id: sourceId },
-        data: { extractedText, status: "extracted" },
-      });
-    }
-
-    if (!extractedText.trim()) {
-      throw new Error("No se pudo extraer texto de la fuente.");
-    }
-
     // Include sibling ready sources so the profile consolidates across uploads.
     const siblingSources = await db.entityContextSource.findMany({
       where: {
         entityType,
-        entityId: source.entityId,
-        OR: [
-          { id: sourceId },
-          { status: "ready", extractedText: { not: null } },
-        ],
+        entityId,
+        id: { notIn: batchIds },
+        status: "ready",
+        extractedText: { not: null },
       },
       orderBy: { createdAt: "asc" },
       select: { id: true, filename: true, extractedText: true },
     });
 
-    const combined = siblingSources
-      .filter((item) => item.extractedText?.trim())
-      .map((item) => `# ${item.filename}\n${item.extractedText}`)
-      .join("\n\n");
+    const combined = [
+      ...siblingSources
+        .filter((item) => item.extractedText?.trim())
+        .map((item) => `# ${item.filename}\n${item.extractedText}`),
+      ...extracted.map((item) => `# ${item.source.filename}\n${item.text}`),
+    ].join("\n\n");
 
-    // --- Analyze ---
-    await db.entityContextSource.update({
-      where: { id: sourceId },
+    // --- Analyze (una sola pasada para todo el lote) ---
+    await db.entityContextSource.updateMany({
+      where: { id: { in: batchIds } },
       data: { status: "analyzing" },
     });
 
-    const snapshot = await buildEntityContextSnapshot(
-      db,
-      entityType,
-      source.entityId,
-    );
+    const snapshot = await buildEntityContextSnapshot(db, entityType, entityId);
     const { analysis, model, raw } = await analyzeEntityContext({
       entityType,
       snapshot,
-      sourceText: combined || extractedText,
+      sourceText: combined,
     });
 
     const keyFacts: ContextKeyFact[] = analysis.key_facts.map((fact) => ({
       label: fact.label,
       value: fact.value,
       confidence: fact.confidence,
-      sourceIds: [sourceId],
+      sourceIds: batchIds,
     }));
 
     const mapped = mapEnrichmentToItems(analysis, {
       entityType,
-      entityId: source.entityId,
+      entityId,
       companyId: resolved.companyId,
     });
 
@@ -187,6 +257,8 @@ export async function runEntityContextPipeline(
         : mapped;
 
     const notePayload = buildContextNoteBody(analysis);
+    const primarySource = extracted[0].source;
+    const batchLabel = describeBatch(extracted.map((item) => item.source));
 
     await withOrgTransaction(organizationId, async (tx) => {
       await tx.entityContextProfile.upsert({
@@ -194,13 +266,13 @@ export async function runEntityContextPipeline(
           organizationId_entityType_entityId: {
             organizationId,
             entityType,
-            entityId: source.entityId,
+            entityId,
           },
         },
         create: {
           organizationId,
           entityType,
-          entityId: source.entityId,
+          entityId,
           summary: analysis.summary.trim() || "Sin resumen disponible.",
           keyFacts: keyFacts as unknown as Prisma.InputJsonValue,
           topics: analysis.topics as unknown as Prisma.InputJsonValue,
@@ -222,13 +294,13 @@ export async function runEntityContextPipeline(
         await upsertContextNote(tx, {
           organizationId,
           entityType,
-          entityId: source.entityId,
+          entityId,
           companyId: resolved.companyId,
           opportunityId: resolved.opportunityId,
           personId: resolved.personId,
           title: notePayload.title,
           body: notePayload.body,
-          actorId: source.uploadedBy,
+          actorId: primarySource.uploadedBy,
         });
       }
 
@@ -241,7 +313,7 @@ export async function runEntityContextPipeline(
             companyId: resolved.companyId,
             opportunityId: resolved.opportunityId,
             personId: resolved.personId,
-            contextSourceId: sourceId,
+            contextSourceId: primarySource.id,
             confidence: analysis.confidence,
             model,
             rawModelOutput: raw as unknown as Prisma.InputJsonValue,
@@ -267,8 +339,8 @@ export async function runEntityContextPipeline(
         });
       }
 
-      await tx.entityContextSource.update({
-        where: { id: sourceId },
+      await tx.entityContextSource.updateMany({
+        where: { id: { in: batchIds } },
         data: { status: "ready", processingError: null },
       });
 
@@ -278,23 +350,16 @@ export async function runEntityContextPipeline(
           companyId: resolved.companyId,
           opportunityId: resolved.opportunityId,
           type: "context_enriched",
-          title: `Contexto enriquecido: ${source.filename}`,
+          title: `Contexto enriquecido: ${batchLabel}`,
           summary: analysis.summary.trim() || null,
           refType: "entity_context_source",
-          refId: sourceId,
-          actorId: source.uploadedBy,
+          refId: primarySource.id,
+          actorId: primarySource.uploadedBy,
         });
       }
     });
   } catch (error) {
-    await db.entityContextSource.update({
-      where: { id: sourceId },
-      data: {
-        status: "failed",
-        processingError:
-          error instanceof Error ? error.message : "Error desconocido",
-      },
-    });
+    await markSourcesFailed(db, batchIds, error);
     throw error;
   }
 }

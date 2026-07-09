@@ -24,7 +24,7 @@ export async function POST(request: NextRequest) {
 
   let checked = 0;
   let processed = 0;
-  const errors: { sourceId: string; error: string }[] = [];
+  const errors: { sourceIds: string[]; error: string }[] = [];
 
   for (const org of orgs) {
     const db = forOrg(org.id);
@@ -36,17 +36,26 @@ export async function POST(request: NextRequest) {
       },
       orderBy: { createdAt: "asc" },
       take: 10,
-      select: { id: true },
+      select: { id: true, entityType: true, entityId: true },
     });
     checked += stuck.length;
 
+    // Agrupa por entidad para correr un solo análisis por lote.
+    const batches = new Map<string, string[]>();
     for (const source of stuck) {
+      const key = `${source.entityType}:${source.entityId}`;
+      const batch = batches.get(key) ?? [];
+      batch.push(source.id);
+      batches.set(key, batch);
+    }
+
+    for (const sourceIds of batches.values()) {
       try {
-        await runEntityContextPipeline(db, org.id, source.id);
-        processed += 1;
+        await runEntityContextPipeline(db, org.id, sourceIds);
+        processed += sourceIds.length;
       } catch (error) {
         errors.push({
-          sourceId: source.id,
+          sourceIds,
           error: error instanceof Error ? error.message : "Error desconocido",
         });
       }

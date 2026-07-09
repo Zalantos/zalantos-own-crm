@@ -19,21 +19,29 @@ export async function POST(request: NextRequest) {
   const body = (await request.json().catch(() => ({}))) as {
     organizationId?: string;
     sourceId?: string;
+    sourceIds?: string[];
   };
 
-  if (body.organizationId && body.sourceId) {
+  const sourceIds =
+    body.sourceIds && body.sourceIds.length > 0
+      ? body.sourceIds
+      : body.sourceId
+        ? [body.sourceId]
+        : [];
+
+  if (body.organizationId && sourceIds.length > 0) {
     try {
       await runEntityContextPipeline(
         forOrg(body.organizationId),
         body.organizationId,
-        body.sourceId,
+        sourceIds,
       );
-      return NextResponse.json({ ok: true, sourceId: body.sourceId });
+      return NextResponse.json({ ok: true, sourceIds });
     } catch (error) {
       return NextResponse.json(
         {
           ok: false,
-          sourceId: body.sourceId,
+          sourceIds,
           error: error instanceof Error ? error.message : "Error desconocido",
         },
         { status: 500 },
@@ -42,7 +50,7 @@ export async function POST(request: NextRequest) {
   }
 
   return NextResponse.json(
-    { error: "organizationId y sourceId son requeridos" },
+    { error: "organizationId y sourceId(s) son requeridos" },
     { status: 400 },
   );
 }
