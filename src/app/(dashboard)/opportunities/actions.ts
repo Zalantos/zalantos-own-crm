@@ -140,6 +140,7 @@ export async function updateOpportunity(
       entityType: "opportunity",
       entityId: opportunity.id,
       eventName: "stage_changed",
+      actorId: user.id,
       before: { stage: before.stage.id },
       after: { stage: opportunity.stage.id },
     });
@@ -203,6 +204,7 @@ export async function updateOpportunityStage(id: string, stageId: string) {
     entityType: "opportunity",
     entityId: opportunity.id,
     eventName: "stage_changed",
+    actorId: user.id,
     before: { stage: before.stage.id },
     after: { stage: opportunity.stage.id },
   });

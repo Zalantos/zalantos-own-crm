@@ -29,7 +29,12 @@ export async function createCompany(
   }
 
   const company = await db.company.create({
-    data: { ...parsed.data, organizationId: org.id, createdById: user.id },
+    data: {
+      ...parsed.data,
+      organizationId: org.id,
+      createdById: user.id,
+      createdVia: "manual",
+    },
   });
   await upsertCustomFieldValues(db, org.id, "company", company.id, formData);
   revalidatePath("/companies");

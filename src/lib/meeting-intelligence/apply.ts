@@ -22,6 +22,7 @@ type ApplyContext = {
   defaultOpportunityId: string | null;
   // Where the proposal came from, for timeline copy ("Reunión X" | "Chat del agente").
   originLabel: string;
+  source: string;
   proposalId: string;
   actorId: string;
 };
@@ -215,6 +216,7 @@ async function applyItem(
 ): Promise<RevertData | null> {
   const after = asRecord(item.afterValue);
   const before = asRecord(item.beforeValue);
+  const createdVia = ctx.source === "agent" ? "agent" : "meeting";
 
   const timelineBase = {
     organizationId: ctx.organizationId,
@@ -323,6 +325,8 @@ async function applyItem(
           notes: after.notes ? String(after.notes) : null,
           isDecisionMaker: Boolean(after.isDecisionMaker),
           isSponsor: Boolean(after.isSponsor),
+          createdById: ctx.actorId,
+          createdVia,
         },
       });
       const revert = await linkFlaggedContactToOpportunity(tx, ctx, person);
@@ -408,6 +412,8 @@ async function applyItem(
               ? null
               : new Date(Date.now() + dueInDays * 86_400_000),
           status: "pending",
+          createdById: ctx.actorId,
+          createdVia,
         },
       });
       await appendTimelineEvent(tx, {
@@ -429,6 +435,8 @@ async function applyItem(
           opportunityId: ctx.defaultOpportunityId,
           title: after.title ? String(after.title) : null,
           body: String(after.body ?? ""),
+          createdById: ctx.actorId,
+          createdVia,
         },
       });
       await appendTimelineEvent(tx, {
@@ -521,6 +529,7 @@ export async function applyProposal(
     companyId: context.companyId,
     defaultOpportunityId: context.opportunityId,
     originLabel: context.originLabel,
+    source: context.source,
     proposalId,
     actorId,
   };
@@ -585,6 +594,7 @@ export async function applyProposal(
       entityType: "opportunity",
       entityId: change.opportunityId,
       eventName: "stage_changed",
+      actorId,
       before: { stage: change.from },
       after: { stage: change.to },
     });
@@ -626,6 +636,7 @@ export async function revertItem(
     companyId: context.companyId,
     defaultOpportunityId: context.opportunityId,
     originLabel: context.originLabel,
+    source: context.source,
     proposalId: item.proposal.id,
     actorId,
   };
@@ -776,6 +787,7 @@ export async function revertItem(
       entityType: "opportunity",
       entityId: change.opportunityId,
       eventName: "stage_changed",
+      actorId,
       before: { stage: change.from },
       after: { stage: change.to },
     });

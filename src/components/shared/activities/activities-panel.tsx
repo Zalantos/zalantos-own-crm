@@ -17,7 +17,10 @@ export async function ActivitiesPanel({
   const [activities, teamMembers] = await Promise.all([
     db.activity.findMany({
       where: { companyId, personId, opportunityId },
-      include: { assignee: { select: { id: true, name: true } } },
+      include: {
+        assignee: { select: { id: true, name: true } },
+        createdBy: { select: { name: true, email: true } },
+      },
       orderBy: [{ status: "asc" }, { dueDate: "asc" }],
     }),
     getActiveTeamMembers(db),

@@ -10,6 +10,8 @@ import { ActivitiesPanel } from "@/components/shared/activities/activities-panel
 import { CustomFieldsDetailSection } from "@/components/shared/custom-fields/custom-fields-detail-section";
 import { StatCard } from "@/components/shared/stat-card";
 import { OpportunityStageBadge } from "@/components/shared/opportunities/status-badge";
+import { createFormatters } from "@/lib/format";
+import { actorLabel, createdViaLabel } from "@/lib/traceability";
 
 export default async function PersonDetailPage({
   params,
@@ -17,7 +19,7 @@ export default async function PersonDetailPage({
   params: Promise<{ id: string }>;
 }) {
   const { id } = await params;
-  const { db } = await requireOrgContext();
+  const { org, db } = await requireOrgContext();
 
   const stageInclude = {
     stage: { select: { label: true, isWon: true, isLost: true } },
@@ -26,11 +28,13 @@ export default async function PersonDetailPage({
     where: { id },
     include: {
       company: true,
+      createdBy: { select: { name: true, email: true } },
       opportunitiesAsDecisionMaker: { include: stageInclude },
       opportunitiesAsSponsor: { include: stageInclude },
     },
   });
   if (!person) notFound();
+  const formatters = createFormatters(org);
 
   const relatedOpportunities = [
     ...person.opportunitiesAsDecisionMaker.map((opportunity) => ({
@@ -71,6 +75,24 @@ export default async function PersonDetailPage({
           label="Empresa"
           value={person.company?.name}
           href={person.companyId ? `/companies/${person.companyId}` : undefined}
+          variant="compact"
+        />
+      </div>
+
+      <div className="mb-6 grid grid-cols-1 gap-4 sm:grid-cols-3">
+        <StatCard
+          label="Creada por"
+          value={actorLabel(person.createdBy)}
+          variant="compact"
+        />
+        <StatCard
+          label="Origen"
+          value={createdViaLabel(person.createdVia)}
+          variant="compact"
+        />
+        <StatCard
+          label="Creada"
+          value={formatters.dateTime(person.createdAt)}
           variant="compact"
         />
       </div>

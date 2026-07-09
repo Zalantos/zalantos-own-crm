@@ -11,6 +11,8 @@ import { CustomFieldsDetailSection } from "@/components/shared/custom-fields/cus
 import { StatCard } from "@/components/shared/stat-card";
 import { CompanyStatusBadge } from "@/components/shared/companies/status-badge";
 import { OpportunityStageBadge } from "@/components/shared/opportunities/status-badge";
+import { createFormatters } from "@/lib/format";
+import { actorLabel, createdViaLabel } from "@/lib/traceability";
 import { deleteCompany } from "../actions";
 
 export default async function CompanyDetailPage({
@@ -19,11 +21,12 @@ export default async function CompanyDetailPage({
   params: Promise<{ id: string }>;
 }) {
   const { id } = await params;
-  const { user, db } = await requireOrgContext();
+  const { user, org, db } = await requireOrgContext();
 
   const company = await db.company.findUnique({
     where: { id },
     include: {
+      createdBy: { select: { name: true, email: true } },
       people: { orderBy: { createdAt: "desc" } },
       opportunities: {
         orderBy: { createdAt: "desc" },
@@ -33,6 +36,7 @@ export default async function CompanyDetailPage({
   });
   if (!company) notFound();
   const canDelete = user.role === "ADMIN" || company.createdById === user.id;
+  const formatters = createFormatters(org);
 
   return (
     <div>
@@ -68,6 +72,24 @@ export default async function CompanyDetailPage({
         <StatCard
           label="Sitio web"
           value={company.website ?? "—"}
+          variant="compact"
+        />
+      </div>
+
+      <div className="mb-6 grid grid-cols-1 gap-4 sm:grid-cols-3">
+        <StatCard
+          label="Creada por"
+          value={actorLabel(company.createdBy)}
+          variant="compact"
+        />
+        <StatCard
+          label="Origen"
+          value={createdViaLabel(company.createdVia)}
+          variant="compact"
+        />
+        <StatCard
+          label="Creada"
+          value={formatters.dateTime(company.createdAt)}
           variant="compact"
         />
       </div>

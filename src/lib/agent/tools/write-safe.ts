@@ -46,6 +46,8 @@ export function buildWriteSafeTools(ctx: AgentToolContext) {
                 personId: emptyToNull(personId),
                 title: emptyToNull(title),
                 body,
+                createdById: ctx.userId,
+                createdVia: "agent",
               },
             });
             await appendTimelineEvent(tx, {
@@ -108,6 +110,8 @@ export function buildWriteSafeTools(ctx: AgentToolContext) {
                 description: emptyToNull(description),
                 dueDate: due,
                 status: "pending",
+                createdById: ctx.userId,
+                createdVia: "agent",
               },
             });
             await appendTimelineEvent(tx, {

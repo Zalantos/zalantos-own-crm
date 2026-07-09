@@ -14,6 +14,7 @@ export async function NotesPanel({
   const { db } = await requireOrgContext();
   const notes = await db.note.findMany({
     where: { companyId, personId, opportunityId },
+    include: { createdBy: { select: { name: true, email: true } } },
     orderBy: { createdAt: "desc" },
   });
 

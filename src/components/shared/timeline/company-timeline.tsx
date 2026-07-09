@@ -5,6 +5,7 @@ import {
 } from "@/lib/timeline";
 import { requireOrgContext } from "@/lib/tenant";
 import { formatDateTime } from "@/lib/utils";
+import { actorLabel } from "@/lib/traceability";
 
 type TimelineProps =
   | { companyId: string; opportunityId?: never }
@@ -32,7 +33,7 @@ export async function CompanyTimeline(props: TimelineProps) {
           <span className="bg-primary absolute -left-[21px] top-1.5 h-2 w-2 rounded-full" />
           <p className="text-muted-foreground text-xs">
             {TYPE_LABELS[event.type] ?? event.type} ·{" "}
-            {formatDateTime(event.occurredAt)}
+            {formatDateTime(event.occurredAt)} · {actorLabel(event.actor)}
           </p>
           <p className="text-sm font-medium">{event.title}</p>
           {event.summary && (

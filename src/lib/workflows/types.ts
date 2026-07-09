@@ -6,6 +6,7 @@ export type WorkflowEvent = {
   entityType: EntityType;
   entityId: string;
   eventName: WorkflowTriggerEvent;
+  actorId?: string | null;
   before?: Record<string, unknown>;
   after: Record<string, unknown>;
 };

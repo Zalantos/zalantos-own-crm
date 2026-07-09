@@ -17,6 +17,7 @@ import {
   updateActivity,
   type ActivityFormState,
 } from "@/app/(dashboard)/activities/actions";
+import { actorLabel, createdViaLabel } from "@/lib/traceability";
 import type { Activity } from "@prisma/client";
 import type { AssignableTeamMember } from "@/lib/team";
 
@@ -24,6 +25,7 @@ const ACTIVITY_TYPES = ["call", "email", "meeting", "task", "follow_up"];
 
 type ActivityWithAssignee = Activity & {
   assignee?: { id: string; name: string } | null;
+  createdBy?: { name: string | null; email: string | null } | null;
 };
 
 function formatDueDateForInput(dueDate: Date | null) {
@@ -175,6 +177,10 @@ export function ActivityRow({
           </p>
           <div className="text-muted-foreground flex items-center gap-2 text-xs">
             <span>{activity.type}</span>
+            <span>
+              creada por {actorLabel(activity.createdBy)} vía{" "}
+              {createdViaLabel(activity.createdVia)}
+            </span>
             {activity.dueDate && (
               <span className={isOverdue ? "text-destructive" : ""}>
                 vence {format(activity.dueDate, "dd/MM/yyyy")}

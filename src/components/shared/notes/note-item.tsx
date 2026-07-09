@@ -12,9 +12,14 @@ import {
   deleteNote,
   type NoteFormState,
 } from "@/app/(dashboard)/notes/actions";
+import { actorLabel, createdViaLabel } from "@/lib/traceability";
 import type { Note } from "@prisma/client";
 
-export function NoteItem({ note }: { note: Note }) {
+type NoteWithCreator = Note & {
+  createdBy?: { name: string | null; email: string | null } | null;
+};
+
+export function NoteItem({ note }: { note: NoteWithCreator }) {
   const [editing, setEditing] = useState(false);
   const [state, formAction] = useActionState<NoteFormState, FormData>(
     updateNote,
@@ -64,7 +69,8 @@ export function NoteItem({ note }: { note: Note }) {
             {formatDistanceToNow(note.createdAt, {
               addSuffix: true,
               locale: es,
-            })}
+            })}{" "}
+            · {actorLabel(note.createdBy)} · {createdViaLabel(note.createdVia)}
           </p>
         </div>
         <div className="flex gap-1">

@@ -14,13 +14,7 @@ import { StageSelect } from "@/components/shared/kanban/stage-select";
 import { CompanyTimeline } from "@/components/shared/timeline/company-timeline";
 import { StatCard } from "@/components/shared/stat-card";
 import { createFormatters, formatCurrencyValue } from "@/lib/format";
-
-const CREATED_VIA_LABELS: Record<string, string> = {
-  manual: "Formulario manual",
-  notion_import: "Importación Notion",
-  seed: "Datos demo",
-  legacy: "Registro previo",
-};
+import { actorLabel, createdViaLabel } from "@/lib/traceability";
 
 export default async function OpportunityDetailPage({
   params,
@@ -45,12 +39,8 @@ export default async function OpportunityDetailPage({
   if (!opportunity) notFound();
 
   const formatters = createFormatters(org);
-  const createdByLabel =
-    opportunity.createdBy?.name ??
-    opportunity.createdBy?.email ??
-    "Sistema / desconocido";
-  const createdViaLabel =
-    CREATED_VIA_LABELS[opportunity.createdVia] ?? opportunity.createdVia;
+  const createdByLabel = actorLabel(opportunity.createdBy);
+  const originLabel = createdViaLabel(opportunity.createdVia);
 
   const isOverdue =
     opportunity.status === "open" &&
@@ -159,6 +149,10 @@ export default async function OpportunityDetailPage({
         <Card size="sm">
           <CardContent>
             <p className="text-muted-foreground text-xs">Trazabilidad</p>
+            <p className="mt-2 text-sm">
+              Creada por <span className="font-medium">{createdByLabel}</span>{" "}
+              vía <span className="font-medium">{originLabel}</span>.
+            </p>
             <dl className="mt-2 grid gap-1.5 text-sm">
               <div className="flex justify-between gap-3">
                 <dt className="text-muted-foreground">Creada por</dt>
@@ -166,7 +160,7 @@ export default async function OpportunityDetailPage({
               </div>
               <div className="flex justify-between gap-3">
                 <dt className="text-muted-foreground">Origen</dt>
-                <dd className="text-right">{createdViaLabel}</dd>
+                <dd className="text-right">{originLabel}</dd>
               </div>
               <div className="flex justify-between gap-3">
                 <dt className="text-muted-foreground">Creada</dt>

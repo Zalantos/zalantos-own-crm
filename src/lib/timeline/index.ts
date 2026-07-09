@@ -19,7 +19,9 @@ export const TYPE_LABELS: Record<string, string> = {
   next_step_updated: "Próximo paso actualizado",
   field_updated: "Campo actualizado",
   contact_added: "Contacto agregado",
+  contact_linked: "Contacto vinculado",
   opportunity_created: "Oportunidad creada",
+  change_reverted: "Cambio deshecho",
 };
 
 const ACTIVITY_PAGE_SIZE = 25;
@@ -61,22 +63,44 @@ export async function appendTimelineEvent(
 }
 
 export async function getCompanyTimeline(db: TenantClient, companyId: string) {
-  return db.timelineEvent.findMany({
+  const events = await db.timelineEvent.findMany({
     where: { companyId },
     orderBy: { occurredAt: "desc" },
     take: 100,
   });
+  return attachActors(db, events);
 }
 
 export async function getOpportunityTimeline(
   db: TenantClient,
   opportunityId: string,
 ) {
-  return db.timelineEvent.findMany({
+  const events = await db.timelineEvent.findMany({
     where: { opportunityId },
     orderBy: { occurredAt: "desc" },
     take: 100,
   });
+  return attachActors(db, events);
+}
+
+async function attachActors<
+  T extends { actorId: string | null },
+>(db: TenantClient, events: T[]) {
+  const actorIds = [
+    ...new Set(events.map((event) => event.actorId).filter((id) => id !== null)),
+  ];
+  const actors = actorIds.length
+    ? await db.user.findMany({
+        where: { id: { in: actorIds } },
+        select: { id: true, name: true, email: true },
+      })
+    : [];
+  const actorsById = new Map(actors.map((actor) => [actor.id, actor]));
+
+  return events.map((event) => ({
+    ...event,
+    actor: event.actorId ? (actorsById.get(event.actorId) ?? null) : null,
+  }));
 }
 
 export type ActivityFeedFilters = {

@@ -18,7 +18,7 @@ export async function createPerson(
   _prevState: FormState,
   formData: FormData,
 ): Promise<FormState> {
-  const { org, db } = await requireOrgContext();
+  const { user, org, db } = await requireOrgContext();
 
   const parsed = personCreateSchema.safeParse(Object.fromEntries(formData));
   if (!parsed.success) {
@@ -29,7 +29,12 @@ export async function createPerson(
   }
 
   const person = await db.person.create({
-    data: { ...parsed.data, organizationId: org.id },
+    data: {
+      ...parsed.data,
+      organizationId: org.id,
+      createdById: user.id,
+      createdVia: "manual",
+    },
   });
   await upsertCustomFieldValues(db, org.id, "person", person.id, formData);
   revalidatePath("/people");

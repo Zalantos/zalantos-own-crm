@@ -8,13 +8,23 @@ async function executeCreateActivity(
   action: Action,
   event: WorkflowEvent,
 ) {
+  const opportunityCompany =
+    event.entityType === "opportunity"
+      ? await db.opportunity.findUnique({
+          where: { id: event.entityId },
+          select: { companyId: true },
+        })
+      : null;
   const linkField =
     event.entityType === "company"
       ? { companyId: event.entityId }
       : event.entityType === "person"
         ? { personId: event.entityId }
         : event.entityType === "opportunity"
-          ? { opportunityId: event.entityId }
+          ? {
+              opportunityId: event.entityId,
+              companyId: opportunityCompany?.companyId ?? undefined,
+            }
           : {};
 
   await db.activity.create({
@@ -28,6 +38,8 @@ async function executeCreateActivity(
         ? addDays(new Date(), action.dueInDays)
         : undefined,
       status: "pending",
+      createdById: event.actorId ?? null,
+      createdVia: "workflow",
     },
   });
 

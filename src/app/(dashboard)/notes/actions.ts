@@ -11,9 +11,9 @@ function parentPath(entity: {
   personId?: string | null;
   opportunityId?: string | null;
 }) {
-  if (entity.companyId) return `/companies/${entity.companyId}`;
-  if (entity.personId) return `/people/${entity.personId}`;
   if (entity.opportunityId) return `/opportunities/${entity.opportunityId}`;
+  if (entity.personId) return `/people/${entity.personId}`;
+  if (entity.companyId) return `/companies/${entity.companyId}`;
   return "/companies";
 }
 
@@ -30,8 +30,31 @@ export async function createNote(
     return { error: "La nota no pudo guardarse. Revisa los campos." };
   }
 
+  const linkedCompanyId =
+    parsed.data.companyId ??
+    (
+      parsed.data.opportunityId
+        ? await db.opportunity.findUnique({
+            where: { id: parsed.data.opportunityId },
+            select: { companyId: true },
+          })
+        : parsed.data.personId
+          ? await db.person.findUnique({
+              where: { id: parsed.data.personId },
+              select: { companyId: true },
+            })
+          : null
+    )?.companyId ??
+    null;
+
   const note = await db.note.create({
-    data: { ...parsed.data, organizationId: org.id },
+    data: {
+      ...parsed.data,
+      companyId: linkedCompanyId,
+      organizationId: org.id,
+      createdById: user.id,
+      createdVia: "manual",
+    },
   });
   if (note.companyId) {
     await appendTimelineEvent(db, {

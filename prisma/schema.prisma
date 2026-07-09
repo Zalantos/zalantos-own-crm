@@ -181,6 +181,7 @@ model Company {
   status         String       @default("active")
   createdById    String?
   createdBy      User?        @relation(fields: [createdById], references: [id], onDelete: SetNull)
+  createdVia     String       @default("manual")
   createdAt      DateTime     @default(now())
   updatedAt      DateTime     @updatedAt
 
@@ -212,6 +213,9 @@ model Person {
   isDecisionMaker Boolean      @default(false)
   isSponsor       Boolean      @default(false)
   notes           String?      @db.Text
+  createdById     String?
+  createdBy       User?        @relation(fields: [createdById], references: [id], onDelete: SetNull)
+  createdVia      String       @default("manual")
   createdAt       DateTime     @default(now())
   updatedAt       DateTime     @updatedAt
 
@@ -223,6 +227,7 @@ model Person {
   @@index([organizationId])
   @@index([companyId])
   @@index([email])
+  @@index([createdById])
   @@map("people")
 }
 
@@ -285,6 +290,9 @@ model Activity {
   dueDate        DateTime?
   completedAt    DateTime?
   status         String       @default("pending")
+  createdById    String?
+  createdBy      User?        @relation(fields: [createdById], references: [id], onDelete: SetNull)
+  createdVia     String       @default("manual")
   createdAt      DateTime     @default(now())
   updatedAt      DateTime     @updatedAt
 
@@ -294,6 +302,7 @@ model Activity {
   @@index([personId])
   @@index([opportunityId])
   @@index([assigneeId])
+  @@index([createdById])
   @@map("activities")
 }
 
@@ -309,6 +318,9 @@ model Note {
   opportunity    Opportunity? @relation(fields: [opportunityId], references: [id], onDelete: SetNull)
   title          String?
   body           String       @db.Text
+  createdById    String?
+  createdBy      User?        @relation(fields: [createdById], references: [id], onDelete: SetNull)
+  createdVia     String       @default("manual")
   createdAt      DateTime     @default(now())
   updatedAt      DateTime     @updatedAt
 
@@ -316,6 +328,7 @@ model Note {
   @@index([companyId])
   @@index([personId])
   @@index([opportunityId])
+  @@index([createdById])
   @@map("notes")
 }
 
@@ -476,7 +489,10 @@ model User {
 
   teamMember          TeamMember?
   createdCompanies    Company[]
+  createdPeople       Person[]
   createdOpportunities Opportunity[]
+  createdActivities   Activity[]
+  createdNotes        Note[]
   createdSavedViews   SavedView[]
   passwordResetTokens PasswordResetToken[]
 

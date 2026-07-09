@@ -79,8 +79,19 @@ Fuente de verdad: `prisma/schema.prisma`.
 
 - Siempre ligada a una `Company` y un `PipelineStage`.
 - `status` string (ej. `open`); `lossReason` al perder.
-- `createdVia`: manual u otros orígenes (meeting, agent).
+- `createdById` + `createdVia` registran quién la creó y por qué canal.
 - Índice en `nextStepDueDate` para crons de vencimiento.
+
+### Trazabilidad de creación CRM core
+
+- `Company`, `Person`, `Opportunity`, `Activity` y `Note` registran
+  `createdById` nullable hacia `User`, `createdVia`, `createdAt` y `updatedAt`.
+- Valores esperados de `createdVia`: `manual`, `agent`, `meeting`, `workflow`,
+  `seed`, `legacy`.
+- Para acciones vía agente/propuestas, `createdById` apunta al usuario humano
+  que ejecutó o aplicó la acción; el canal queda en `createdVia`.
+- Filas históricas sin autor quedan como `createdVia=legacy` y
+  `createdById=null`.
 
 ### CRMChangeItem
 
@@ -127,6 +138,7 @@ Ver `@@index` en `schema.prisma` — la mayoría compuestos con `organizationId`
 | `integration_deliveries` | Gateway |
 | `enable_row_level_security` | RLS |
 | `add_opportunity_traceability` | Trazabilidad de oportunidades |
+| `core_creation_traceability` | Trazabilidad de creación CRM core |
 
 ## Qué no debe romperse
 
