@@ -342,6 +342,58 @@ async function applyItem(
       return { createdEntityId: person.id, ...revert };
     }
 
+    case "add_company": {
+      const company = await tx.company.create({
+        data: {
+          organizationId: ctx.organizationId,
+          name: String(after.name ?? "").trim() || "Sin nombre",
+          website: after.website ? String(after.website) : null,
+          industry: after.industry ? String(after.industry) : null,
+          size: after.size ? String(after.size) : null,
+          country: after.country ? String(after.country) : null,
+          city: after.city ? String(after.city) : null,
+          linkedinUrl: after.linkedinUrl ? String(after.linkedinUrl) : null,
+          description: after.description ? String(after.description) : null,
+          createdById: ctx.actorId,
+          createdVia,
+        },
+      });
+      await appendTimelineEvent(tx, {
+        ...timelineBase,
+        companyId: company.id,
+        type: "company_created",
+        title: `Empresa creada: ${company.name}`,
+      });
+      return { createdEntityId: company.id };
+    }
+
+    case "add_opportunity": {
+      if (!ctx.companyId) throw new Error("Falta empresa destino");
+      const stage = resolveStage(ctx, after.stage);
+      const opportunity = await tx.opportunity.create({
+        data: {
+          organizationId: ctx.organizationId,
+          companyId: ctx.companyId,
+          name: String(after.name ?? "").trim() || "Sin nombre",
+          stageId: stage.id,
+          estimatedValue:
+            after.estimatedValue == null ? null : String(after.estimatedValue),
+          source: after.source ? String(after.source) : null,
+          mainPain: after.mainPain ? String(after.mainPain) : null,
+          createdById: ctx.actorId,
+          createdVia,
+        },
+      });
+      await appendTimelineEvent(tx, {
+        ...timelineBase,
+        opportunityId: opportunity.id,
+        type: "opportunity_created",
+        title: `Oportunidad creada: ${opportunity.name}`,
+        summary: stage.label,
+      });
+      return { createdEntityId: opportunity.id };
+    }
+
     case "link_contact": {
       if (!item.entityId) throw new Error("Falta contacto destino");
       const person = await tx.person.findFirst({
@@ -498,9 +550,11 @@ export async function getProposalContext(db: TenantClient, proposalId: string) {
 
   const companyId = proposal.companyId ?? proposal.meeting?.companyId ?? null;
   // Enrichment sobre una persona sin empresa vinculada no tiene company; se
-  // permite aplicar igual (los items apuntan a la persona por entityId). El
-  // resto de fuentes (meeting/agent) sí exige empresa.
-  if (!companyId && !proposal.personId) {
+  // permite aplicar igual (los items apuntan a la persona por entityId). Una
+  // propuesta de agente para dar de alta una empresa nueva tampoco tiene
+  // company todavía (es lo que el ítem add_company va a crear). El resto de
+  // fuentes (meeting) sí exige empresa.
+  if (!companyId && !proposal.personId && proposal.source !== "agent") {
     throw new Error("Propuesta sin empresa asociada");
   }
 
@@ -725,6 +779,22 @@ export async function revertItem(
         await restoreOpportunityLinks(tx, organizationId, revert);
         if (revert.createdEntityId) {
           await tx.person.delete({
+            where: { id: revert.createdEntityId, organizationId },
+          });
+        }
+        break;
+      }
+      case "add_opportunity": {
+        if (revert.createdEntityId) {
+          await tx.opportunity.delete({
+            where: { id: revert.createdEntityId, organizationId },
+          });
+        }
+        break;
+      }
+      case "add_company": {
+        if (revert.createdEntityId) {
+          await tx.company.delete({
             where: { id: revert.createdEntityId, organizationId },
           });
         }

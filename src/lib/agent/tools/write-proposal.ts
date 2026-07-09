@@ -321,6 +321,152 @@ export function buildProposalTools(ctx: AgentToolContext) {
         });
       },
     }),
+
+    create_opportunity: tool({
+      description:
+        "Propone dar de alta una oportunidad nueva en una empresa. NO la crea: genera una propuesta que el usuario aprueba en el chat.",
+      inputSchema: z.object({
+        companyId: z.string().min(1),
+        name: z.string().min(1),
+        stage: z
+          .string()
+          .optional()
+          .describe(
+            "Key de la etapa inicial según list_writable_fields (opportunity). Si no se especifica, se usa la primera etapa del pipeline.",
+          ),
+        estimatedValue: z.number().optional(),
+        source: z.string().optional(),
+        mainPain: z.string().optional(),
+        reason: z.string().min(1),
+        confidence: confidenceSchema,
+        evidence: evidenceSchema,
+      }),
+      execute: async ({
+        companyId,
+        name,
+        stage,
+        estimatedValue,
+        source,
+        mainPain,
+        reason,
+        confidence,
+        evidence,
+      }) => {
+        const company = await ctx.db.company.findUnique({
+          where: { id: companyId },
+          select: { id: true, name: true },
+        });
+        if (!company) {
+          return { error: `Empresa no encontrada: ${companyId}` };
+        }
+
+        const stages = await getOrgStages(ctx.db);
+        const target = stage ? stagesByKey(stages).get(stage) : stages[0];
+        if (!target) {
+          return {
+            error: stage
+              ? `Etapa inválida "${stage}". Etapas válidas: ${stages.map((s) => s.key).join(", ")}`
+              : "La organización no tiene etapas de pipeline.",
+          };
+        }
+
+        const afterValue = {
+          name,
+          stage: target.key,
+          estimatedValue: estimatedValue ?? null,
+          source: source ?? null,
+          mainPain: mainPain ?? null,
+        };
+
+        return createAgentProposal(ctx.db, ctx.organizationId, {
+          threadId: ctx.threadId,
+          companyId,
+          items: [
+            {
+              type: "add_opportunity",
+              entity: "opportunity",
+              entityId: null,
+              beforeValue: null,
+              afterValue,
+              explanation: reason,
+              confidence,
+              evidence: evidence ?? null,
+              label: `Nueva oportunidad en ${company.name}`,
+              before: "—",
+              after: `${name} (${target.label})${estimatedValue ? ` · $${estimatedValue}` : ""}`,
+            },
+          ],
+        });
+      },
+    }),
+
+    create_company: tool({
+      description:
+        "Propone dar de alta una empresa nueva. NO la crea: genera una propuesta que el usuario aprueba en el chat.",
+      inputSchema: z.object({
+        name: z.string().min(1),
+        website: z.string().optional(),
+        industry: z.string().optional(),
+        size: z.string().optional(),
+        country: z.string().optional(),
+        city: z.string().optional(),
+        linkedinUrl: z.string().optional(),
+        description: z.string().optional(),
+        reason: z.string().min(1),
+        confidence: confidenceSchema,
+        evidence: evidenceSchema,
+      }),
+      execute: async ({
+        name,
+        reason,
+        confidence,
+        evidence,
+        ...company
+      }) => {
+        // Evita duplicados obvios: si ya hay una empresa con el mismo nombre,
+        // se avisa en vez de crear una segunda ficha para la misma cuenta.
+        const existing = await ctx.db.company.findFirst({
+          where: { name: { equals: name, mode: "insensitive" } },
+          select: { id: true, name: true },
+        });
+        if (existing) {
+          return {
+            error: `Ya existe una empresa llamada "${existing.name}" (id: ${existing.id}). Usá update_record_fields sobre esa empresa en vez de crear una nueva.`,
+          };
+        }
+
+        const afterValue = {
+          name,
+          website: company.website ?? null,
+          industry: company.industry ?? null,
+          size: company.size ?? null,
+          country: company.country ?? null,
+          city: company.city ?? null,
+          linkedinUrl: company.linkedinUrl ?? null,
+          description: company.description ?? null,
+        };
+
+        return createAgentProposal(ctx.db, ctx.organizationId, {
+          threadId: ctx.threadId,
+          companyId: null,
+          items: [
+            {
+              type: "add_company",
+              entity: "company",
+              entityId: null,
+              beforeValue: null,
+              afterValue,
+              explanation: reason,
+              confidence,
+              evidence: evidence ?? null,
+              label: "Nueva empresa",
+              before: "—",
+              after: `${name}${company.industry ? ` (${company.industry})` : ""}`,
+            },
+          ],
+        });
+      },
+    }),
   };
 }
 

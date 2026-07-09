@@ -21,6 +21,7 @@ export const TYPE_LABELS: Record<string, string> = {
   contact_added: "Contacto agregado",
   contact_linked: "Contacto vinculado",
   opportunity_created: "Oportunidad creada",
+  company_created: "Empresa creada",
   change_reverted: "Cambio deshecho",
   context_enriched: "Contexto enriquecido",
 };

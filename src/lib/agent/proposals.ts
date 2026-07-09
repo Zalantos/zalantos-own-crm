@@ -4,7 +4,13 @@ import { approvalFromConfidence } from "@/lib/crm/proposal-policy";
 import { agentConfig } from "./config";
 
 export type AgentProposalItemInput = {
-  type: "update_field" | "stage_change" | "add_contact" | "link_contact";
+  type:
+    | "update_field"
+    | "stage_change"
+    | "add_contact"
+    | "link_contact"
+    | "add_opportunity"
+    | "add_company";
   entity: "company" | "opportunity" | "person";
   entityId: string | null;
   beforeValue: Prisma.InputJsonValue | null;
@@ -24,7 +30,9 @@ export type AgentProposalItemInput = {
 
 type CreateAgentProposalInput = {
   threadId: string;
-  companyId: string;
+  // Null only for add_company proposals, which have no existing company to
+  // anchor to yet.
+  companyId: string | null;
   opportunityId?: string | null;
   items: AgentProposalItemInput[];
 };
