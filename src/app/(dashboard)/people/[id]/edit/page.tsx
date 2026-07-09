@@ -2,8 +2,9 @@ import { notFound } from "next/navigation";
 import { requireOrgContext } from "@/lib/tenant";
 import { PageHeader } from "@/components/shared/page-header";
 import { CustomFieldsFormSection } from "@/components/shared/custom-fields/custom-fields-form-section";
+import { DeleteRecordSection } from "@/components/shared/delete-record-section";
 import { PersonForm } from "../../person-form";
-import { PersonDeleteButton } from "../../person-delete-button";
+import { deletePerson } from "../../actions";
 
 export default async function EditPersonPage({
   params,
@@ -29,9 +30,13 @@ export default async function EditPersonPage({
         }
       />
       <div className="mt-8 max-w-2xl">
-        <PersonDeleteButton
-          personId={person.id}
-          personName={`${person.firstName} ${person.lastName}`}
+        <DeleteRecordSection
+          title="Eliminar contacto"
+          description={`Esta acción es irreversible. ${person.firstName} ${person.lastName} se desvinculará de sus oportunidades, actividades y notas.`}
+          confirmMessage={`¿Eliminar a ${person.firstName} ${person.lastName}? Se desvinculará de oportunidades, actividades y notas.`}
+          buttonLabel="Eliminar contacto"
+          errorMessage="No se pudo eliminar el contacto. Intenta de nuevo."
+          action={deletePerson.bind(null, person.id)}
         />
       </div>
     </div>

@@ -4,14 +4,23 @@ import { useState, useTransition } from "react";
 import { unstable_rethrow } from "next/navigation";
 import { Loader2Icon } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { deletePerson } from "./actions";
 
-export function PersonDeleteButton({
-  personId,
-  personName,
+export function DeleteRecordSection({
+  title,
+  description,
+  confirmMessage,
+  buttonLabel,
+  pendingLabel = "Eliminando...",
+  errorMessage = "No se pudo eliminar el registro. Intenta de nuevo.",
+  action,
 }: {
-  personId: string;
-  personName: string;
+  title: string;
+  description: string;
+  confirmMessage: string;
+  buttonLabel: string;
+  pendingLabel?: string;
+  errorMessage?: string;
+  action: () => Promise<void>;
 }) {
   const [pending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
@@ -19,11 +28,8 @@ export function PersonDeleteButton({
   return (
     <div className="border-destructive/30 space-y-3 rounded-lg border p-4">
       <div>
-        <p className="text-sm font-medium">Eliminar contacto</p>
-        <p className="text-muted-foreground text-sm">
-          Esta acción es irreversible. {personName} se desvinculará de sus
-          oportunidades, actividades y notas.
-        </p>
+        <p className="text-sm font-medium">{title}</p>
+        <p className="text-muted-foreground text-sm">{description}</p>
       </div>
       {error && <p className="text-destructive text-sm">{error}</p>}
       <Button
@@ -32,24 +38,19 @@ export function PersonDeleteButton({
         disabled={pending}
         onClick={() =>
           startTransition(async () => {
-            if (
-              !confirm(
-                `¿Eliminar a ${personName}? Se desvinculará de oportunidades, actividades y notas.`,
-              )
-            )
-              return;
+            if (!confirm(confirmMessage)) return;
             setError(null);
             try {
-              await deletePerson(personId);
+              await action();
             } catch (deleteError) {
               unstable_rethrow(deleteError);
-              setError("No se pudo eliminar el contacto. Intenta de nuevo.");
+              setError(errorMessage);
             }
           })
         }
       >
         {pending && <Loader2Icon className="animate-spin" />}
-        {pending ? "Eliminando..." : "Eliminar contacto"}
+        {pending ? pendingLabel : buttonLabel}
       </Button>
     </div>
   );

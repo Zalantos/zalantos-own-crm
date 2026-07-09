@@ -1,7 +1,9 @@
 import { notFound } from "next/navigation";
 import { requireOrgContext } from "@/lib/tenant";
 import { PageHeader } from "@/components/shared/page-header";
+import { DeleteRecordSection } from "@/components/shared/delete-record-section";
 import { MeetingForm } from "../../meeting-form";
+import { deleteMeeting } from "../../actions";
 
 export default async function EditMeetingPage({
   params,
@@ -46,6 +48,16 @@ export default async function EditMeetingPage({
         description="Actualizá los datos de la reunión"
       />
       <MeetingForm companies={companies} meeting={meeting} />
+      <div className="mt-8 max-w-2xl">
+        <DeleteRecordSection
+          title="Eliminar reunión"
+          description={`Esta acción es irreversible. ${meeting.title} y su evidencia asociada se eliminarán.`}
+          confirmMessage={`¿Eliminar la reunión ${meeting.title} y su evidencia? Esta acción no se puede deshacer.`}
+          buttonLabel="Eliminar reunión"
+          errorMessage="No se pudo eliminar la reunión. Intenta de nuevo."
+          action={deleteMeeting.bind(null, meeting.id)}
+        />
+      </div>
     </div>
   );
 }
