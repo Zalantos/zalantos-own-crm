@@ -25,10 +25,14 @@ function stripFences(text: string): string {
     .trim();
 }
 
-async function complete(messages: ModelMessage[]): Promise<string> {
+async function complete(
+  instructions: string,
+  messages: ModelMessage[],
+): Promise<string> {
   const { text } = await generateText({
     model: resolveModel(meetingModelSpec()),
     temperature: 0.1,
+    instructions,
     messages,
   });
   return text;
@@ -45,12 +49,9 @@ export const defaultReasoningProvider: CrmReasoningProvider = {
       transcript,
     });
 
-    const messages: ModelMessage[] = [
-      { role: "system", content: system },
-      { role: "user", content: userContent },
-    ];
+    const messages: ModelMessage[] = [{ role: "user", content: userContent }];
 
-    let raw = await complete(messages);
+    let raw = await complete(system, messages);
 
     try {
       const parsed = crmAnalysisSchema.parse(JSON.parse(stripFences(raw)));
@@ -65,7 +66,7 @@ export const defaultReasoningProvider: CrmReasoningProvider = {
         raw,
       ].join("\n\n");
 
-      raw = await complete([
+      raw = await complete(system, [
         ...messages,
         { role: "assistant", content: raw },
         { role: "user", content: repairPrompt },
