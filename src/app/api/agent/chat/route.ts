@@ -2,6 +2,7 @@ import {
   consumeStream,
   convertToModelMessages,
   createUIMessageStreamResponse,
+  generateId,
   stepCountIs,
   streamText,
   toUIMessageStream,
@@ -115,12 +116,16 @@ export async function POST(req: Request) {
     stream: toUIMessageStream({
       stream: result.stream,
       originalMessages: messages,
+      // Sin esto el SDK deja responseMessage.id como "" y todos los turnos
+      // del asistente colisionan en una única fila del upsert de abajo.
+      generateMessageId: generateId,
       onEnd: async ({ responseMessage }) => {
         try {
+          const messageId = responseMessage.id || generateId();
           await db.agentChatMessage.upsert({
-            where: { id: responseMessage.id },
+            where: { id: messageId },
             create: {
-              id: responseMessage.id,
+              id: messageId,
               organizationId: org.id,
               threadId,
               role: "assistant",

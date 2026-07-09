@@ -16,4 +16,6 @@ export const TOOL_RISK: Record<string, ToolRisk> = {
   update_record_fields: "proposal",
   change_stage: "proposal",
   create_contact: "proposal",
+  create_opportunity: "proposal",
+  create_company: "proposal",
 };

@@ -18,12 +18,16 @@ const TOOL_LABELS: Record<string, string> = {
   "tool-read_attachment": "Leyó el documento adjunto",
   "tool-create_note": "Creó una nota",
   "tool-create_task": "Creó una tarea",
+  "tool-create_opportunity": "Propuso crear una oportunidad",
+  "tool-create_company": "Propuso crear una empresa",
 };
 
 const PROPOSAL_TOOLS = new Set([
   "tool-update_record_fields",
   "tool-change_stage",
   "tool-create_contact",
+  "tool-create_opportunity",
+  "tool-create_company",
 ]);
 
 type ToolPart = {
