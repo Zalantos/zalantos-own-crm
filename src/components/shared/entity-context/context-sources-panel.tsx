@@ -19,6 +19,7 @@ export type ContextSourceView = {
   processingError: string | null;
   externalRef: string | null;
   createdAt: string;
+  createdAtLabel: string;
 };
 
 const STATUS_LABELS: Record<string, string> = {
@@ -41,10 +42,8 @@ function statusVariant(
 
 export function ContextSourcesPanel({
   sources,
-  formatDateTime,
 }: {
   sources: ContextSourceView[];
-  formatDateTime: (value: string | Date) => string;
 }) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
@@ -85,7 +84,7 @@ export function ContextSourcesPanel({
               <Badge variant="outline">{source.sourceType}</Badge>
             </div>
             <p className="text-muted-foreground text-xs">
-              {formatDateTime(source.createdAt)}
+              {source.createdAtLabel}
             </p>
             {source.externalRef && (
               <p className="text-muted-foreground truncate text-xs">

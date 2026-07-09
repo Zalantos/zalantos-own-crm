@@ -102,6 +102,7 @@ export function EntityContextPanel({
     processingError: source.processingError,
     externalRef: source.externalRef,
     createdAt: source.createdAt.toISOString(),
+    createdAtLabel: formatDateTime(source.createdAt),
   }));
 
   return (
@@ -128,7 +129,6 @@ export function EntityContextPanel({
         <h3 className="text-sm font-medium">Fuentes</h3>
         <ContextSourcesPanel
           sources={sourceViews}
-          formatDateTime={formatDateTime}
         />
       </div>
     </div>
