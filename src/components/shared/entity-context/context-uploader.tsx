@@ -5,9 +5,20 @@ import { useRouter } from "next/navigation";
 import { Loader2Icon } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
 import { UploadProgressBar } from "@/components/shared/meeting/meeting-processing-progress";
 import {
   processContextSources,
+  registerManualContextSource,
   registerContextSource,
 } from "@/app/(dashboard)/entity-context/actions";
 import {
@@ -23,6 +34,8 @@ type UploadState = {
   totalFiles: number;
   percent: number;
 };
+
+const MAX_MANUAL_CONTEXT_CHARS = 200_000;
 
 // Expande ZIPs a sus documentos internos (recorriendo subcarpetas) y descarta
 // lo que no sea PDF/DOCX/DOC/TXT/MD.
@@ -52,6 +65,10 @@ export function ContextUploader({
   const [uploading, setUploading] = useState(false);
   const [preparing, setPreparing] = useState(false);
   const [uploadState, setUploadState] = useState<UploadState | null>(null);
+  const [manualOpen, setManualOpen] = useState(false);
+  const [manualTitle, setManualTitle] = useState("");
+  const [manualText, setManualText] = useState("");
+  const [manualSubmitting, setManualSubmitting] = useState(false);
 
   function uploadToR2({
     url,
@@ -202,6 +219,39 @@ export function ContextUploader({
     }
   }
 
+  async function submitManualText() {
+    const text = manualText.trim();
+    if (!text) {
+      toast.error("Pegá un texto para analizar.");
+      return;
+    }
+    if (text.length > MAX_MANUAL_CONTEXT_CHARS) {
+      toast.error("El texto supera el máximo de 200.000 caracteres.");
+      return;
+    }
+
+    setManualSubmitting(true);
+    try {
+      await registerManualContextSource({
+        entityType,
+        entityId,
+        title: manualTitle,
+        text,
+      });
+      toast.success("Analizando el texto…");
+      setManualTitle("");
+      setManualText("");
+      setManualOpen(false);
+      router.refresh();
+    } catch (error) {
+      toast.error(
+        error instanceof Error ? error.message : "Error al analizar el texto",
+      );
+    } finally {
+      setManualSubmitting(false);
+    }
+  }
+
   return (
     <div className="rounded-md border border-dashed p-4">
       <input
@@ -217,19 +267,29 @@ export function ContextUploader({
           PDF, DOCX, TXT, Markdown o un ZIP con carpetas. La IA genera un perfil
           y propone campos.
         </p>
-        <Button
-          type="button"
-          variant="secondary"
-          disabled={uploading}
-          onClick={() => inputRef.current?.click()}
-        >
-          {uploading && <Loader2Icon className="animate-spin" />}
-          {preparing
-            ? "Descomprimiendo..."
-            : uploading
-              ? "Subiendo..."
-              : "Subir documento"}
-        </Button>
+        <div className="flex shrink-0 flex-wrap justify-end gap-2">
+          <Button
+            type="button"
+            variant="outline"
+            disabled={uploading || manualSubmitting}
+            onClick={() => setManualOpen(true)}
+          >
+            Pegar texto
+          </Button>
+          <Button
+            type="button"
+            variant="secondary"
+            disabled={uploading || manualSubmitting}
+            onClick={() => inputRef.current?.click()}
+          >
+            {uploading && <Loader2Icon className="animate-spin" />}
+            {preparing
+              ? "Descomprimiendo..."
+              : uploading
+                ? "Subiendo..."
+                : "Subir documento"}
+          </Button>
+        </div>
       </div>
       {uploadState && (
         <div className="mt-4 space-y-2">
@@ -245,6 +305,52 @@ export function ContextUploader({
           <UploadProgressBar value={uploadState.percent} />
         </div>
       )}
+      <Dialog open={manualOpen} onOpenChange={setManualOpen}>
+        <DialogContent className="sm:max-w-lg">
+          <DialogHeader>
+            <DialogTitle>Pegar texto de contexto</DialogTitle>
+            <DialogDescription>
+              La IA lo analizará como una fuente manual de esta ficha.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3">
+            <Input
+              value={manualTitle}
+              onChange={(event) => setManualTitle(event.target.value)}
+              placeholder="Título opcional"
+              maxLength={120}
+            />
+            <Textarea
+              value={manualText}
+              onChange={(event) => setManualText(event.target.value)}
+              placeholder="Pegá o escribí el contexto…"
+              className="max-h-72 min-h-40 resize-y"
+            />
+            <p className="text-muted-foreground text-xs">
+              {manualText.trim().length.toLocaleString("es-CL")} /{" "}
+              {MAX_MANUAL_CONTEXT_CHARS.toLocaleString("es-CL")} caracteres
+            </p>
+          </div>
+          <DialogFooter>
+            <Button
+              type="button"
+              variant="outline"
+              disabled={manualSubmitting}
+              onClick={() => setManualOpen(false)}
+            >
+              Cancelar
+            </Button>
+            <Button
+              type="button"
+              disabled={manualSubmitting || !manualText.trim()}
+              onClick={() => void submitManualText()}
+            >
+              {manualSubmitting && <Loader2Icon className="animate-spin" />}
+              Analizar texto
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

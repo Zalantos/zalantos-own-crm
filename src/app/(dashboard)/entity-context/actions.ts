@@ -13,6 +13,8 @@ import {
 } from "@/lib/entity-context/types";
 import { appendTimelineEvent } from "@/lib/timeline";
 
+const MAX_MANUAL_CONTEXT_CHARS = 200_000;
+
 function schedulePipeline(organizationId: string, sourceIds: string[]) {
   after(async () => {
     try {
@@ -92,6 +94,70 @@ export async function registerContextSource(input: {
   if (!input.deferProcessing) {
     schedulePipeline(org.id, [source.id]);
   }
+  revalidatePath(resolved.revalidatePath);
+  return { sourceId: source.id };
+}
+
+export async function registerManualContextSource(input: {
+  entityType: string;
+  entityId: string;
+  title?: string;
+  text: string;
+}) {
+  const { user, org, db } = await requireOrgContext();
+
+  if (!isContextEntityType(input.entityType)) {
+    throw new Error("Tipo de entidad inválido");
+  }
+  const entityType = input.entityType as ContextEntityType;
+  const resolved = await resolveContextEntity(db, entityType, input.entityId);
+  if (!resolved) throw new Error("Entidad no encontrada");
+
+  const text = input.text.trim();
+  if (!text) {
+    throw new Error("El texto no puede estar vacío");
+  }
+  if (text.length > MAX_MANUAL_CONTEXT_CHARS) {
+    throw new Error("El texto supera el máximo de 200.000 caracteres");
+  }
+
+  const title = input.title?.trim();
+  const filename = title
+    ? `${title.slice(0, 120)}.txt`
+    : `texto-manual-${new Date().toISOString().slice(0, 19).replace(/[:T]/g, "-")}.txt`;
+  const sizeBytes = Buffer.byteLength(text, "utf8");
+
+  const source = await db.entityContextSource.create({
+    data: {
+      organizationId: org.id,
+      entityType,
+      entityId: input.entityId,
+      sourceType: "manual",
+      filename,
+      mimeType: "text/plain",
+      storagePath: "",
+      sizeBytes,
+      extractedText: text,
+      uploadedBy: user.id,
+      status: "uploaded",
+    },
+  });
+
+  if (resolved.companyId) {
+    await appendTimelineEvent(db, {
+      organizationId: org.id,
+      companyId: resolved.companyId,
+      opportunityId: resolved.opportunityId,
+      type: "evidence_uploaded",
+      title: `Texto de contexto: ${filename}`,
+      summary: `Fuente manual para ${entityType}`,
+      refType: "entity_context_source",
+      refId: source.id,
+      actorId: user.id,
+    });
+  }
+
+  schedulePipeline(org.id, [source.id]);
   revalidatePath(resolved.revalidatePath);
   return { sourceId: source.id };
 }

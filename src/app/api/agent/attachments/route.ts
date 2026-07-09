@@ -30,11 +30,13 @@ export async function POST(req: Request) {
 
   const formData = await req.formData();
   const file = formData.get("file");
+  const text = formData.get("text");
+  const filename = formData.get("filename");
   const threadId = formData.get("threadId");
 
-  if (!(file instanceof File) || typeof threadId !== "string" || !threadId) {
+  if (typeof threadId !== "string" || !threadId) {
     return Response.json(
-      { error: "Falta archivo o threadId" },
+      { error: "Falta threadId" },
       { status: 400 },
     );
   }
@@ -45,6 +47,50 @@ export async function POST(req: Request) {
   });
   if (!thread || thread.userId !== user.id) {
     return Response.json({ error: "Thread no encontrado" }, { status: 404 });
+  }
+
+  if (!(file instanceof File)) {
+    if (typeof text !== "string" || !text.trim()) {
+      return Response.json(
+        { error: "Falta archivo o texto" },
+        { status: 400 },
+      );
+    }
+
+    const extractedText = text.trim();
+    const sizeBytes = Buffer.byteLength(extractedText, "utf8");
+    if (sizeBytes > MAX_BYTES) {
+      return Response.json(
+        { error: "El texto supera el máximo de 15 MB" },
+        { status: 413 },
+      );
+    }
+
+    const title =
+      typeof filename === "string" && filename.trim()
+        ? filename.trim().slice(0, 120)
+        : `texto-manual-${new Date().toISOString().slice(0, 19).replace(/[:T]/g, "-")}.txt`;
+
+    const attachment = await db.agentAttachment.create({
+      data: {
+        organizationId: org.id,
+        threadId,
+        filename: title.endsWith(".txt") ? title : `${title}.txt`,
+        mimeType: "text/plain",
+        storagePath: "",
+        sizeBytes,
+        extractedText,
+        status: "extracted",
+        uploadedBy: user.id,
+      },
+      select: { id: true, filename: true },
+    });
+
+    return Response.json({
+      id: attachment.id,
+      filename: attachment.filename,
+      chars: extractedText.length,
+    });
   }
 
   if (file.size > MAX_BYTES) {

@@ -11,6 +11,15 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/utils";
 import type { PageContext } from "@/lib/agent/context";
@@ -22,6 +31,8 @@ const SUGGESTIONS = [
   "Resumime esta empresa",
   "Creá una tarea de seguimiento para mañana",
 ];
+
+const MAX_AGENT_ATTACHMENT_BYTES = 15 * 1024 * 1024;
 
 type AgentChatProps = {
   threadId: string | null;
@@ -41,6 +52,10 @@ export function AgentChat({
     { id: string; filename: string }[]
   >([]);
   const [uploading, setUploading] = useState(false);
+  const [manualOpen, setManualOpen] = useState(false);
+  const [manualTitle, setManualTitle] = useState("");
+  const [manualText, setManualText] = useState("");
+  const [manualSubmitting, setManualSubmitting] = useState(false);
   // Ref (not state) so the first submit can create the thread and use its id
   // in the same tick without re-rendering the chat.
   const threadIdRef = useRef<string | null>(threadId);
@@ -115,6 +130,48 @@ export function AgentChat({
     } finally {
       setUploading(false);
       if (fileInputRef.current) fileInputRef.current.value = "";
+    }
+  }
+
+  async function uploadManualText() {
+    const text = manualText.trim();
+    if (!text) {
+      toast.error("Pegá un texto para adjuntar.");
+      return;
+    }
+    if (new TextEncoder().encode(text).byteLength > MAX_AGENT_ATTACHMENT_BYTES) {
+      toast.error("El texto supera el máximo de 15 MB.");
+      return;
+    }
+
+    setManualSubmitting(true);
+    try {
+      const currentThreadId = await ensureThread();
+      const formData = new FormData();
+      formData.append("text", text);
+      formData.append("filename", manualTitle);
+      formData.append("threadId", currentThreadId);
+
+      const response = await fetch("/api/agent/attachments", {
+        method: "POST",
+        body: formData,
+      });
+      const payload = await response.json();
+      if (!response.ok) {
+        toast.error(payload.error ?? "No se pudo adjuntar el texto");
+        return;
+      }
+
+      setAttachments((current) => [
+        ...current,
+        { id: payload.id, filename: payload.filename },
+      ]);
+      toast.success("Texto adjuntado.");
+      setManualTitle("");
+      setManualText("");
+      setManualOpen(false);
+    } finally {
+      setManualSubmitting(false);
     }
   }
 
@@ -215,11 +272,21 @@ export function AgentChat({
             type="button"
             variant="ghost"
             size="icon"
-            disabled={uploading}
+            disabled={uploading || manualSubmitting}
             onClick={() => fileInputRef.current?.click()}
             aria-label="Adjuntar documento"
           >
             <PaperclipIcon />
+          </Button>
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon"
+            disabled={uploading || manualSubmitting}
+            onClick={() => setManualOpen(true)}
+            aria-label="Pegar contexto"
+          >
+            <FileTextIcon />
           </Button>
           <Textarea
             value={input}
@@ -244,6 +311,48 @@ export function AgentChat({
           </Button>
         </div>
       </form>
+      <Dialog open={manualOpen} onOpenChange={setManualOpen}>
+        <DialogContent className="sm:max-w-lg">
+          <DialogHeader>
+            <DialogTitle>Pegar contexto</DialogTitle>
+            <DialogDescription>
+              El texto quedará adjunto a este chat para que la IA lo use.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3">
+            <Input
+              value={manualTitle}
+              onChange={(event) => setManualTitle(event.target.value)}
+              placeholder="Título opcional"
+              maxLength={120}
+            />
+            <Textarea
+              value={manualText}
+              onChange={(event) => setManualText(event.target.value)}
+              placeholder="Pegá o escribí el contexto…"
+              className="max-h-72 min-h-40 resize-y"
+            />
+          </div>
+          <DialogFooter>
+            <Button
+              type="button"
+              variant="outline"
+              disabled={manualSubmitting}
+              onClick={() => setManualOpen(false)}
+            >
+              Cancelar
+            </Button>
+            <Button
+              type="button"
+              disabled={manualSubmitting || !manualText.trim()}
+              onClick={() => void uploadManualText()}
+            >
+              {manualSubmitting && <Loader2Icon className="animate-spin" />}
+              Adjuntar texto
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

@@ -62,19 +62,25 @@ AI SDK stream + tools (read CRM, write proposals)
 Propuestas en CRMChangeProposal (source=agent)
 ```
 
+El chat puede adjuntar documentos o texto manual; ambos se normalizan a
+`AgentAttachment.extractedText` y entran al prompt como contexto del thread.
+
 ### Entity context enrichment
 
 ```txt
 Upload en ficha (company/person/opportunity)
    · archivos sueltos (PDF/DOCX/DOC/TXT/MD), o
    · un ZIP → se descomprime en el navegador (fflate), recorre subcarpetas
-     y filtra por tipo soportado
+     y filtra por tipo soportado, o
+   · texto manual pegado por el usuario (`sourceType=manual`)
        ↓
-R2 presign (N archivos)
+Archivos: R2 presign + registerContextSource por archivo (deferProcessing)
        ↓
-registerContextSource por archivo (deferProcessing)
+Texto manual: registerManualContextSource con `extractedText` directo
        ↓
-processContextSources + after(runEntityContextPipeline con el lote)
+processContextSources (archivos) o schedulePipeline (texto manual)
+       ↓
+after(runEntityContextPipeline)
        ↓
 extract por archivo → UN análisis consolidado del lote
        → EntityContextProfile + Note (auto)
