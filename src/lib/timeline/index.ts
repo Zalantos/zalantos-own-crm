@@ -22,13 +22,17 @@ export const TYPE_LABELS: Record<string, string> = {
   contact_linked: "Contacto vinculado",
   opportunity_created: "Oportunidad creada",
   change_reverted: "Cambio deshecho",
+  context_enriched: "Contexto enriquecido",
 };
 
 const ACTIVITY_PAGE_SIZE = 25;
 
 type TimelineInput = {
   organizationId: string;
-  companyId: string;
+  // El timeline es company-scoped (companyId es NOT NULL en la tabla). Puede
+  // llegar null cuando la entidad de origen no tiene empresa (p. ej. una
+  // persona sin company vinculada); en ese caso el evento se omite.
+  companyId: string | null;
   opportunityId?: string | null;
   type: string;
   title: string;
@@ -46,6 +50,8 @@ export async function appendTimelineEvent(
   client: Prisma.TransactionClient | TenantClient,
   input: TimelineInput,
 ) {
+  // Sin empresa no hay dónde anclar el evento: se omite en silencio.
+  if (!input.companyId) return;
   await client.timelineEvent.create({
     data: {
       organizationId: input.organizationId,

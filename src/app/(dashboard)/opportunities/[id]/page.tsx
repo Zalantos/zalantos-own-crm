@@ -10,6 +10,10 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { NotesPanel } from "@/components/shared/notes/notes-panel";
 import { ActivitiesPanel } from "@/components/shared/activities/activities-panel";
 import { CustomFieldsDetailSection } from "@/components/shared/custom-fields/custom-fields-detail-section";
+import {
+  EntityContextPanel,
+  loadEntityContextData,
+} from "@/components/shared/entity-context/entity-context-panel";
 import { StageSelect } from "@/components/shared/kanban/stage-select";
 import { CompanyTimeline } from "@/components/shared/timeline/company-timeline";
 import { StatCard } from "@/components/shared/stat-card";
@@ -39,6 +43,11 @@ export default async function OpportunityDetailPage({
   if (!opportunity) notFound();
 
   const formatters = createFormatters(org);
+  const contextData = await loadEntityContextData(
+    db,
+    "opportunity",
+    opportunity.id,
+  );
   const createdByLabel = actorLabel(opportunity.createdBy);
   const originLabel = createdViaLabel(opportunity.createdVia);
 
@@ -189,11 +198,22 @@ export default async function OpportunityDetailPage({
       <Tabs defaultValue="activities">
         <TabsList>
           <TabsTrigger value="activities">Actividades</TabsTrigger>
+          <TabsTrigger value="context">Contexto</TabsTrigger>
           <TabsTrigger value="notes">Notas</TabsTrigger>
           <TabsTrigger value="timeline">Timeline</TabsTrigger>
         </TabsList>
         <TabsContent value="activities" className="pt-4">
           <ActivitiesPanel opportunityId={opportunity.id} />
+        </TabsContent>
+        <TabsContent value="context" className="pt-4">
+          <EntityContextPanel
+            entityType="opportunity"
+            entityId={opportunity.id}
+            profile={contextData.profile}
+            sources={contextData.sources}
+            proposals={contextData.proposals}
+            formatDateTime={formatters.dateTime}
+          />
         </TabsContent>
         <TabsContent value="notes" className="pt-4">
           <NotesPanel opportunityId={opportunity.id} />

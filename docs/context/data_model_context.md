@@ -59,6 +59,13 @@ Fuente de verdad: `prisma/schema.prisma`.
 | `AgentChatMessage` | `agent_chat_messages` | Parts JSON (AI SDK) |
 | `AgentAttachment` | `agent_attachments` | Adjuntos en R2 |
 
+### Enriquecimiento de contexto
+
+| Modelo | Tabla | Notas |
+|--------|-------|-------|
+| `EntityContextSource` | `entity_context_sources` | Documento/fuente ligada a company/person/opportunity; R2 + `extractedText` |
+| `EntityContextProfile` | `entity_context_profiles` | Perfil IA consolidado (summary, keyFacts, topics); unique por entidad |
+
 ## Enums relevantes
 
 - `EntityType`: company, person, opportunity, activity, note, meeting
@@ -103,6 +110,17 @@ Estados: pending → approved/rejected → applied/failed/reverted.
 
 `revertData` JSON permite deshacer cambios aplicados.
 
+### Entity context enrichment
+
+- `EntityContextSource.sourceType`: `upload` | `linkedin` | `url` | `manual` |
+  `agent` (string extensible; LinkedIn es adapter futuro de ingesta).
+- `EntityContextSource.status`: `uploaded` → `extracting` → `extracted` →
+  `analyzing` → `ready` | `failed`.
+- `CRMChangeProposal.source` admite `enrichment`; refs lógicas
+  `contextSourceId` y `personId`.
+- Política híbrida: perfil + nota (`createdVia=enrichment`) auto; campos CRM
+  solo vía propuesta (siempre pending, sin auto-aprobación).
+
 ### Person dedup
 
 - Lógica en `src/lib/crm/person-dedup.ts` y `src/lib/meeting-intelligence/dedup-items.ts`.
@@ -138,6 +156,7 @@ Ver `@@index` en `schema.prisma` — la mayoría compuestos con `organizationId`
 | `integration_deliveries` | Gateway |
 | `enable_row_level_security` | RLS |
 | `add_opportunity_traceability` | Trazabilidad de oportunidades |
+| `entity_context_enrichment` | Sources + perfil IA + campos proposal enrichment |
 | `core_creation_traceability` | Trazabilidad de creación CRM core |
 
 ## Qué no debe romperse

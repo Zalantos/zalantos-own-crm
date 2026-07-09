@@ -28,6 +28,7 @@ Nunca incluir secretos reales en este documento. Ver `.env.example`.
 | `SETTINGS_ENCRYPTION_KEY` | App crypto | Prod | Cond. | 32 bytes base64/hex | Cifrar secretos por org | `src/lib/crypto.ts` |
 | `AGENT_MODEL` | IA SDK | Todos | No | `groq/llama-3.3-70b-versatile` | Modelo agente | `src/lib/agent/config.ts` |
 | `MEETING_REASONING_MODEL` | IA SDK | Todos | No | `groq/llama-3.3-70b-versatile` | Modelo análisis reuniones | `src/lib/meeting-intelligence/ai/groq.ts` |
+| `ENTITY_CONTEXT_MODEL` | IA SDK | Todos | No | `groq/llama-3.3-70b-versatile` | Modelo enriquecimiento de fichas (fallback: MEETING_REASONING_MODEL) | `src/lib/entity-context/analyze.ts` |
 | `ANTHROPIC_API_KEY` | Anthropic | Todos | No | `sk-ant-...` | Modelo alternativo | `src/lib/agent/config.ts` |
 | `OPENAI_API_KEY` | OpenAI | Todos | No | `sk-...` | Modelo alternativo | `src/lib/agent/config.ts` |
 | `NODE_ENV` | Node | Todos | Auto | `production` | Entorno runtime | varios |
@@ -49,8 +50,8 @@ Nunca incluir secretos reales en este documento. Ver `.env.example`.
 
 ### Meeting Intelligence + Agente
 
-`GROQ_*`, `AGENT_MODEL`, `MEETING_REASONING_MODEL`, `ANTHROPIC_API_KEY`,
-`OPENAI_API_KEY`, `R2_*`, `APP_URL`
+`GROQ_*`, `AGENT_MODEL`, `MEETING_REASONING_MODEL`, `ENTITY_CONTEXT_MODEL`,
+`ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `R2_*`, `APP_URL`
 
 ### Integraciones
 

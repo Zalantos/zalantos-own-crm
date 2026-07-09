@@ -73,11 +73,32 @@ export default async function DashboardPage() {
   const countByStageId = new Map(
     stageCounts.map((row) => [row.stageId, row._count]),
   );
-  const pipelineData = stages.map((stage) => ({
-    stage: stage.id,
-    label: stage.label,
-    count: countByStageId.get(stage.id) ?? 0,
-  }));
+  // Embudo: excluye "perdido" y usa conteo acumulado (etapa actual + posteriores)
+  // para que el ancho refleje retención real del pipeline, no solo stock por etapa.
+  const funnelStages = stages.filter((stage) => !stage.isLost);
+  const chartColors = [
+    "var(--color-chart-1)",
+    "var(--color-chart-2)",
+    "var(--color-chart-3)",
+    "var(--color-chart-4)",
+    "var(--color-chart-5)",
+  ];
+  const inStageCounts = funnelStages.map(
+    (stage) => countByStageId.get(stage.id) ?? 0,
+  );
+  const pipelineData = funnelStages.map((stage, index) => {
+    const count = inStageCounts[index] ?? 0;
+    const cumulative = inStageCounts
+      .slice(index)
+      .reduce((sum, stageCount) => sum + stageCount, 0);
+    return {
+      stage: stage.id,
+      label: stage.label,
+      count,
+      cumulative,
+      fill: chartColors[index % chartColors.length]!,
+    };
+  });
 
   return (
     <div>
@@ -151,7 +172,7 @@ export default async function DashboardPage() {
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-5">
         <Card className="lg:col-span-3">
           <CardHeader>
-            <CardTitle>Pipeline por etapa</CardTitle>
+            <CardTitle>Embudo de oportunidades</CardTitle>
           </CardHeader>
           <CardContent>
             <PipelineChart data={pipelineData} />

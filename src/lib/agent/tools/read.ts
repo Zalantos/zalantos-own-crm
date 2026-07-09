@@ -4,6 +4,7 @@ import { describeFieldsForModel } from "@/lib/agent/field-registry";
 import {
   buildCompanySnapshot,
   snapshotCustomFields,
+  snapshotEntityContext,
 } from "@/lib/agent/snapshot";
 import type { AgentToolContext } from "@/lib/agent/executor";
 
@@ -119,9 +120,11 @@ export function buildReadTools(ctx: AgentToolContext) {
               },
             });
             if (!company) return { error: `Empresa no encontrada: ${id}` };
+            const context = await snapshotEntityContext(db, "company", id);
             return {
               ...company,
               customFields: await snapshotCustomFields(db, "company", id),
+              ...context,
             };
           }
           case "opportunity": {
@@ -139,10 +142,16 @@ export function buildReadTools(ctx: AgentToolContext) {
             });
             if (!opportunity)
               return { error: `Oportunidad no encontrada: ${id}` };
+            const context = await snapshotEntityContext(
+              db,
+              "opportunity",
+              id,
+            );
             return {
               ...opportunity,
               estimatedValue: opportunity.estimatedValue?.toString() ?? null,
               customFields: await snapshotCustomFields(db, "opportunity", id),
+              ...context,
             };
           }
           case "person": {
@@ -151,9 +160,11 @@ export function buildReadTools(ctx: AgentToolContext) {
               include: { company: { select: { id: true, name: true } } },
             });
             if (!person) return { error: `Persona no encontrada: ${id}` };
+            const context = await snapshotEntityContext(db, "person", id);
             return {
               ...person,
               customFields: await snapshotCustomFields(db, "person", id),
+              ...context,
             };
           }
         }

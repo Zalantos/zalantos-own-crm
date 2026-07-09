@@ -78,6 +78,18 @@ curl -X POST "$APP_URL/api/cron/process-evidence" \
 
 - Revisar `processingError` en DB o UI.
 - Requiere reintento manual (no auto-loop por diseño).
+
+### Fuente de contexto atascada (`uploaded` / `extracting` / `analyzing`)
+
+- Verificar R2 + `GROQ_API_KEY` / modelo (`ENTITY_CONTEXT_MODEL` o fallback).
+- Catch-up:
+
+```bash
+curl -X POST "$APP_URL/api/cron/process-entity-context" \
+  -H "Authorization: Bearer $CRON_SECRET"
+```
+
+- Reintento manual desde el tab Contexto → Reanalizar.
 - GAP: botón de retry en UI — verificar si existe.
 
 ### Integraciones no envían email/Slack

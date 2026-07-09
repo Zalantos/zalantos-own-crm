@@ -99,6 +99,8 @@ model Organization {
   agentChatMessages      AgentChatMessage[]
   agentAttachments       AgentAttachment[]
   timelineEvents         TimelineEvent[]
+  entityContextSources   EntityContextSource[]
+  entityContextProfiles  EntityContextProfile[]
 
   @@map("organizations")
 }
@@ -588,14 +590,17 @@ model CRMChangeProposal {
   // Optional since proposals can also originate from the agent chat.
   meetingId      String?
   meeting        Meeting?       @relation(fields: [meetingId], references: [id], onDelete: Cascade)
-  // meeting | agent
+  // meeting | agent | enrichment
   source         String         @default("meeting")
   // Denormalized context (backfilled from the meeting for legacy rows).
   companyId      String?
   opportunityId  String?
+  personId       String?
   // Logical refs to the agent chat (no FK, same convention as TimelineEvent.refId).
   chatThreadId   String?
   chatMessageId  String?
+  // Logical ref to EntityContextSource when source=enrichment.
+  contextSourceId String?
   confidence     Float
   status         ProposalStatus @default(pending)
   // Model that produced the proposal, for audit (e.g. groq/llama-3.3-70b-versatile).
@@ -611,7 +616,67 @@ model CRMChangeProposal {
   @@index([meetingId])
   @@index([status])
   @@index([chatThreadId])
+  @@index([contextSourceId])
+  @@index([personId])
   @@map("crm_change_proposals")
+}
+
+// ---------- Entity context enrichment ----------
+
+// Fuente de evidencia ligada a company/person/opportunity (upload hoy;
+// linkedin/url/agent mañana). El pipeline normaliza a extractedText.
+model EntityContextSource {
+  id             String       @id @default(cuid())
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  // company | person | opportunity
+  entityType     EntityType
+  entityId       String
+  // upload | linkedin | url | manual | agent
+  sourceType     String       @default("upload")
+  filename       String
+  mimeType       String
+  // Object key in Cloudflare R2 (empty for inline text sources).
+  storagePath    String
+  sizeBytes      Int?
+  extractedText  String?      @db.Text
+  // External URL or provider id (e.g. LinkedIn profile URL).
+  externalRef    String?
+  // uploaded | extracting | extracted | analyzing | ready | failed
+  status         String       @default("uploaded")
+  processingError String?     @db.Text
+  uploadedBy     String
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+
+  @@index([organizationId, entityType, entityId])
+  @@index([organizationId, status])
+  @@map("entity_context_sources")
+}
+
+// Perfil IA consolidado por entidad (uno por ficha). Se reescribe/mergea
+// en cada análisis; el historial de fuentes vive en EntityContextSource.
+model EntityContextProfile {
+  id             String       @id @default(cuid())
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  // company | person | opportunity
+  entityType     EntityType
+  entityId       String
+  summary        String       @db.Text
+  // [{ label, value, confidence?, sourceIds? }]
+  keyFacts       Json
+  // string[] topics/tags
+  topics         Json?
+  lastAnalyzedAt DateTime
+  model          String?
+  rawModelOutput Json?
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+
+  @@unique([organizationId, entityType, entityId])
+  @@index([organizationId])
+  @@map("entity_context_profiles")
 }
 
 model CRMChangeItem {

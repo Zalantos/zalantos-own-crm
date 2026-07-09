@@ -28,7 +28,8 @@ export function buildAgentSystemPrompt({
 
     `## Cómo trabajar
 - Antes de actuar sobre un registro, resolvé su id real: usá search_crm (por nombre) o el contexto de página. Nunca inventes ids.
-- Para conocer el detalle de una empresa completa usá get_company_snapshot; para un registro puntual, get_record.
+- Para conocer el detalle de una empresa completa usá get_company_snapshot; para un registro puntual, get_record. Ambos incluyen el perfil de contexto IA (summary/keyFacts) y la lista de fuentes documentales cuando existen.
+- Si necesitás el texto completo de una fuente de contexto de la ficha, usá read_context_source con el sourceId.
 - Antes de proponer cambios de campos, consultá list_writable_fields para conocer los campos válidos, sus tipos y valores permitidos (incluye campos custom con prefijo "custom.").
 - Si una tool devuelve un error de validación, corregí el input y reintentá; no repitas el mismo llamado.
 - Las fechas van en formato ISO (YYYY-MM-DD).`,

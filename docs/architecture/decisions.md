@@ -139,6 +139,41 @@ proceso Next.js.
 
 ---
 
+## DEC-007 — Context sources polimórficas (enriquecimiento de entidad)
+
+**Fecha:** 2026-07-09  
+**Estado:** active
+
+**Contexto:** Se necesita más contexto en fichas de empresa/persona/oportunidad
+sin acoplarlo a Meeting Intelligence, y dejando abierta la puerta a LinkedIn u
+otras fuentes externas.
+
+**Decisión:**
+
+1. Modelo `EntityContextSource` polimórfico (`entityType` + `entityId`) con
+   `sourceType` string (`upload`, `linkedin`, `url`, …).
+2. Perfil consolidado `EntityContextProfile` (summary, keyFacts, topics) visible
+   en la ficha.
+3. Política híbrida: perfil + nota de contexto se escriben automático; cambios a
+   campos CRM van por `CRMChangeProposal` con `source=enrichment` (siempre
+   pending, sin auto-aprobación).
+4. Conectores externos futuros solo normalizan a texto/metadata y crean un
+   `EntityContextSource`; el pipeline de análisis es el mismo.
+
+**Alternativas consideradas:**
+
+- Reutilizar solo adjuntos del agente (sin persistencia en ficha).
+- Extender `Evidence` de meetings a entidades CRM.
+- Auto-aplicar campos de perfil con umbral de confianza.
+
+**Consecuencias:**
+
+- Tab Contexto en fichas + módulo `src/lib/entity-context/`.
+- Cron catch-up `/api/cron/process-entity-context`.
+- LinkedIn/OAuth queda fuera del MVP; el schema ya admite `sourceType=linkedin`.
+
+---
+
 ## GAP: decisiones por documentar
 
 - Elección de Groq como proveedor por defecto de transcripción y razonamiento.

@@ -21,6 +21,7 @@
 | `auth.ts` / `auth.config.ts` | Auth.js credentials + middleware |
 | `session.ts` | Helpers de sesión |
 | `meeting-intelligence/` | Pipeline, extracción, transcripción, IA, R2 |
+| `entity-context/` | Enriquecimiento de fichas: sources, perfil IA, propuestas |
 | `agent/` | Copiloto: tools, executor, propuestas |
 | `integrations/` | Gateway webhook, plantillas email |
 | `workflows/` | Motor de workflows |
@@ -61,6 +62,19 @@ AI SDK stream + tools (read CRM, write proposals)
 Propuestas en CRMChangeProposal (source=agent)
 ```
 
+### Entity context enrichment
+
+```txt
+Upload en ficha (company/person/opportunity) → R2 presign
+       ↓
+registerContextSource + after(runEntityContextPipeline)
+       ↓
+extract → analyze → EntityContextProfile + Note (auto)
+                 → CRMChangeProposal (source=enrichment, pending)
+       ↓
+Usuario revisa propuestas de campos en tab Contexto
+```
+
 ## Servicios internos
 
 - **Tenant client** (`forOrg`): todas las operaciones CRM de un usuario logueado.
@@ -74,6 +88,7 @@ Endpoints POST protegidos con `Authorization: Bearer <CRON_SECRET>`:
 | Endpoint | Función |
 |----------|---------|
 | `/api/cron/process-evidence` | Reprocesa meetings atascados en pipeline |
+| `/api/cron/process-entity-context` | Reprocesa fuentes de contexto atascadas |
 | `/api/cron/check-overdue` | Oportunidades/actividades vencidas |
 | `/api/cron/send-task-reminders` | Recordatorios de tareas vía gateway |
 

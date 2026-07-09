@@ -21,6 +21,8 @@ export async function buildCompanySnapshot(
     activities,
     priorMeetings,
     customFields,
+    contextProfile,
+    contextSources,
   ] = await Promise.all([
     db.opportunity.findMany({
       where: { companyId },
@@ -50,6 +52,27 @@ export async function buildCompanySnapshot(
       select: { id: true, title: true, meetingDate: true, aiSummary: true },
     }),
     snapshotCustomFields(db, "company", companyId),
+    db.entityContextProfile.findFirst({
+      where: { entityType: "company", entityId: companyId },
+      select: {
+        summary: true,
+        keyFacts: true,
+        topics: true,
+        lastAnalyzedAt: true,
+      },
+    }),
+    db.entityContextSource.findMany({
+      where: { entityType: "company", entityId: companyId },
+      orderBy: { createdAt: "desc" },
+      take: 10,
+      select: {
+        id: true,
+        filename: true,
+        sourceType: true,
+        status: true,
+        externalRef: true,
+      },
+    }),
   ]);
 
   return {
@@ -107,6 +130,58 @@ export async function buildCompanySnapshot(
       date: m.meetingDate,
       summary: m.aiSummary,
     })),
+    contextProfile: contextProfile
+      ? {
+          summary: contextProfile.summary,
+          keyFacts: contextProfile.keyFacts,
+          topics: contextProfile.topics,
+          lastAnalyzedAt: contextProfile.lastAnalyzedAt.toISOString(),
+        }
+      : null,
+    contextSources,
+  };
+}
+
+// Compact AI context profile + source list for any CRM entity.
+export async function snapshotEntityContext(
+  db: TenantClient,
+  entityType: "company" | "person" | "opportunity",
+  entityId: string,
+) {
+  const [profile, sources] = await Promise.all([
+    db.entityContextProfile.findFirst({
+      where: { entityType, entityId },
+      select: {
+        summary: true,
+        keyFacts: true,
+        topics: true,
+        lastAnalyzedAt: true,
+      },
+    }),
+    db.entityContextSource.findMany({
+      where: { entityType, entityId },
+      orderBy: { createdAt: "desc" },
+      take: 10,
+      select: {
+        id: true,
+        filename: true,
+        sourceType: true,
+        status: true,
+        externalRef: true,
+      },
+    }),
+  ]);
+
+  return {
+    contextProfile: profile
+      ? {
+          summary: profile.summary,
+          keyFacts: profile.keyFacts,
+          topics: profile.topics,
+          lastAnalyzedAt: profile.lastAnalyzedAt.toISOString(),
+        }
+      : null,
+    contextSources: sources,
   };
 }
 

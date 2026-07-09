@@ -45,6 +45,15 @@ export function buildAgentAttachmentKey(
   return `agent/${threadId}/${Date.now()}-${safe}`;
 }
 
+export function buildEntityContextKey(
+  entityType: string,
+  entityId: string,
+  filename: string,
+): string {
+  const safe = filename.replace(/[^a-zA-Z0-9._-]/g, "_");
+  return `context/${entityType}/${entityId}/${Date.now()}-${safe}`;
+}
+
 // Server-side upload for small documents (agent chat attachments); large
 // audio/video keeps using presigned browser uploads.
 export async function putObject(params: {

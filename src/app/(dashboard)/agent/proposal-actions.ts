@@ -65,10 +65,13 @@ export async function setAgentItemApproval(
 }
 
 function entityPaths(context: {
-  companyId: string;
+  companyId: string | null;
   opportunityId: string | null;
 }) {
-  const paths = [`/companies/${context.companyId}`, "/companies", "/people"];
+  const paths = ["/companies", "/people"];
+  if (context.companyId) {
+    paths.push(`/companies/${context.companyId}`);
+  }
   if (context.opportunityId) {
     paths.push(`/opportunities/${context.opportunityId}`);
   }

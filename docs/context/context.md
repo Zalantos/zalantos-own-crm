@@ -8,6 +8,8 @@ personas, oportunidades, actividades, notas y reuniones. Incluye:
 - **Pipeline configurable** por etapas (`PipelineStage`).
 - **Meeting Intelligence**: subir evidencia (audio, video, PDF, etc.), transcribir,
   analizar con IA y generar propuestas de cambio al CRM para revisión humana.
+- **Enriquecimiento de contexto**: documentos en fichas de empresa/persona/
+  oportunidad → perfil IA (resumen + hechos) automático + propuestas de campos.
 - **Agente IA copiloto**: chat contextual con herramientas de lectura/escritura
   del CRM y propuestas de cambio.
 - **Workflows**: automatización por eventos de entidades.

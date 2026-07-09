@@ -16,7 +16,9 @@ type ApplyContext = {
   organizationId: string;
   // Etapas activas de la org, indexadas por key (los items guardan keys).
   stages: Map<string, StageOption>;
-  companyId: string;
+  // Null solo para propuestas de enriquecimiento ancladas a una persona sin
+  // empresa vinculada; los eventos de timeline company-scoped se omiten.
+  companyId: string | null;
   // Fallback opportunity for items that don't target one explicitly
   // (the meeting's opportunity, or the one the chat proposal was scoped to).
   defaultOpportunityId: string | null;
@@ -494,14 +496,23 @@ export async function getProposalContext(db: TenantClient, proposalId: string) {
   });
   if (!proposal) throw new Error("Propuesta no encontrada");
 
-  const companyId = proposal.companyId ?? proposal.meeting?.companyId;
-  if (!companyId) throw new Error("Propuesta sin empresa asociada");
+  const companyId = proposal.companyId ?? proposal.meeting?.companyId ?? null;
+  // Enrichment sobre una persona sin empresa vinculada no tiene company; se
+  // permite aplicar igual (los items apuntan a la persona por entityId). El
+  // resto de fuentes (meeting/agent) sí exige empresa.
+  if (!companyId && !proposal.personId) {
+    throw new Error("Propuesta sin empresa asociada");
+  }
 
   return {
     companyId,
     opportunityId:
       proposal.opportunityId ?? proposal.meeting?.opportunityId ?? null,
-    originLabel: proposal.meeting?.title ?? "Chat del agente",
+    originLabel:
+      proposal.meeting?.title ??
+      (proposal.source === "enrichment"
+        ? "Enriquecimiento de contexto"
+        : "Chat del agente"),
     source: proposal.source,
     meetingId: proposal.meetingId,
   };

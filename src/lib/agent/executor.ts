@@ -5,6 +5,7 @@ import { buildReadTools } from "./tools/read";
 import { buildWriteSafeTools } from "./tools/write-safe";
 import { buildProposalTools } from "./tools/write-proposal";
 import { buildAttachmentTools } from "./tools/attachments";
+import { buildContextSourceTools } from "./tools/context-sources";
 
 export type AgentToolContext = {
   organizationId: string;
@@ -43,6 +44,7 @@ export function buildAgentTools(ctx: AgentToolContext): ToolSet {
     ...buildWriteSafeTools(ctx),
     ...buildProposalTools(ctx),
     ...buildAttachmentTools(ctx),
+    ...buildContextSourceTools(ctx),
   };
   return Object.fromEntries(
     Object.entries(tools).map(([name, toolDefinition]) => [

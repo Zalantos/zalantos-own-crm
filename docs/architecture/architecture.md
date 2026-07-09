@@ -40,16 +40,19 @@ Handlers. No hay backend NestJS separado; la lógica vive en `src/lib/`.
 
 ## Almacenamiento
 
-- **Cloudflare R2** (S3-compatible) para evidencia de meetings y adjuntos del
-  agente (`src/lib/meeting-intelligence/storage/r2.ts`).
-- Presign vía `/api/evidence/presign`.
+- **Cloudflare R2** (S3-compatible) para evidencia de meetings, adjuntos del
+  agente y documentos de contexto de entidad
+  (`src/lib/meeting-intelligence/storage/r2.ts`).
+- Presign vía `/api/evidence/presign` y `/api/entity-context/presign`.
+- Keys: `meetings/…`, `agent/…`, `context/{entityType}/{entityId}/…`.
 
 ## Workers / jobs
 
 No hay worker separado. Procesamiento asíncrono vía:
 
-1. Callback interno POST `/api/meetings/process` tras upload.
-2. Crons HTTP (`/api/cron/*`) invocados externamente (Railway cron u otro).
+1. `after()` post-upload para meetings y entity-context.
+2. Callback interno POST `/api/meetings/process` / `/api/entity-context/process`.
+3. Crons HTTP (`/api/cron/*`) invocados externamente (Railway cron u otro).
 
 ## Integraciones
 
@@ -76,7 +79,8 @@ GAP: archivos de configuración Railway/Vercel no presentes en el repo.
 2. Páginas dashboard llaman `requireOrgContext()` → `forOrg(orgId)`.
 3. Mutaciones validadas con Zod (`src/lib/zod/`).
 4. Eventos de negocio pueden disparar workflows e integraciones.
-5. Meeting/agent generan propuestas → revisión humana → apply.
+5. Meeting/agent/enrichment generan propuestas → revisión humana → apply.
+6. Tab Contexto en fichas: upload → perfil IA auto + propuestas de campos.
 
 ## Riesgos arquitectónicos
 

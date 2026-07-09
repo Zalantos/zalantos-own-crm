@@ -8,6 +8,10 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { NotesPanel } from "@/components/shared/notes/notes-panel";
 import { ActivitiesPanel } from "@/components/shared/activities/activities-panel";
 import { CustomFieldsDetailSection } from "@/components/shared/custom-fields/custom-fields-detail-section";
+import {
+  EntityContextPanel,
+  loadEntityContextData,
+} from "@/components/shared/entity-context/entity-context-panel";
 import { StatCard } from "@/components/shared/stat-card";
 import { OpportunityStageBadge } from "@/components/shared/opportunities/status-badge";
 import { createFormatters } from "@/lib/format";
@@ -35,6 +39,7 @@ export default async function PersonDetailPage({
   });
   if (!person) notFound();
   const formatters = createFormatters(org);
+  const contextData = await loadEntityContextData(db, "person", person.id);
 
   const relatedOpportunities = [
     ...person.opportunitiesAsDecisionMaker.map((opportunity) => ({
@@ -112,6 +117,7 @@ export default async function PersonDetailPage({
           <TabsTrigger value="opportunities">
             Oportunidades ({relatedOpportunities.length})
           </TabsTrigger>
+          <TabsTrigger value="context">Contexto</TabsTrigger>
           <TabsTrigger value="activities">Actividades</TabsTrigger>
           <TabsTrigger value="notes">Notas</TabsTrigger>
         </TabsList>
@@ -136,6 +142,17 @@ export default async function PersonDetailPage({
               </Link>
             ))
           )}
+        </TabsContent>
+
+        <TabsContent value="context" className="pt-4">
+          <EntityContextPanel
+            entityType="person"
+            entityId={person.id}
+            profile={contextData.profile}
+            sources={contextData.sources}
+            proposals={contextData.proposals}
+            formatDateTime={formatters.dateTime}
+          />
         </TabsContent>
 
         <TabsContent value="activities" className="pt-4">
