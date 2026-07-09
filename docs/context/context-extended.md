@@ -65,7 +65,12 @@ Propuestas en CRMChangeProposal (source=agent)
 ### Entity context enrichment
 
 ```txt
-Upload en ficha (company/person/opportunity) → R2 presign (N archivos)
+Upload en ficha (company/person/opportunity)
+   · archivos sueltos (PDF/DOCX/DOC/TXT/MD), o
+   · un ZIP → se descomprime en el navegador (fflate), recorre subcarpetas
+     y filtra por tipo soportado
+       ↓
+R2 presign (N archivos)
        ↓
 registerContextSource por archivo (deferProcessing)
        ↓
