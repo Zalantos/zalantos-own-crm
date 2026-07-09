@@ -90,6 +90,25 @@ async function seedAdminUser(organizationId: string) {
 }
 
 async function main() {
+  // El seed inserta datos demo (Polpaico, APV, Repopack, etc.) vía upsert con
+  // IDs fijos: si corre en producción vuelve a inyectar registros que el usuario
+  // pudo haber borrado. Se bloquea en cualquier entorno que parezca desplegado.
+  // Railway no siempre setea NODE_ENV=production, así que también detectamos sus
+  // marcadores propios (RAILWAY_*). Opt-in explícito con ALLOW_SEED=true.
+  const seedAllowed = process.env.ALLOW_SEED === "true";
+  const looksDeployed =
+    process.env.NODE_ENV === "production" ||
+    Object.keys(process.env).some((key) => key.startsWith("RAILWAY_"));
+  if (looksDeployed && !seedAllowed) {
+    console.error(
+      "[seed] Bloqueado: entorno de producción/desplegado detectado. El seed " +
+        "inserta datos demo y no debe correr aquí. Si es intencional, exporta " +
+        "ALLOW_SEED=true.",
+    );
+    process.exitCode = 1;
+    return;
+  }
+
   const { org, stageIdByKey } = await seedOrganization();
   const organizationId = org.id;
   const stageId = (key: string) => {
