@@ -4,6 +4,7 @@ import { getActivityFeed, TYPE_LABELS } from "@/lib/timeline";
 import { formatDateTime } from "@/lib/utils";
 import { PageHeader } from "@/components/shared/page-header";
 import { DataTable } from "@/components/shared/data-table";
+import { LinkifiedText } from "@/components/shared/linkified-text";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
@@ -156,7 +157,9 @@ export default async function ActivityPage({
               <div>
                 <p className="font-medium">{row.title}</p>
                 {row.summary && (
-                  <p className="text-muted-foreground text-sm">{row.summary}</p>
+                  <p className="text-muted-foreground text-sm">
+                    <LinkifiedText text={row.summary} />
+                  </p>
                 )}
               </div>
             ),

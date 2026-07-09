@@ -1,4 +1,5 @@
 import { Badge } from "@/components/ui/badge";
+import { LinkifiedText } from "@/components/shared/linkified-text";
 import type { ContextKeyFact } from "@/lib/entity-context/types";
 
 export type ContextProfileView = {
@@ -77,7 +78,9 @@ export function ContextProfileCard({
           Actualizado {formatDateTime(profile.lastAnalyzedAt)}
         </span>
       </div>
-      <p className="text-sm whitespace-pre-wrap">{profile.summary}</p>
+      <p className="text-sm whitespace-pre-wrap">
+        <LinkifiedText text={profile.summary} />
+      </p>
       {profile.keyFacts.length > 0 && (
         <div>
           <h4 className="mb-2 text-xs font-medium tracking-wide uppercase">
@@ -91,7 +94,7 @@ export function ContextProfileCard({
               >
                 <span>
                   <span className="font-medium">{fact.label}: </span>
-                  {fact.value}
+                  <LinkifiedText text={fact.value} />
                 </span>
                 {fact.confidence != null && (
                   <Badge variant="outline">

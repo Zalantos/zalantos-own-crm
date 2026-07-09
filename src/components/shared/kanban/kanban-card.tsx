@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useDraggable } from "@dnd-kit/core";
 import { CSS } from "@dnd-kit/utilities";
 import { Badge } from "@/components/ui/badge";
+import { LinkifiedText } from "@/components/shared/linkified-text";
 import { formatCurrencyValue } from "@/lib/format";
 import type { Opportunity, Company } from "@prisma/client";
 
@@ -65,7 +66,7 @@ export function KanbanCard({
         <div className="bg-muted/40 rounded-md px-2 py-1.5">
           <p className="text-muted-foreground line-clamp-2 text-xs">
             <span className="text-foreground font-medium">Próximo:</span>{" "}
-            {opportunity.nextStep}
+            <LinkifiedText text={opportunity.nextStep} />
           </p>
         </div>
       )}

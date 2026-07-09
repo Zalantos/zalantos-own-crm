@@ -82,6 +82,17 @@ Fuente de verdad: `prisma/schema.prisma`.
 - `integrationGatewaySecret` cifrado con `SETTINGS_ENCRYPTION_KEY`.
 - `isActive=false` bloquea login de sus usuarios.
 
+### Company
+
+- Perfil comercial estándar editable manualmente y vía propuestas IA:
+  `source`, `priority`, `mainPain`, `productInterest`, `potentialValue`,
+  `buyingTiming`, `urgency`, `competitor`, `currentProvider`, `nextStep`,
+  `nextStepDueDate`, `lastContactAt`.
+- Estos campos viven en `Company` para aparecer en el dashboard/detalle de
+  empresa aunque no exista una oportunidad abierta.
+- Enriquecimiento IA puede proponer cambios a estos campos, pero no los aplica
+  directo; pasan por `CRMChangeProposal(source=enrichment)`.
+
 ### Opportunity
 
 - Siempre ligada a una `Company` y un `PipelineStage`.

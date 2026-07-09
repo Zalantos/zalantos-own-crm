@@ -3,6 +3,10 @@ import type { LucideIcon } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { cn } from "@/lib/utils";
 
+function isExternalHref(href: string) {
+  return /^https?:\/\//i.test(href);
+}
+
 export function StatCard({
   label,
   value,
@@ -23,6 +27,7 @@ export function StatCard({
     "truncate",
     valueClassName,
   );
+  const linkClasses = cn(valueClasses, "underline underline-offset-2");
 
   return (
     <Card size="sm">
@@ -31,11 +36,17 @@ export function StatCard({
           {Icon && <Icon className="size-3.5 shrink-0" />}
           {label}
         </p>
-        {href ? (
-          <Link
+        {href && isExternalHref(href) ? (
+          <a
             href={href}
-            className={cn(valueClasses, "underline underline-offset-2")}
+            target="_blank"
+            rel="noopener noreferrer"
+            className={linkClasses}
           >
+            {value ?? "—"}
+          </a>
+        ) : href ? (
+          <Link href={href} className={linkClasses}>
             {value ?? "—"}
           </Link>
         ) : (

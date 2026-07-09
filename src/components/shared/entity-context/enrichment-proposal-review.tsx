@@ -1,6 +1,6 @@
 "use client";
 
-import { useTransition } from "react";
+import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
@@ -17,6 +17,7 @@ import type {
   ReviewItem,
   ReviewProposal,
 } from "@/components/shared/meeting/change-proposal-review";
+import { LinkifiedText } from "@/components/shared/linkified-text";
 
 const TYPE_LABELS: Record<string, string> = {
   update_field: "Actualizar campo",
@@ -71,12 +72,28 @@ export function EnrichmentProposalReview({
   const router = useRouter();
   const [pending, startTransition] = useTransition();
   const isFinal = ["applied", "rejected"].includes(proposal.status);
+  const approvedCount = proposal.items.filter((item) => item.approved).length;
+  const appliedCount = proposal.items.filter(
+    (item) => item.status === "applied",
+  ).length;
+  const startsCollapsed =
+    proposal.items.length > 0 &&
+    (proposal.status !== "pending" ||
+      proposal.items.every(
+        (item) => item.approved || item.status === "applied",
+      ));
+  const [collapsed, setCollapsed] = useState(startsCollapsed);
 
-  function run(action: () => Promise<void>, success: string) {
+  function run(
+    action: () => Promise<void>,
+    success: string,
+    onSuccess?: () => void,
+  ) {
     startTransition(async () => {
       try {
         await action();
         toast.success(success);
+        onSuccess?.();
         router.refresh();
       } catch (error) {
         toast.error(error instanceof Error ? error.message : "Error");
@@ -110,6 +127,7 @@ export function EnrichmentProposalReview({
                       true,
                     ),
                   "Todos aprobados",
+                  () => setCollapsed(true),
                 )
               }
             >
@@ -128,6 +146,7 @@ export function EnrichmentProposalReview({
                       entityId,
                     ),
                   "Cambios aplicados",
+                  () => setCollapsed(true),
                 )
               }
             >
@@ -151,11 +170,27 @@ export function EnrichmentProposalReview({
             >
               Rechazar
             </Button>
+            {proposal.items.length > 0 && (
+              <Button
+                size="sm"
+                variant="ghost"
+                disabled={pending}
+                onClick={() => setCollapsed((value) => !value)}
+              >
+                {collapsed ? "Ver detalle" : "Ocultar detalle"}
+              </Button>
+            )}
           </div>
         )}
       </div>
 
-      {proposal.items.length === 0 ? (
+      {collapsed ? (
+        <p className="text-muted-foreground text-sm">
+          {appliedCount > 0
+            ? `${appliedCount} de ${proposal.items.length} cambio(s) aplicado(s).`
+            : `${approvedCount} de ${proposal.items.length} cambio(s) aprobado(s).`}
+        </p>
+      ) : proposal.items.length === 0 ? (
         <p className="text-muted-foreground text-sm">
           La IA no propuso cambios de campos.
         </p>
@@ -224,12 +259,12 @@ export function EnrichmentProposalReview({
                   <p>{describeAfter(item)}</p>
                   {item.explanation && (
                     <p className="text-muted-foreground text-xs">
-                      {item.explanation}
+                      <LinkifiedText text={item.explanation} />
                     </p>
                   )}
                   {item.evidence && (
                     <p className="text-muted-foreground border-l-2 pl-2 text-xs italic">
-                      “{item.evidence}”
+                      “<LinkifiedText text={item.evidence} />”
                     </p>
                   )}
                 </div>

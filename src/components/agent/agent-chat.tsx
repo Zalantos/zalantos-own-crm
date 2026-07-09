@@ -10,6 +10,7 @@ import {
   SendIcon,
 } from "lucide-react";
 import { toast } from "sonner";
+import { LinkifiedText } from "@/components/shared/linkified-text";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -210,9 +211,11 @@ export function AgentChat({
                 )}
               >
                 {message.role === "user" ? (
-                  message.parts
-                    .map((part) => (part.type === "text" ? part.text : ""))
-                    .join("")
+                  <LinkifiedText
+                    text={message.parts
+                      .map((part) => (part.type === "text" ? part.text : ""))
+                      .join("")}
+                  />
                 ) : (
                   <MessageParts message={message} />
                 )}

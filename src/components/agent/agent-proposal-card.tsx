@@ -12,6 +12,7 @@ import {
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
+import { LinkifiedText } from "@/components/shared/linkified-text";
 import { cn } from "@/lib/utils";
 import {
   applyAgentProposal,
@@ -235,18 +236,22 @@ export function AgentProposalCard({ part }: { part: ToolPart }) {
                 )}
               </p>
               <p className="text-muted-foreground flex flex-wrap items-center gap-1">
-                <span className="line-through decoration-1">{item.before}</span>
+                <span className="line-through decoration-1">
+                  <LinkifiedText text={item.before} />
+                </span>
                 <ArrowRightIcon className="size-3 shrink-0" />
-                <span className="text-foreground">{item.after}</span>
+                <span className="text-foreground">
+                  <LinkifiedText text={item.after} />
+                </span>
               </p>
               {item.explanation && (
                 <p className="text-muted-foreground mt-0.5">
-                  {item.explanation}
+                  <LinkifiedText text={item.explanation} />
                 </p>
               )}
               {item.evidence && (
                 <p className="text-muted-foreground mt-0.5 border-l-2 pl-2 italic">
-                  “{item.evidence}”
+                  “<LinkifiedText text={item.evidence} />”
                 </p>
               )}
             </div>

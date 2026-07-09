@@ -166,26 +166,38 @@ model PasswordResetToken {
 // ---------- Core CRM entities ----------
 
 model Company {
-  id             String       @id @default(cuid())
-  organizationId String
-  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
-  name           String
-  website        String?
-  industry       String?
-  size           String?
-  country        String?
-  city           String?
-  linkedinUrl    String?
-  description    String?      @db.Text
-  icpScore       Int?
-  fitScore       Int?
-  painScore      Int?
-  status         String       @default("active")
-  createdById    String?
-  createdBy      User?        @relation(fields: [createdById], references: [id], onDelete: SetNull)
-  createdVia     String       @default("manual")
-  createdAt      DateTime     @default(now())
-  updatedAt      DateTime     @updatedAt
+  id              String       @id @default(cuid())
+  organizationId  String
+  organization    Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  name            String
+  website         String?
+  industry        String?
+  size            String?
+  country         String?
+  city            String?
+  linkedinUrl     String?
+  description     String?      @db.Text
+  icpScore        Int?
+  fitScore        Int?
+  painScore       Int?
+  status          String       @default("active")
+  source          String?
+  priority        String?
+  mainPain        String?      @db.Text
+  productInterest String?
+  potentialValue  Decimal?     @db.Decimal(14, 2)
+  buyingTiming    String?
+  urgency         String?
+  competitor      String?
+  currentProvider String?
+  nextStep        String?
+  nextStepDueDate DateTime?
+  lastContactAt   DateTime?
+  createdById     String?
+  createdBy       User?        @relation(fields: [createdById], references: [id], onDelete: SetNull)
+  createdVia      String       @default("manual")
+  createdAt       DateTime     @default(now())
+  updatedAt       DateTime     @updatedAt
 
   people         Person[]
   opportunities  Opportunity[]
@@ -489,14 +501,14 @@ model User {
   createdAt      DateTime      @default(now())
   updatedAt      DateTime      @updatedAt
 
-  teamMember          TeamMember?
-  createdCompanies    Company[]
-  createdPeople       Person[]
+  teamMember           TeamMember?
+  createdCompanies     Company[]
+  createdPeople        Person[]
   createdOpportunities Opportunity[]
-  createdActivities   Activity[]
-  createdNotes        Note[]
-  createdSavedViews   SavedView[]
-  passwordResetTokens PasswordResetToken[]
+  createdActivities    Activity[]
+  createdNotes         Note[]
+  createdSavedViews    SavedView[]
+  passwordResetTokens  PasswordResetToken[]
 
   @@index([organizationId])
   @@map("users")
@@ -584,31 +596,31 @@ model Evidence {
 }
 
 model CRMChangeProposal {
-  id             String         @id @default(cuid())
-  organizationId String
-  organization   Organization   @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  id              String         @id @default(cuid())
+  organizationId  String
+  organization    Organization   @relation(fields: [organizationId], references: [id], onDelete: Restrict)
   // Optional since proposals can also originate from the agent chat.
-  meetingId      String?
-  meeting        Meeting?       @relation(fields: [meetingId], references: [id], onDelete: Cascade)
+  meetingId       String?
+  meeting         Meeting?       @relation(fields: [meetingId], references: [id], onDelete: Cascade)
   // meeting | agent | enrichment
-  source         String         @default("meeting")
+  source          String         @default("meeting")
   // Denormalized context (backfilled from the meeting for legacy rows).
-  companyId      String?
-  opportunityId  String?
-  personId       String?
+  companyId       String?
+  opportunityId   String?
+  personId        String?
   // Logical refs to the agent chat (no FK, same convention as TimelineEvent.refId).
-  chatThreadId   String?
-  chatMessageId  String?
+  chatThreadId    String?
+  chatMessageId   String?
   // Logical ref to EntityContextSource when source=enrichment.
   contextSourceId String?
-  confidence     Float
-  status         ProposalStatus @default(pending)
+  confidence      Float
+  status          ProposalStatus @default(pending)
   // Model that produced the proposal, for audit (e.g. groq/llama-3.3-70b-versatile).
-  model          String?
-  rawModelOutput Json?
-  reviewedBy     String?
-  reviewedAt     DateTime?
-  createdAt      DateTime       @default(now())
+  model           String?
+  rawModelOutput  Json?
+  reviewedBy      String?
+  reviewedAt      DateTime?
+  createdAt       DateTime       @default(now())
 
   items CRMChangeItem[]
 
@@ -626,28 +638,28 @@ model CRMChangeProposal {
 // Fuente de evidencia ligada a company/person/opportunity (upload hoy;
 // linkedin/url/agent mañana). El pipeline normaliza a extractedText.
 model EntityContextSource {
-  id             String       @id @default(cuid())
-  organizationId String
-  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  id              String       @id @default(cuid())
+  organizationId  String
+  organization    Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
   // company | person | opportunity
-  entityType     EntityType
-  entityId       String
+  entityType      EntityType
+  entityId        String
   // upload | linkedin | url | manual | agent
-  sourceType     String       @default("upload")
-  filename       String
-  mimeType       String
+  sourceType      String       @default("upload")
+  filename        String
+  mimeType        String
   // Object key in Cloudflare R2 (empty for inline text sources).
-  storagePath    String
-  sizeBytes      Int?
-  extractedText  String?      @db.Text
+  storagePath     String
+  sizeBytes       Int?
+  extractedText   String?      @db.Text
   // External URL or provider id (e.g. LinkedIn profile URL).
-  externalRef    String?
+  externalRef     String?
   // uploaded | extracting | extracted | analyzing | ready | failed
-  status         String       @default("uploaded")
-  processingError String?     @db.Text
-  uploadedBy     String
-  createdAt      DateTime     @default(now())
-  updatedAt      DateTime     @updatedAt
+  status          String       @default("uploaded")
+  processingError String?      @db.Text
+  uploadedBy      String
+  createdAt       DateTime     @default(now())
+  updatedAt       DateTime     @updatedAt
 
   @@index([organizationId, entityType, entityId])
   @@index([organizationId, status])

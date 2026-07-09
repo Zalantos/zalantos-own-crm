@@ -10,6 +10,7 @@ import {
   deleteContextSource,
   reprocessContextSource,
 } from "@/app/(dashboard)/entity-context/actions";
+import { LinkifiedText } from "@/components/shared/linkified-text";
 
 export type ContextSourceView = {
   id: string;
@@ -88,7 +89,7 @@ export function ContextSourcesPanel({
             </p>
             {source.externalRef && (
               <p className="text-muted-foreground truncate text-xs">
-                {source.externalRef}
+                <LinkifiedText text={source.externalRef} />
               </p>
             )}
             {source.processingError && (

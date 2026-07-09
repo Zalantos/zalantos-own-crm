@@ -6,6 +6,7 @@ import {
 import { requireOrgContext } from "@/lib/tenant";
 import { formatDateTime } from "@/lib/utils";
 import { actorLabel } from "@/lib/traceability";
+import { LinkifiedText } from "@/components/shared/linkified-text";
 
 type TimelineProps =
   | { companyId: string; opportunityId?: never }
@@ -37,7 +38,9 @@ export async function CompanyTimeline(props: TimelineProps) {
           </p>
           <p className="text-sm font-medium">{event.title}</p>
           {event.summary && (
-            <p className="text-muted-foreground text-sm">{event.summary}</p>
+            <p className="text-muted-foreground text-sm">
+              <LinkifiedText text={event.summary} />
+            </p>
           )}
         </li>
       ))}

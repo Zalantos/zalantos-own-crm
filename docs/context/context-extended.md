@@ -85,6 +85,7 @@ after(runEntityContextPipeline)
 extract por archivo → UN análisis consolidado del lote
        → EntityContextProfile + Note (auto)
        → UNA CRMChangeProposal (source=enrichment, pending)
+         con campos CRM, incluido perfil comercial estándar de Company
        ↓
 Usuario revisa propuestas de campos en tab Contexto
 ```

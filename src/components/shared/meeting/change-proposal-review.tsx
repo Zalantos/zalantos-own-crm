@@ -13,6 +13,7 @@ import {
   setItemApproval,
 } from "@/app/(dashboard)/meetings/proposal-actions";
 import { ProposalItemEditor } from "@/components/shared/meeting/proposal-item-editor";
+import { LinkifiedText } from "@/components/shared/linkified-text";
 import type { StageOption } from "@/lib/pipeline/stages";
 
 export type ReviewItem = {
@@ -287,12 +288,12 @@ export function ChangeProposalReview({
                   )}
                   {item.explanation && (
                     <p className="text-muted-foreground text-xs">
-                      {item.explanation}
+                      <LinkifiedText text={item.explanation} />
                     </p>
                   )}
                   {item.evidence && (
                     <p className="text-muted-foreground border-l-2 pl-2 text-xs italic">
-                      “{item.evidence}”
+                      “<LinkifiedText text={item.evidence} />”
                     </p>
                   )}
                 </div>

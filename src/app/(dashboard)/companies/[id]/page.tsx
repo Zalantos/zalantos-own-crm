@@ -13,6 +13,7 @@ import {
   loadEntityContextData,
 } from "@/components/shared/entity-context/entity-context-panel";
 import { StatCard } from "@/components/shared/stat-card";
+import { LinkifiedText, toExternalHref } from "@/components/shared/linkified-text";
 import { CompanyStatusBadge } from "@/components/shared/companies/status-badge";
 import { OpportunityStageBadge } from "@/components/shared/opportunities/status-badge";
 import { createFormatters } from "@/lib/format";
@@ -42,6 +43,10 @@ export default async function CompanyDetailPage({
   const canDelete = user.role === "ADMIN" || company.createdById === user.id;
   const formatters = createFormatters(org);
   const contextData = await loadEntityContextData(db, "company", company.id);
+  const potentialValue =
+    company.potentialValue != null
+      ? formatters.currency(company.potentialValue.toString())
+      : "—";
 
   return (
     <div>
@@ -77,6 +82,9 @@ export default async function CompanyDetailPage({
         <StatCard
           label="Sitio web"
           value={company.website ?? "—"}
+          href={
+            company.website ? (toExternalHref(company.website) ?? undefined) : undefined
+          }
           variant="compact"
         />
       </div>
@@ -88,7 +96,7 @@ export default async function CompanyDetailPage({
           variant="compact"
         />
         <StatCard
-          label="Origen"
+          label="Origen de creación"
           value={createdViaLabel(company.createdVia)}
           variant="compact"
         />
@@ -99,9 +107,86 @@ export default async function CompanyDetailPage({
         />
       </div>
 
+      <section className="mb-6 space-y-3">
+        <h2 className="text-sm font-medium">Estado comercial</h2>
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+          <StatCard
+            label="Próximo paso"
+            value={company.nextStep ?? "—"}
+            variant="compact"
+          />
+          <StatCard
+            label="Fecha del próximo paso"
+            value={
+              company.nextStepDueDate
+                ? formatters.date(company.nextStepDueDate)
+                : "—"
+            }
+            variant="compact"
+          />
+          <StatCard
+            label="Valor potencial"
+            value={potentialValue}
+            variant="compact"
+          />
+          <StatCard
+            label="Prioridad"
+            value={company.priority ?? "—"}
+            variant="compact"
+          />
+          <StatCard
+            label="Urgencia"
+            value={company.urgency ?? "—"}
+            variant="compact"
+          />
+          <StatCard
+            label="Producto de interés"
+            value={company.productInterest ?? "—"}
+            variant="compact"
+          />
+          <StatCard
+            label="Último contacto"
+            value={
+              company.lastContactAt
+                ? formatters.date(company.lastContactAt)
+                : "—"
+            }
+            variant="compact"
+          />
+          <StatCard
+            label="Timing de compra"
+            value={company.buyingTiming ?? "—"}
+            variant="compact"
+          />
+          <StatCard
+            label="Origen comercial"
+            value={company.source ?? "—"}
+            variant="compact"
+          />
+          <StatCard
+            label="Competidor"
+            value={company.competitor ?? "—"}
+            variant="compact"
+          />
+          <StatCard
+            label="Proveedor actual"
+            value={company.currentProvider ?? "—"}
+            variant="compact"
+          />
+        </div>
+        {company.mainPain && (
+          <div className="rounded-md border p-4">
+            <p className="text-muted-foreground mb-1 text-xs">Dolor principal</p>
+            <p className="text-sm whitespace-pre-wrap">
+              <LinkifiedText text={company.mainPain} />
+            </p>
+          </div>
+        )}
+      </section>
+
       {company.description && (
         <p className="text-muted-foreground mb-6 max-w-3xl text-sm">
-          {company.description}
+          <LinkifiedText text={company.description} />
         </p>
       )}
 

@@ -17,6 +17,7 @@ import {
 import { StageSelect } from "@/components/shared/kanban/stage-select";
 import { CompanyTimeline } from "@/components/shared/timeline/company-timeline";
 import { StatCard } from "@/components/shared/stat-card";
+import { LinkifiedText } from "@/components/shared/linkified-text";
 import { createFormatters, formatCurrencyValue } from "@/lib/format";
 import { actorLabel, createdViaLabel } from "@/lib/traceability";
 
@@ -127,14 +128,24 @@ export default async function OpportunityDetailPage({
         <Card size="sm">
           <CardContent>
             <p className="text-muted-foreground text-xs">Dolor principal</p>
-            <p className="text-sm">{opportunity.mainPain || "—"}</p>
+            <p className="text-sm">
+              {opportunity.mainPain ? (
+                <LinkifiedText text={opportunity.mainPain} />
+              ) : (
+                "—"
+              )}
+            </p>
           </CardContent>
         </Card>
         <Card size="sm">
           <CardContent>
             <p className="text-muted-foreground text-xs">Próximo paso</p>
             <p className="text-sm">
-              {opportunity.nextStep || "—"}
+              {opportunity.nextStep ? (
+                <LinkifiedText text={opportunity.nextStep} />
+              ) : (
+                "—"
+              )}
               {opportunity.nextStepDueDate && (
                 <span
                   className={

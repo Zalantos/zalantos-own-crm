@@ -49,6 +49,18 @@ const COMPANY_FIELDS = {
   icpScore: { type: "int", label: "Score ICP", min: 0, max: 100 },
   fitScore: { type: "int", label: "Score de fit", min: 0, max: 100 },
   painScore: { type: "int", label: "Score de dolor", min: 0, max: 100 },
+  source: { type: "string", label: "Origen" },
+  priority: { type: "string", label: "Prioridad" },
+  mainPain: { type: "text", label: "Dolor principal" },
+  productInterest: { type: "string", label: "Producto/servicio de interés" },
+  potentialValue: { type: "decimal", label: "Valor potencial" },
+  buyingTiming: { type: "string", label: "Timing de compra" },
+  urgency: { type: "string", label: "Urgencia" },
+  competitor: { type: "string", label: "Competidor" },
+  currentProvider: { type: "string", label: "Proveedor actual" },
+  nextStep: { type: "string", label: "Próximo paso" },
+  nextStepDueDate: { type: "date", label: "Fecha del próximo paso" },
+  lastContactAt: { type: "date", label: "Último contacto" },
 } satisfies Partial<
   Record<keyof Prisma.CompanyUncheckedUpdateInput, FieldSpec>
 >;

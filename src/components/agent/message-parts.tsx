@@ -8,6 +8,7 @@ import {
   SearchIcon,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { LinkifiedText } from "@/components/shared/linkified-text";
 import { AgentProposalCard } from "./agent-proposal-card";
 
 const TOOL_LABELS: Record<string, string> = {
@@ -89,7 +90,7 @@ export function MessageParts({ message }: { message: UIMessage }) {
           if (!part.text.trim()) return null;
           return (
             <div key={index} className="whitespace-pre-wrap">
-              {part.text}
+              <LinkifiedText text={part.text} />
             </div>
           );
         }

@@ -1,16 +1,23 @@
 import { mergeCustomFields } from "@/lib/custom-fields/merge";
 import { requireOrgContext } from "@/lib/tenant";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { LinkifiedText } from "@/components/shared/linkified-text";
 import type { EntityType } from "@prisma/client";
+import type { ReactNode } from "react";
 
 function formatValue(
   field: Awaited<ReturnType<typeof mergeCustomFields>>[number],
-) {
+): ReactNode {
   const { definition, value } = field;
   if (!value) return "—";
 
   switch (definition.fieldType) {
     case "text":
+      return value.valueText ? (
+        <LinkifiedText text={value.valueText} />
+      ) : (
+        "—"
+      );
     case "select":
       return value.valueText || "—";
     case "number":

@@ -13,6 +13,7 @@ import {
   type NoteFormState,
 } from "@/app/(dashboard)/notes/actions";
 import { actorLabel, createdViaLabel } from "@/lib/traceability";
+import { LinkifiedText } from "@/components/shared/linkified-text";
 import type { Note } from "@prisma/client";
 
 type NoteWithCreator = Note & {
@@ -89,7 +90,9 @@ export function NoteItem({ note }: { note: NoteWithCreator }) {
           </form>
         </div>
       </div>
-      <p className="text-sm whitespace-pre-wrap">{note.body}</p>
+      <p className="text-sm whitespace-pre-wrap">
+        <LinkifiedText text={note.body} />
+      </p>
     </div>
   );
 }

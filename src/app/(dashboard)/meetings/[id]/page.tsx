@@ -15,6 +15,7 @@ import {
   type ReviewProposal,
 } from "@/components/shared/meeting/change-proposal-review";
 import { CompanyTimeline } from "@/components/shared/timeline/company-timeline";
+import { LinkifiedText } from "@/components/shared/linkified-text";
 import { formatDateTime } from "@/lib/utils";
 
 type AiSummary = {
@@ -130,7 +131,7 @@ export default async function MeetingDetailPage({
             <Card>
               <CardContent>
                 <pre className="max-h-[500px] overflow-auto text-sm whitespace-pre-wrap">
-                  {meeting.rawTranscript}
+                  <LinkifiedText text={meeting.rawTranscript} />
                 </pre>
               </CardContent>
             </Card>
@@ -145,7 +146,9 @@ export default async function MeetingDetailPage({
           {summary ? (
             <div className="space-y-3 text-sm">
               {summary.headline && (
-                <p className="font-medium">{summary.headline}</p>
+                <p className="font-medium">
+                  <LinkifiedText text={summary.headline} />
+                </p>
               )}
               {summary.keyPoints && summary.keyPoints.length > 0 && (
                 <SummaryList title="Puntos clave" items={summary.keyPoints} />
@@ -197,7 +200,9 @@ function SummaryList({ title, items }: { title: string; items: string[] }) {
       </p>
       <ul className="list-inside list-disc">
         {items.map((item, i) => (
-          <li key={i}>{item}</li>
+          <li key={i}>
+            <LinkifiedText text={item} />
+          </li>
         ))}
       </ul>
     </div>

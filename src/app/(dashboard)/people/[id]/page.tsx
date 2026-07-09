@@ -13,6 +13,7 @@ import {
   loadEntityContextData,
 } from "@/components/shared/entity-context/entity-context-panel";
 import { StatCard } from "@/components/shared/stat-card";
+import { LinkifiedText } from "@/components/shared/linkified-text";
 import { OpportunityStageBadge } from "@/components/shared/opportunities/status-badge";
 import { createFormatters } from "@/lib/format";
 import { actorLabel, createdViaLabel } from "@/lib/traceability";
@@ -104,7 +105,7 @@ export default async function PersonDetailPage({
 
       {person.notes && (
         <p className="text-muted-foreground mb-6 max-w-3xl text-sm">
-          {person.notes}
+          <LinkifiedText text={person.notes} />
         </p>
       )}
 
