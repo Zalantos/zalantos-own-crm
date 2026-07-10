@@ -20,7 +20,8 @@ Handlers. No hay backend NestJS separado; la lógica vive en `src/lib/`.
 ## Frontend
 
 - App Router con grupos `(dashboard)`, `(superadmin)`.
-- UI: Tailwind CSS 4 + shadcn/ui (Base UI).
+- `/` es una landing pública; el producto autenticado vive en rutas protegidas.
+- UI: Tailwind CSS 4 + Base UI/shadcn según el área.
 - Estado local React; sin Jotai/Redux global.
 - Agente: panel lateral con `@ai-sdk/react`.
 
@@ -61,6 +62,8 @@ Ver `docs/architecture/integrations.md`.
 ## Auth
 
 - Auth.js v5, JWT en cookie, Credentials provider.
+- `/` queda fuera del gate de sesión para mostrar la landing pública; `/login`
+  sigue siendo la entrada al CRM.
 - `AUTH_TRUST_HOST=true` requerido detrás de proxy (Railway).
 - Roles en JWT: `role`, `organizationId`, `isSuperAdmin`.
 

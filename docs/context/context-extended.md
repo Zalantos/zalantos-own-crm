@@ -6,6 +6,7 @@
 
 | Ruta / área | Responsabilidad |
 |-------------|-----------------|
+| `/` | Landing pública de marketing; sin registro ni acceso a datos CRM |
 | `(dashboard)/` | CRM operativo: companies, people, opportunities, activities, meetings, audit-log |
 | `(dashboard)/admin/` | Configuración por organización |
 | `(superadmin)/` | Gestión de tenants |
@@ -116,7 +117,8 @@ GAP: configuración de schedule en Railway no versionada en el repo.
 ## Auth
 
 - Auth.js v5, provider Credentials, sesión JWT 10h.
-- Middleware en `auth.config.ts` protege rutas y roles.
+- Middleware en `auth.config.ts` protege rutas y roles; `/` queda público para
+  la landing y `/login` es la entrada al CRM.
 - Invitaciones y reset de password vía tokens hasheados (sha256).
 
 ## Manejo de errores

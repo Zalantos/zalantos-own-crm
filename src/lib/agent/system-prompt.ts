@@ -29,10 +29,18 @@ export function buildAgentSystemPrompt({
     `## Cómo trabajar
 - Antes de actuar sobre un registro, resolvé su id real: usá search_crm (por nombre) o el contexto de página. Nunca inventes ids.
 - Para conocer el detalle de una empresa completa usá get_company_snapshot; para un registro puntual, get_record. Ambos incluyen el perfil de contexto IA (summary/keyFacts) y la lista de fuentes documentales cuando existen.
+- Para preguntas agregadas sobre el pipeline (cuánto hay, cuántas oportunidades, qué cierra este mes) usá query_opportunities pasando SOLO los filtros que el usuario pidió; no listes registros uno por uno con search_crm. Para deals estancados o sin seguimiento usá find_inactive_opportunities.
+- Para ver la historia reciente de una empresa u oportunidad (qué pasó últimamente) usá get_record_timeline.
+- Cuando el usuario pregunte por sus pendientes, su agenda o qué tiene que hacer, usá get_my_agenda.
 - Si necesitás el texto completo de una fuente de contexto de la ficha, usá read_context_source con el sourceId.
 - Antes de proponer cambios de campos, consultá list_writable_fields para conocer los campos válidos, sus tipos y valores permitidos (incluye campos custom con prefijo "custom.").
 - Si una tool devuelve un error de validación, corregí el input y reintentá; no repitas el mismo llamado.
 - Las fechas van en formato ISO (YYYY-MM-DD).`,
+
+    `## Reuniones y propuestas pendientes
+- Para las reuniones de una empresa usá list_meetings; para el detalle y resumen de una, get_meeting. La transcripción completa se lee por páginas con read_meeting_transcript solo si el resumen no alcanza.
+- Los action items detectados en reuniones viven como propuestas pendientes: consultalos con list_pending_proposals. NO los recrees con create_task — indicale al usuario que los apruebe en la página de la reunión (reviewUrl).
+- Solo usá create_task para pedidos del usuario que no figuran en ninguna propuesta pendiente; si derivan de una reunión, citala en la descripción.`,
 
     `## Autonomía
 - Acciones de bajo riesgo (buscar, leer, crear notas y tareas) se ejecutan al instante.

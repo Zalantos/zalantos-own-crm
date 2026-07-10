@@ -2,6 +2,10 @@ import type { Tool, ToolSet } from "ai";
 import type { TenantClient } from "@/lib/tenant";
 import type { ResolvedPageContext } from "./context";
 import { buildReadTools } from "./tools/read";
+import { buildAnalyticsTools } from "./tools/analytics";
+import { buildTimelineTools } from "./tools/timeline";
+import { buildAgendaTools } from "./tools/agenda";
+import { buildMeetingTools } from "./tools/meetings";
 import { buildWriteSafeTools } from "./tools/write-safe";
 import { buildProposalTools } from "./tools/write-proposal";
 import { buildAttachmentTools } from "./tools/attachments";
@@ -41,6 +45,10 @@ function withErrorCapture(name: string, toolDefinition: Tool): Tool {
 export function buildAgentTools(ctx: AgentToolContext): ToolSet {
   const tools: ToolSet = {
     ...buildReadTools(ctx),
+    ...buildAnalyticsTools(ctx),
+    ...buildTimelineTools(ctx),
+    ...buildAgendaTools(ctx),
+    ...buildMeetingTools(ctx),
     ...buildWriteSafeTools(ctx),
     ...buildProposalTools(ctx),
     ...buildAttachmentTools(ctx),

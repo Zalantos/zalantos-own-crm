@@ -15,7 +15,7 @@ export function buildReadTools(ctx: AgentToolContext) {
   return {
     search_crm: tool({
       description:
-        "Busca empresas, personas y oportunidades por nombre o email. Usala para resolver nombres a ids antes de actuar sobre un registro.",
+        "Busca empresas, personas y oportunidades por nombre o email. Usala para resolver nombres a ids antes de actuar sobre un registro. Para conteos, sumas o filtros de pipeline usá query_opportunities.",
       inputSchema: z.object({
         query: z.string().min(1).describe("Texto a buscar (nombre o email)"),
         entity: entitySchema
@@ -173,7 +173,7 @@ export function buildReadTools(ctx: AgentToolContext) {
 
     get_company_snapshot: tool({
       description:
-        "Devuelve una foto completa y acotada de una empresa: datos, oportunidades, contactos, notas y actividades recientes, y resúmenes de reuniones previas.",
+        "Devuelve una foto completa y acotada de una empresa: datos, oportunidades, contactos, notas y actividades recientes, y resúmenes de reuniones previas. Para el detalle de una reunión puntual usá list_meetings/get_meeting.",
       inputSchema: z.object({
         companyId: z.string().min(1),
       }),

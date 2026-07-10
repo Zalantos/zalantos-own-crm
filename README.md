@@ -22,7 +22,7 @@ sin depender de herramientas dispersas.
 
 | Capa | Tecnología |
 |------|------------|
-| Frontend | Next.js 16 (App Router), React 19, Tailwind CSS 4, shadcn/ui |
+| Frontend | Next.js 16 (App Router), React 19, Tailwind CSS 4, Base UI/shadcn |
 | Backend | Next.js Server Actions y Route Handlers |
 | Base de datos | PostgreSQL + Prisma 7 |
 | Auth | Auth.js v5 (NextAuth) con credenciales y JWT |
@@ -44,7 +44,8 @@ npm run prisma:seed   # opcional; requiere ADMIN_EMAIL y ADMIN_PASSWORD
 npm run dev
 ```
 
-La app corre en `http://localhost:3000`.
+La app corre en `http://localhost:3000`. La ruta `/` muestra la landing pública;
+el acceso al CRM cerrado se realiza por `/login`.
 
 Para RLS en Postgres (recomendado en producción):
 
@@ -74,8 +75,8 @@ Scripts adicionales en `scripts/`: `import-notion.ts`, `promote-superadmin.ts`,
 
 ```txt
 src/
-  app/              # Rutas Next.js (dashboard, admin, API, auth)
-  components/       # UI (shadcn) y componentes de dominio
+  app/              # Rutas Next.js (landing, dashboard, admin, API, auth)
+  components/       # UI (Base UI/shadcn), landing y componentes de dominio
   hooks/            # React hooks
   lib/              # Lógica de negocio (auth, tenant, agent, meetings, CRM)
   types/            # Tipos globales

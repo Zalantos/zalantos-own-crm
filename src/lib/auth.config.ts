@@ -13,11 +13,14 @@ export const authConfig = {
     authorized({ auth, request }) {
       const { pathname, origin } = request.nextUrl;
       const isLoggedIn = !!auth?.user;
+      const isPublicLanding = pathname === "/";
       const isLoginPage = pathname === "/login";
       // Rutas públicas de provisioning: aceptar invitación y resetear password
       // se hacen sin sesión previa (el usuario todavía no puede loguearse).
       const isPublicTokenPage =
         pathname.startsWith("/invite/") || pathname.startsWith("/reset-password");
+
+      if (isPublicLanding) return true;
 
       if (isLoginPage) {
         if (isLoggedIn) {

@@ -5,6 +5,8 @@
 CRM B2B multi-tenant que permite a cada organización gestionar empresas,
 personas, oportunidades, actividades, notas y reuniones. Incluye:
 
+- **Landing pública** en `/` para explicar el producto; el CRM sigue cerrado y
+  requiere login en `/login`.
 - **Pipeline configurable** por etapas (`PipelineStage`).
 - **Meeting Intelligence**: subir evidencia (audio, video, PDF, etc.), transcribir,
   analizar con IA y generar propuestas de cambio al CRM para revisión humana.
@@ -12,7 +14,9 @@ personas, oportunidades, actividades, notas y reuniones. Incluye:
   oportunidad → perfil IA (resumen + hechos) automático + propuestas de campos,
   incluyendo perfil comercial estándar de empresas.
 - **Agente IA copiloto**: chat contextual con herramientas de lectura/escritura
-  del CRM y propuestas de cambio.
+  del CRM y propuestas de cambio. Incluye consultas agregadas de pipeline,
+  timeline de registros, agenda del usuario y acceso a reuniones y sus
+  propuestas pendientes.
 - **Workflows**: automatización por eventos de entidades.
 - **Gateway de integraciones**: despacho de eventos a un webhook externo (email,
   Slack, etc. vía n8n u otro).
@@ -50,7 +54,7 @@ propuestos por IA.
 ## Stack
 
 Next.js 16, React 19, Prisma 7, PostgreSQL, Auth.js v5, Vercel AI SDK, Groq,
-Cloudflare R2, Tailwind/shadcn.
+Cloudflare R2, Tailwind y componentes Base UI/shadcn.
 
 ## Estado actual
 
@@ -72,6 +76,7 @@ Versión 0.1.0 en desarrollo activo. Funcional en local y desplegable en Railway
   reversión.
 - Gateway único externo para integraciones; el CRM conserva dedupe y auditoría.
 - Credenciales locales (email/password); sin OAuth social en v1.
+- Home pública en `/`; rutas CRM, admin y superadmin quedan detrás de Auth.js.
 
 ## Gaps
 
