@@ -119,6 +119,10 @@ export async function POST(req: Request) {
     }),
     stopWhen: stepCountIs(agentConfig.maxSteps),
     onError: ({ error }) => {
+      // El stream UI enmascara el error como "An error occurred", así que sin
+      // esto la causa real solo llegaba a observabilidad. Logueado para poder
+      // diagnosticar en el server.
+      console.error("[agent] streamText error", error);
       reportAiEventBestEffort({
         execution_id: `agent-chat:${threadId}:${userMessageId}`,
         started_at: startedAt.toISOString(),
@@ -165,6 +169,12 @@ export async function POST(req: Request) {
     stream: toUIMessageStream({
       stream: result.stream,
       originalMessages: messages,
+      // Sin esto el SDK enmascara todo error del stream como "An error
+      // occurred". Devolvemos el mensaje real para poder diagnosticar.
+      onError: (error) => {
+        console.error("[agent] UI stream error", error);
+        return error instanceof Error ? error.message : String(error);
+      },
       // Sin esto el SDK deja responseMessage.id como "" y todos los turnos
       // del asistente colisionan en una única fila del upsert de abajo.
       generateMessageId: generateId,
