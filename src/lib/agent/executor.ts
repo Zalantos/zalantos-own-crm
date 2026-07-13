@@ -19,6 +19,20 @@ export type AgentToolContext = {
   pageContext: ResolvedPageContext | null;
 };
 
+// Normaliza el resultado de una tool a JSON puro. Prisma devuelve Date y
+// Decimal como objetos; si un resultado los arrastra crudos, el AI SDK rechaza
+// el prompt al re-validarlo tras el paso de tools ("The messages do not match
+// the ModelMessage[] schema"). Date/Decimal tienen toJSON, así que
+// JSON.stringify los serializa; el replacer cubre bigint, que no lo tiene.
+function toJsonSafe(value: unknown): unknown {
+  if (value === undefined) return value;
+  return JSON.parse(
+    JSON.stringify(value, (_key, val) =>
+      typeof val === "bigint" ? val.toString() : val,
+    ),
+  );
+}
+
 // Tool execute errors are returned as results (never thrown into the stream)
 // so the model can read the message and self-correct.
 function withErrorCapture(name: string, toolDefinition: Tool): Tool {
@@ -28,7 +42,7 @@ function withErrorCapture(name: string, toolDefinition: Tool): Tool {
     ...toolDefinition,
     execute: async (input, options) => {
       try {
-        return await originalExecute(input, options);
+        return toJsonSafe(await originalExecute(input, options));
       } catch (error) {
         console.error(`[agent] tool ${name} falló`, error);
         return {
