@@ -25,23 +25,44 @@ export function buildReadTools(ctx: AgentToolContext) {
       }),
       execute: async ({ query, entity, limit }) => {
         const take = limit ?? 10;
+        // Tokeniza para que "Juan Pablo Humenyi" matchee aunque el nombre esté
+        // repartido en firstName ("Juan Pablo") y lastName ("Humenyi"): cada
+        // palabra debe aparecer en algún campo (AND de tokens, OR de campos).
+        // Con una sola palabra equivale al contains simple de antes.
+        // Fallback a la query cruda si viniera solo con espacios: evita que un
+        // AND vacío devuelva la tabla entera.
+        const tokens = query.trim().split(/\s+/).filter(Boolean);
+        if (tokens.length === 0) tokens.push(query.trim());
+        const companyWhere = {
+          AND: tokens.map((token) => ({
+            name: { contains: token, mode: "insensitive" as const },
+          })),
+        };
+        const personWhere = {
+          AND: tokens.map((token) => ({
+            OR: [
+              { firstName: { contains: token, mode: "insensitive" as const } },
+              { lastName: { contains: token, mode: "insensitive" as const } },
+              { email: { contains: token, mode: "insensitive" as const } },
+            ],
+          })),
+        };
+        const opportunityWhere = {
+          AND: tokens.map((token) => ({
+            name: { contains: token, mode: "insensitive" as const },
+          })),
+        };
         const [companies, people, opportunities] = await Promise.all([
           !entity || entity === "company"
             ? db.company.findMany({
-                where: { name: { contains: query, mode: "insensitive" } },
+                where: companyWhere,
                 select: { id: true, name: true, status: true },
                 take,
               })
             : [],
           !entity || entity === "person"
             ? db.person.findMany({
-                where: {
-                  OR: [
-                    { firstName: { contains: query, mode: "insensitive" } },
-                    { lastName: { contains: query, mode: "insensitive" } },
-                    { email: { contains: query, mode: "insensitive" } },
-                  ],
-                },
+                where: personWhere,
                 select: {
                   id: true,
                   firstName: true,
@@ -55,7 +76,7 @@ export function buildReadTools(ctx: AgentToolContext) {
             : [],
           !entity || entity === "opportunity"
             ? db.opportunity.findMany({
-                where: { name: { contains: query, mode: "insensitive" } },
+                where: opportunityWhere,
                 select: {
                   id: true,
                   name: true,
