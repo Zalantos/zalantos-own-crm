@@ -15,6 +15,13 @@ export function parseModelSpec(spec: string): {
   };
 }
 
+// El AI SDK puede devolver "openai.responses" / "openai.chat"; el reporte
+// de observabilidad usa solo el proveedor base ("openai").
+export function normalizeObservabilityProvider(provider: string): string {
+  const separator = provider.indexOf(".");
+  return separator > 0 ? provider.slice(0, separator) : provider;
+}
+
 // Mapea usage del AI SDK al contrato Observability.
 // promptTokens debe incluir cachedTokens (no restar). Si el proveedor reporta
 // input sin cache, sumamos cacheRead para cumplir la convención.
@@ -29,7 +36,7 @@ export function aiCallFromLanguageModelUsage(
     inputTokens >= cachedTokens ? inputTokens : inputTokens + cachedTokens;
 
   return {
-    provider,
+    provider: normalizeObservabilityProvider(provider),
     model,
     promptTokens,
     completionTokens: usage?.outputTokens ?? 0,
