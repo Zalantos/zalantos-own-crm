@@ -14,6 +14,12 @@ import { resolveAgentModel } from "@/lib/agent/model";
 import { resolvePageContext, type PageContext } from "@/lib/agent/context";
 import { buildAgentSystemPrompt } from "@/lib/agent/system-prompt";
 import { buildAgentTools } from "@/lib/agent/executor";
+import {
+  CRM_OBSERVABILITY_SERVICE_NAME,
+  CRM_OBSERVABILITY_SERVICE_SLUG,
+  aiCallFromLanguageModelUsage,
+  reportAiEventBestEffort,
+} from "@/lib/observability";
 import type { Prisma } from "@prisma/client";
 
 // Multi-step tool loops (search → read → act) can take a while on slow models.
@@ -93,6 +99,8 @@ export async function POST(req: Request) {
   });
 
   const recentMessages = messages.slice(-agentConfig.maxContextMessages);
+  const startedAt = new Date();
+  const userMessageId = userMessage?.id ?? generateId();
 
   const result = streamText({
     model: resolveAgentModel(),
@@ -110,6 +118,47 @@ export async function POST(req: Request) {
       pageContext,
     }),
     stopWhen: stepCountIs(agentConfig.maxSteps),
+    onError: ({ error }) => {
+      reportAiEventBestEffort({
+        execution_id: `agent-chat:${threadId}:${userMessageId}`,
+        started_at: startedAt.toISOString(),
+        duration_ms: Date.now() - startedAt.getTime(),
+        status: "error",
+        error_message:
+          error instanceof Error ? error.message : String(error),
+        workflow_name: "agent-copilot",
+        agent_name: "crm-copilot",
+        source_type: "backend",
+        service_name: CRM_OBSERVABILITY_SERVICE_NAME,
+        service_slug: CRM_OBSERVABILITY_SERVICE_SLUG,
+        flow_slug: "agent-chat",
+        usage_kind: "agent_run",
+        metadata: { organizationId: org.id, threadId },
+      });
+    },
+    onFinish: ({ steps, callId, finishReason }) => {
+      reportAiEventBestEffort({
+        execution_id: `agent-chat:${threadId}:${callId || userMessageId}`,
+        started_at: startedAt.toISOString(),
+        duration_ms: Date.now() - startedAt.getTime(),
+        status: finishReason === "error" ? "error" : "success",
+        workflow_name: "agent-copilot",
+        agent_name: "crm-copilot",
+        source_type: "backend",
+        service_name: CRM_OBSERVABILITY_SERVICE_NAME,
+        service_slug: CRM_OBSERVABILITY_SERVICE_SLUG,
+        flow_slug: "agent-chat",
+        usage_kind: "agent_run",
+        metadata: { organizationId: org.id, threadId },
+        calls: steps.map((step) =>
+          aiCallFromLanguageModelUsage(
+            step.model.provider,
+            step.model.modelId,
+            step.usage,
+          ),
+        ),
+      });
+    },
   });
 
   return createUIMessageStreamResponse({

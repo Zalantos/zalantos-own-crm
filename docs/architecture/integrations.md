@@ -10,6 +10,7 @@
 | OpenAI | Modelo alternativo (agente) | `OPENAI_API_KEY` |
 | Cloudflare R2 | Evidencia y adjuntos | `R2_*` |
 | Gateway webhook | Email, Slack, automaciones | `INTEGRATION_GATEWAY_*` |
+| Zalantos Observability | Reporte best-effort de costos/tokens de IA | `OBSERVABILITY_BASE_URL`, `OBSERVABILITY_API_KEY` |
 
 ## Gateway de integraciones
 
@@ -51,6 +52,26 @@ Prompts en `src/lib/meeting-intelligence/prompts/*.md`.
 Tools: lectura CRM, propuestas de escritura, adjuntos.
 
 API: `POST /api/agent/chat` (streaming).
+
+## Observability — costos de IA
+
+**Archivo:** `src/lib/observability/reporter.ts`
+
+Tras cada ejecución de IA (éxito o error) se envía un evento single a
+`POST {OBSERVABILITY_BASE_URL}/api/v1/ingest/ai-event` con header `X-Api-Key`.
+
+| Flujo | `usage_kind` | `flow_slug` |
+|-------|--------------|-------------|
+| Agente copiloto | `agent_run` | `agent-chat` |
+| Razonamiento de reuniones | `extraction` | `meeting-reasoning` |
+| Enriquecimiento de fichas | `extraction` | `entity-context` |
+| Transcripción Whisper | `transcription` | `meeting-transcription` |
+
+- `service_name`: `backend`
+- `service_slug`: `crm-zalantos`
+- Best-effort: timeout corto, 1 retry idempotente; si Observability está caído
+  o faltan env vars, el CRM no falla.
+- No se envían `input_text` / `output_text`.
 
 ## Almacenamiento — Cloudflare R2
 

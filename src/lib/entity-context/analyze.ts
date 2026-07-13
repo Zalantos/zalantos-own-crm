@@ -1,4 +1,4 @@
-import { generateText, type ModelMessage } from "ai";
+import { generateText, type LanguageModelUsage, type ModelMessage } from "ai";
 import { groqConfig } from "@/lib/meeting-intelligence/config";
 import { resolveModel } from "@/lib/agent/model";
 import {
@@ -7,6 +7,14 @@ import {
 } from "@/lib/entity-context/schema";
 import { buildEntityContextSystemPrompt } from "@/lib/entity-context/prompt";
 import type { ContextEntityType } from "@/lib/entity-context/types";
+import {
+  CRM_OBSERVABILITY_SERVICE_NAME,
+  CRM_OBSERVABILITY_SERVICE_SLUG,
+  aiCallFromModelSpec,
+  reportAiEventBestEffort,
+  type AiCall,
+} from "@/lib/observability";
+import { randomUUID } from "node:crypto";
 
 function enrichmentModelSpec(): string {
   return (
@@ -27,14 +35,21 @@ function stripFences(text: string): string {
 async function complete(
   instructions: string,
   messages: ModelMessage[],
-): Promise<string> {
-  const { text } = await generateText({
+): Promise<{ text: string; usage: LanguageModelUsage }> {
+  const { text, usage } = await generateText({
     model: resolveModel(enrichmentModelSpec()),
     temperature: 0.1,
     instructions,
     messages,
   });
-  return text;
+  return { text, usage };
+}
+
+function pushCall(
+  calls: AiCall[],
+  usage: LanguageModelUsage | undefined,
+): void {
+  calls.push(aiCallFromModelSpec(enrichmentModelSpec(), usage));
 }
 
 export type EntityContextReasoningResult = {
@@ -48,6 +63,10 @@ export async function analyzeEntityContext(params: {
   snapshot: unknown;
   sourceText: string;
 }): Promise<EntityContextReasoningResult> {
+  const executionId = `entity-context:${params.entityType}:${randomUUID()}`;
+  const startedAt = new Date();
+  const calls: AiCall[] = [];
+
   const system = buildEntityContextSystemPrompt(params.entityType);
   const userContent = JSON.stringify({
     crm_state: params.snapshot,
@@ -56,31 +75,82 @@ export async function analyzeEntityContext(params: {
 
   const messages: ModelMessage[] = [{ role: "user", content: userContent }];
 
-  let raw = await complete(system, messages);
-
   try {
-    const parsed = entityContextAnalysisSchema.parse(
-      JSON.parse(stripFences(raw)),
-    );
-    return { analysis: parsed, model: enrichmentModelSpec(), raw };
-  } catch (firstError) {
-    const repairPrompt = [
-      "Tu respuesta anterior no cumplió el esquema JSON requerido.",
-      `Error: ${firstError instanceof Error ? firstError.message : String(firstError)}`,
-      "Devolvé ÚNICAMENTE el JSON corregido, respetando exactamente el formato pedido.",
-      "Respuesta anterior:",
-      raw,
-    ].join("\n\n");
+    let completion = await complete(system, messages);
+    pushCall(calls, completion.usage);
+    let raw = completion.text;
 
-    raw = await complete(system, [
-      ...messages,
-      { role: "assistant", content: raw },
-      { role: "user", content: repairPrompt },
-    ]);
+    try {
+      const parsed = entityContextAnalysisSchema.parse(
+        JSON.parse(stripFences(raw)),
+      );
+      reportAiEventBestEffort({
+        execution_id: executionId,
+        started_at: startedAt.toISOString(),
+        duration_ms: Date.now() - startedAt.getTime(),
+        status: "success",
+        workflow_name: "entity-context-enrichment",
+        source_type: "backend",
+        service_name: CRM_OBSERVABILITY_SERVICE_NAME,
+        service_slug: CRM_OBSERVABILITY_SERVICE_SLUG,
+        flow_slug: "entity-context",
+        usage_kind: "extraction",
+        metadata: { entityType: params.entityType },
+        calls,
+      });
+      return { analysis: parsed, model: enrichmentModelSpec(), raw };
+    } catch (firstError) {
+      const repairPrompt = [
+        "Tu respuesta anterior no cumplió el esquema JSON requerido.",
+        `Error: ${firstError instanceof Error ? firstError.message : String(firstError)}`,
+        "Devolvé ÚNICAMENTE el JSON corregido, respetando exactamente el formato pedido.",
+        "Respuesta anterior:",
+        raw,
+      ].join("\n\n");
 
-    const parsed = entityContextAnalysisSchema.parse(
-      JSON.parse(stripFences(raw)),
-    );
-    return { analysis: parsed, model: enrichmentModelSpec(), raw };
+      completion = await complete(system, [
+        ...messages,
+        { role: "assistant", content: raw },
+        { role: "user", content: repairPrompt },
+      ]);
+      pushCall(calls, completion.usage);
+      raw = completion.text;
+
+      const parsed = entityContextAnalysisSchema.parse(
+        JSON.parse(stripFences(raw)),
+      );
+      reportAiEventBestEffort({
+        execution_id: executionId,
+        started_at: startedAt.toISOString(),
+        duration_ms: Date.now() - startedAt.getTime(),
+        status: "success",
+        workflow_name: "entity-context-enrichment",
+        source_type: "backend",
+        service_name: CRM_OBSERVABILITY_SERVICE_NAME,
+        service_slug: CRM_OBSERVABILITY_SERVICE_SLUG,
+        flow_slug: "entity-context",
+        usage_kind: "extraction",
+        metadata: { entityType: params.entityType },
+        calls,
+      });
+      return { analysis: parsed, model: enrichmentModelSpec(), raw };
+    }
+  } catch (error) {
+    reportAiEventBestEffort({
+      execution_id: executionId,
+      started_at: startedAt.toISOString(),
+      duration_ms: Date.now() - startedAt.getTime(),
+      status: "error",
+      error_message: error instanceof Error ? error.message : String(error),
+      workflow_name: "entity-context-enrichment",
+      source_type: "backend",
+      service_name: CRM_OBSERVABILITY_SERVICE_NAME,
+      service_slug: CRM_OBSERVABILITY_SERVICE_SLUG,
+      flow_slug: "entity-context",
+      usage_kind: "extraction",
+      metadata: { entityType: params.entityType },
+      calls,
+    });
+    throw error;
   }
 }

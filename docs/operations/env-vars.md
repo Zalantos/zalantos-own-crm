@@ -31,6 +31,8 @@ Nunca incluir secretos reales en este documento. Ver `.env.example`.
 | `ENTITY_CONTEXT_MODEL` | IA SDK | Todos | No | `groq/llama-3.3-70b-versatile` | Modelo enriquecimiento de fichas (fallback: MEETING_REASONING_MODEL) | `src/lib/entity-context/analyze.ts` |
 | `ANTHROPIC_API_KEY` | Anthropic | Todos | No | `sk-ant-...` | Modelo alternativo | `src/lib/agent/config.ts` |
 | `OPENAI_API_KEY` | OpenAI | Todos | No | `sk-...` | Modelo alternativo | `src/lib/agent/config.ts` |
+| `OBSERVABILITY_BASE_URL` | Observability | Todos | No | `https://observ.zalantos.com` | Base URL ingesta costos IA | `src/lib/observability/reporter.ts` |
+| `OBSERVABILITY_API_KEY` | Observability | Todos | No | api key | Auth `X-Api-Key` para ingesta | `src/lib/observability/reporter.ts` |
 | `NODE_ENV` | Node | Todos | Auto | `production` | Entorno runtime | varios |
 
 \* Requerida si se usan crons en producción.  
@@ -52,6 +54,10 @@ Nunca incluir secretos reales en este documento. Ver `.env.example`.
 
 `GROQ_*`, `AGENT_MODEL`, `MEETING_REASONING_MODEL`, `ENTITY_CONTEXT_MODEL`,
 `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `R2_*`, `APP_URL`
+
+### Observability (costos IA)
+
+`OBSERVABILITY_BASE_URL`, `OBSERVABILITY_API_KEY`
 
 ### Integraciones
 

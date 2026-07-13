@@ -29,6 +29,7 @@ sin depender de herramientas dispersas.
 | IA | Vercel AI SDK (Groq, Anthropic, OpenAI) |
 | Almacenamiento | Cloudflare R2 (evidencia de reuniones y adjuntos del agente) |
 | Integraciones | Gateway webhook externo (n8n u otro) |
+| Observabilidad IA | Zalantos Observability (`service_name: backend`) |
 
 ## Setup local
 
@@ -67,9 +68,25 @@ psql "$DATABASE_URL" -v crm_app_password='<password>' -f scripts/sql/setup-roles
 | `npm run prisma:migrate:deploy` | Migraciones en producción |
 | `npm run prisma:seed` | Seed de datos iniciales |
 | `npm run prisma:studio` | Prisma Studio |
+| `npm run test:observability` | Validación de forma del payload Observability |
 
 Scripts adicionales en `scripts/`: `import-notion.ts`, `promote-superadmin.ts`,
 `check-seed-data.ts`, `check-rls-coverage.ts`.
+
+## Observability (costos de IA)
+
+Opcional. Con estas env vars el CRM reporta cada ejecución de IA (agente,
+reuniones, enriquecimiento, transcripción) a Observability en modo **single**
+(`POST /api/v1/ingest/ai-event`). El reporte es best-effort y no afecta el
+flujo principal.
+
+```bash
+OBSERVABILITY_BASE_URL="https://observ.zalantos.com"
+OBSERVABILITY_API_KEY="..."
+```
+
+- `service_name`: `backend`
+- `service_slug`: `crm-zalantos`
 
 ## Estructura del repositorio
 

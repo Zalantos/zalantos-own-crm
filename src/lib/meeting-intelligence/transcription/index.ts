@@ -6,6 +6,7 @@
 // you paste the Python file, replace `compressAudio` / add `chunkAudio` here
 // keeping the exact flags and thresholds — the rest of the pipeline is stable.
 
+import { randomUUID } from "node:crypto";
 import { spawn } from "node:child_process";
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -13,6 +14,11 @@ import path from "node:path";
 import { toFile } from "groq-sdk";
 import { groqConfig } from "@/lib/meeting-intelligence/config";
 import { groqClient } from "@/lib/meeting-intelligence/groq-client";
+import {
+  CRM_OBSERVABILITY_SERVICE_NAME,
+  CRM_OBSERVABILITY_SERVICE_SLUG,
+  reportAiEventBestEffort,
+} from "@/lib/observability";
 
 // Groq's transcription endpoint rejects files above 25MB. We compress before
 // that ceiling and leave a margin.
@@ -67,27 +73,66 @@ export async function transcribeAudio(
   buffer: Buffer,
   filename: string,
 ): Promise<string> {
-  let payload = buffer;
-  let name = filename;
+  const executionId = `transcription:${randomUUID()}`;
+  const startedAt = new Date();
+  const model = groqConfig.transcriptionModel;
 
-  if (payload.byteLength > MAX_GROQ_BYTES) {
-    payload = await compressAudio(buffer, filename);
-    name = filename.replace(/\.[^.]+$/, "") + ".mp3";
+  try {
+    let payload = buffer;
+    let name = filename;
+
+    if (payload.byteLength > MAX_GROQ_BYTES) {
+      payload = await compressAudio(buffer, filename);
+      name = filename.replace(/\.[^.]+$/, "") + ".mp3";
+    }
+
+    if (payload.byteLength > MAX_GROQ_BYTES) {
+      // PORT POINT: chunking. The Python service splits long audio and
+      // concatenates transcripts. Wire that here.
+      throw new Error(
+        "El audio supera el límite de Groq incluso comprimido. Falta portar la lógica de chunking del servicio Python.",
+      );
+    }
+
+    const transcription = await groqClient().audio.transcriptions.create({
+      file: await toFile(payload, name),
+      model,
+      response_format: "json",
+    });
+
+    // Whisper no expone tokens en el SDK actual; reportamos la call sin usage.
+    reportAiEventBestEffort({
+      execution_id: executionId,
+      started_at: startedAt.toISOString(),
+      duration_ms: Date.now() - startedAt.getTime(),
+      status: "success",
+      workflow_name: "meeting-intelligence-transcription",
+      source_type: "backend",
+      service_name: CRM_OBSERVABILITY_SERVICE_NAME,
+      service_slug: CRM_OBSERVABILITY_SERVICE_SLUG,
+      flow_slug: "meeting-transcription",
+      usage_kind: "transcription",
+      calls: [{ provider: "groq", model }],
+      metadata: { filename, bytes: payload.byteLength },
+    });
+
+    return (transcription as { text: string }).text.trim();
+  } catch (error) {
+    reportAiEventBestEffort({
+      execution_id: executionId,
+      started_at: startedAt.toISOString(),
+      duration_ms: Date.now() - startedAt.getTime(),
+      status: "error",
+      error_message: error instanceof Error ? error.message : String(error),
+      workflow_name: "meeting-intelligence-transcription",
+      source_type: "backend",
+      service_name: CRM_OBSERVABILITY_SERVICE_NAME,
+      service_slug: CRM_OBSERVABILITY_SERVICE_SLUG,
+      flow_slug: "meeting-transcription",
+      usage_kind: "transcription",
+      calls: [{ provider: "groq", model }],
+      metadata: { filename },
+    });
+    throw error;
   }
-
-  if (payload.byteLength > MAX_GROQ_BYTES) {
-    // PORT POINT: chunking. The Python service splits long audio and
-    // concatenates transcripts. Wire that here.
-    throw new Error(
-      "El audio supera el límite de Groq incluso comprimido. Falta portar la lógica de chunking del servicio Python.",
-    );
-  }
-
-  const transcription = await groqClient().audio.transcriptions.create({
-    file: await toFile(payload, name),
-    model: groqConfig.transcriptionModel,
-    response_format: "json",
-  });
-
-  return (transcription as { text: string }).text.trim();
 }
