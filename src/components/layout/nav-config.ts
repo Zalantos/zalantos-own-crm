@@ -5,6 +5,7 @@ import {
   KanbanSquareIcon,
   LayoutDashboardIcon,
   ListOrderedIcon,
+  SendIcon,
   SettingsIcon,
   ShieldIcon,
   SlidersHorizontalIcon,
@@ -60,6 +61,11 @@ export const ADMIN_SECTION: NavSection = {
       href: "/admin/settings/stages",
       label: "Etapas del pipeline",
       icon: ListOrderedIcon,
+    },
+    {
+      href: "/admin/settings/telegram",
+      label: "Telegram",
+      icon: SendIcon,
     },
     {
       href: "/admin/settings/general",

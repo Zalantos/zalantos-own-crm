@@ -101,6 +101,8 @@ model Organization {
   timelineEvents         TimelineEvent[]
   entityContextSources   EntityContextSource[]
   entityContextProfiles  EntityContextProfile[]
+  telegramLinks          TelegramLink[]
+  telegramLinkCodes      TelegramLinkCode[]
 
   @@map("organizations")
 }
@@ -785,6 +787,43 @@ model AgentAttachment {
   @@index([organizationId])
   @@index([threadId])
   @@map("agent_attachments")
+}
+
+// Vincula un chat de Telegram con un usuario del CRM. La organización se deriva
+// del usuario. n8n resuelve tenant/usuario por telegramChatId (vía prismaSystem);
+// la UI admin lista/gestiona estos vínculos scopeados por org (forOrg).
+model TelegramLink {
+  id               String       @id @default(cuid())
+  organizationId   String
+  organization     Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  // String plano sin FK, igual que AgentChatThread.userId.
+  userId           String
+  telegramChatId   String       @unique
+  telegramUsername String?
+  // Thread persistente del copiloto para este chat; creado lazy en el 1er mensaje.
+  agentThreadId    String?
+  isActive         Boolean      @default(true)
+  createdAt        DateTime     @default(now())
+  updatedAt        DateTime     @updatedAt
+
+  @@index([organizationId])
+  @@map("telegram_links")
+}
+
+// Código efímero de un solo uso para el handshake de vinculación de Telegram.
+model TelegramLinkCode {
+  id             String       @id @default(cuid())
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  userId         String
+  // 6 chars alfanuméricos en mayúscula; TTL corto; single-use.
+  code           String       @unique
+  expiresAt      DateTime
+  used           Boolean      @default(false)
+  createdAt      DateTime     @default(now())
+
+  @@index([organizationId])
+  @@map("telegram_link_codes")
 }
 
 model TimelineEvent {
