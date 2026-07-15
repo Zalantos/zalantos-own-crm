@@ -10,6 +10,7 @@ import type { Prisma } from "@prisma/client";
 import { prismaSystem } from "@/lib/prisma";
 import { forOrg, getOrgSettings, type TenantClient } from "@/lib/tenant";
 import { agentConfig } from "@/lib/agent/config";
+import { appUrl } from "@/lib/meeting-intelligence/config";
 import { resolveAgentModel } from "@/lib/agent/model";
 import { buildAgentSystemPrompt } from "@/lib/agent/system-prompt";
 import { buildAgentTools } from "@/lib/agent/executor";
@@ -130,9 +131,22 @@ export async function POST(request: NextRequest) {
       stopWhen: stepCountIs(agentConfig.maxSteps),
     });
 
-    const output =
+    const baseText =
       result.text.trim() ||
       "No pude generar una respuesta. Reformulá tu consulta e intentá de nuevo.";
+
+    // Si el turno generó propuestas pendientes, anexar el deep link para
+    // aprobarlas desde la web (Telegram no puede mostrar el diff/aprobar inline).
+    const newProposals = await db.cRMChangeProposal.findMany({
+      where: {
+        chatThreadId: threadId,
+        source: "agent",
+        status: "pending",
+        createdAt: { gte: startedAt },
+      },
+      select: { items: { select: { label: true, type: true } } },
+    });
+    const output = baseText + buildProposalsFooter(newProposals);
 
     await db.agentChatMessage.create({
       data: {
@@ -167,6 +181,27 @@ export async function POST(request: NextRequest) {
     console.error("[telegram/message] error", error);
     return NextResponse.json({ output: ERROR_MESSAGE });
   }
+}
+
+// Construye el pie de mensaje con el resumen de propuestas creadas en el turno y
+// el link para aprobarlas. Devuelve "" si no hubo propuestas.
+function buildProposalsFooter(
+  proposals: { items: { label: string | null; type: string }[] }[],
+): string {
+  const labels = proposals
+    .flatMap((proposal) => proposal.items)
+    .map((item) => item.label ?? item.type);
+  if (labels.length === 0) return "";
+
+  const shown = labels.slice(0, 5).map((label) => `• ${label}`);
+  const rest =
+    labels.length > 5 ? `\n…y ${labels.length - 5} más` : "";
+  return (
+    `\n\n📝 Propuse ${labels.length} cambio(s) para tu revisión:\n` +
+    shown.join("\n") +
+    rest +
+    `\n\nAprobalos acá: ${appUrl()}/agent/proposals`
+  );
 }
 
 // Devuelve el thread persistente del chat, creándolo (lazy) en el primer mensaje

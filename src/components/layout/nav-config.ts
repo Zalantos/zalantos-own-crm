@@ -1,6 +1,7 @@
 import {
   Building2Icon,
   CheckSquareIcon,
+  ClipboardListIcon,
   HistoryIcon,
   KanbanSquareIcon,
   LayoutDashboardIcon,
@@ -42,6 +43,11 @@ export const CRM_SECTION: NavSection = {
     { href: "/opportunities", label: "Oportunidades", icon: KanbanSquareIcon },
     { href: "/activities", label: "Actividades", icon: CheckSquareIcon },
     { href: "/meetings", label: "Meeting Intelligence", icon: VideoIcon },
+    {
+      href: "/agent/proposals",
+      label: "Propuestas del agente",
+      icon: ClipboardListIcon,
+    },
     { href: "/audit-log", label: "Actividad", icon: HistoryIcon },
   ],
 };

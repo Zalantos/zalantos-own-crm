@@ -708,6 +708,13 @@ model CRMChangeItem {
   entityId       String?
   beforeValue    Json?
   afterValue     Json?
+  // Cadenas legibles calculadas al crear la propuesta (etiqueta + diff textual).
+  // Se persisten para poder renderizar el card de revisión desde la DB (p. ej. en
+  // la página /agent/proposals) con paridad con el chat. Null en propuestas
+  // creadas antes de esta columna.
+  label          String?
+  before         String?           @db.Text
+  after          String?           @db.Text
   confidence     Float
   explanation    String            @db.Text
   // Verbatim quote from the transcript/document/user message that justifies

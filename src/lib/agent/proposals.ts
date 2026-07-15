@@ -72,6 +72,10 @@ export async function createAgentProposal(
           explanation: item.explanation,
           evidence: item.evidence || null,
           duplicateOfId: item.duplicateOfId ?? null,
+          // Cadenas legibles para renderizar el card desde la DB (ver schema).
+          label: item.label,
+          before: item.before,
+          after: item.after,
           // Pre-approve only high-confidence items; the rest need a tick.
           ...approvalFromConfidence(item.confidence),
         })),
