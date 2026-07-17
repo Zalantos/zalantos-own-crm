@@ -57,7 +57,9 @@ No hay worker separado. Procesamiento asíncrono vía:
 
 ## Integraciones
 
-Ver `docs/architecture/integrations.md`.
+Gateway webhook saliente + canal Telegram entrante (n8n → `/api/telegram/*`).
+Ver `docs/architecture/integrations.md` y
+`docs/integrations/telegram-copiloto.md`.
 
 ## Auth
 

@@ -11,7 +11,8 @@
 | `(dashboard)/admin/` | Configuración por organización |
 | `(superadmin)/` | Gestión de tenants |
 | `login`, `invite`, `reset-password` | Auth y provisioning |
-| `api/` | Route handlers (agent, crons, auth, evidence) |
+| `api/` | Route handlers (agent, telegram, crons, auth, evidence) |
+| `admin/settings/telegram` | Vinculación de chats Telegram |
 
 ### `src/lib/`
 
@@ -24,10 +25,12 @@
 | `meeting-intelligence/` | Pipeline, extracción, transcripción, IA, R2 |
 | `entity-context/` | Enriquecimiento de fichas: sources, perfil IA, propuestas |
 | `agent/` | Copiloto: tools, executor, propuestas |
+| `telegram/` | Auth Bearer del canal n8n → CRM |
 | `integrations/` | Gateway webhook, plantillas email |
 | `workflows/` | Motor de workflows |
 | `crm/` | Políticas de propuestas, dedup de personas |
 | `crypto.ts` | Cifrado de secretos por org |
+| `observability/` | Reporte best-effort de costos IA |
 
 ## Flujo de datos
 
@@ -65,6 +68,23 @@ Propuestas en CRMChangeProposal (source=agent)
 
 El chat puede adjuntar documentos o texto manual; ambos se normalizan a
 `AgentAttachment.extractedText` y entran al prompt como contexto del thread.
+
+Tool `confirm_pending_proposal`: aplica o rechaza la propuesta `pending` más
+reciente del thread (`source=agent`). Límite
+`agentConfig.maxChatConfirmItems` (5); si hay más ítems, redirige a
+`/agent/proposals`.
+
+### Telegram ↔ Copiloto
+
+```txt
+Telegram → n8n → POST /api/telegram/context|message|link
+       ↓
+Resolver TelegramLink (prismaSystem) → forOrg + AgentChatThread
+       ↓
+Mismo executor del agente (sin streaming) → { output }
+```
+
+Detalle de contrato: `docs/integrations/telegram-copiloto.md`.
 
 ### Entity context enrichment
 
@@ -140,6 +160,7 @@ GAP: configuración de schedule en Railway no versionada en el repo.
 
 ## Deuda técnica
 
-- Sin tests automatizados.
+- Cobertura de tests mínima (solo `reporter.test.ts` / `test:observability`).
 - Participantes de meeting como JSON libre (sin FK a Person aún).
 - Billing no implementado.
+- Workflows n8n (gateway saliente y Telegram) no versionados en el repo.

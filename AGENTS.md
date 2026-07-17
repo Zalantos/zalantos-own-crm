@@ -25,7 +25,8 @@ Leer documentos adicionales solo cuando la tarea lo requiera:
 |-----------|---------------|
 | `docs/context/context-extended.md` | Lógica de negocio core, pipelines, agente, workflows |
 | `docs/architecture/decisions.md` | Cambios de arquitectura, dependencias, infra, auth, colas |
-| `docs/architecture/integrations.md` | APIs, webhooks, email, IA, R2, gateway |
+| `docs/architecture/integrations.md` | APIs, webhooks, email, IA, R2, gateway, Telegram |
+| `docs/integrations/telegram-copiloto.md` | Contrato n8n ↔ `/api/telegram/*` |
 | `docs/engineering/security-checklist.md` | Auth, permisos, datos personales, producción |
 | `docs/engineering/testing-strategy.md` | Lógica de negocio, integraciones, permisos |
 | `docs/operations/deployment.md` | Deploy, Railway, migraciones, env vars |
@@ -99,6 +100,8 @@ Leer documentos adicionales solo cuando la tarea lo requiera:
 - El gateway externo recibe webhooks con `x-webhook-secret`.
 - Dedupe vía `IntegrationDelivery.dedupeKey` por organización.
 - Secretos por org cifrados con `SETTINGS_ENCRYPTION_KEY`.
+- Canal Telegram entrante autentica con Bearer `INTEGRATION_GATEWAY_SECRET`
+  (ver `docs/integrations/telegram-copiloto.md`).
 
 ### Deploy
 

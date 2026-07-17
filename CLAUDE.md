@@ -5,8 +5,8 @@ Instrucciones específicas para Claude Code al trabajar en este repositorio.
 ## Resumen del proyecto
 
 CRM multi-tenant Next.js + Prisma + PostgreSQL para Zalantos. Incluye Meeting
-Intelligence (pipeline de evidencia → transcripción → propuestas CRM) y agente IA
-copiloto con herramientas de lectura/escritura del CRM.
+Intelligence (pipeline de evidencia → transcripción → propuestas CRM), agente IA
+copiloto con herramientas de lectura/escritura del CRM, y canal Telegram vía n8n.
 
 ## Comandos clave
 
@@ -83,6 +83,7 @@ actualizar los docs correspondientes en `docs/` y marcar el checklist del PR.
 | Auth | `src/lib/auth.ts`, `src/lib/auth.config.ts` |
 | Meeting pipeline | `src/lib/meeting-intelligence/pipeline.ts` |
 | Agente IA | `src/lib/agent/`, `src/app/api/agent/` |
+| Telegram | `src/lib/telegram/`, `src/app/api/telegram/` |
 | Integraciones | `src/lib/integrations/gateway.ts` |
 | Propuestas CRM | `src/lib/crm/proposal-policy.ts`, `src/lib/meeting-intelligence/apply.ts` |
 | RLS | `scripts/sql/setup-roles.sql`, migración `enable_row_level_security` |

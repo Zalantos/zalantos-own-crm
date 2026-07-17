@@ -28,7 +28,7 @@ sin depender de herramientas dispersas.
 | Auth | Auth.js v5 (NextAuth) con credenciales y JWT |
 | IA | Vercel AI SDK (Groq, Anthropic, OpenAI) |
 | Almacenamiento | Cloudflare R2 (evidencia de reuniones y adjuntos del agente) |
-| Integraciones | Gateway webhook externo (n8n u otro) |
+| Integraciones | Gateway webhook externo (n8n u otro) + Telegram copiloto |
 | Observabilidad IA | Zalantos Observability (`service_name: backend`) |
 
 ## Setup local
@@ -117,6 +117,7 @@ templates/          # Plantillas de trabajo
 | [docs/context/data_model_context.md](./docs/context/data_model_context.md) | Modelo de datos |
 | [docs/architecture/architecture.md](./docs/architecture/architecture.md) | Arquitectura |
 | [docs/architecture/integrations.md](./docs/architecture/integrations.md) | Integraciones externas |
+| [docs/integrations/telegram-copiloto.md](./docs/integrations/telegram-copiloto.md) | Contrato Telegram ↔ n8n |
 | [docs/engineering/](./docs/engineering/) | Estándares, seguridad, testing |
 | [docs/operations/](./docs/operations/) | Deploy, variables, runbook |
 
@@ -124,8 +125,9 @@ templates/          # Plantillas de trabajo
 
 - **Versión**: 0.1.0 (desarrollo activo)
 - **Funcional**: CRM core, multi-tenancy, Meeting Intelligence, agente IA,
-  workflows, gateway de integraciones, RLS opcional.
-- **Sin suite de tests automatizados** (GAP documentado).
+  canal Telegram (vía n8n), workflows, gateway de integraciones, RLS opcional.
+- **Tests**: cobertura mínima (`npm run test:observability`); sin suite amplia
+  (GAP documentado).
 
 ## Gaps conocidos
 

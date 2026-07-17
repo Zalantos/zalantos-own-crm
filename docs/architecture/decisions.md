@@ -174,6 +174,38 @@ otras fuentes externas.
 
 ---
 
+## DEC-008 — Telegram como canal del copiloto vía n8n
+
+**Fecha:** 2026-07-15 (`add_telegram_link`)  
+**Estado:** active
+
+**Contexto:** Usuarios comerciales necesitan consultar/actualizar el CRM desde
+Telegram sin sesión web. No se quiere acoplar el Bot API dentro del monolito.
+
+**Decisión:**
+
+1. n8n recibe Telegram (texto/voz) y llama a `/api/telegram/*` con Bearer
+   `INTEGRATION_GATEWAY_SECRET`.
+2. Vínculo permanente `TelegramLink` (`telegramChatId` ↔ `userId` + org) y
+   códigos efímeros `TelegramLinkCode`.
+3. Memoria conversacional en `AgentChatThread` (no buffer de n8n).
+4. Confirmación de propuestas pequeñas por tool `confirm_pending_proposal`;
+   propuestas grandes → revisión web.
+
+**Alternativas consideradas:**
+
+- Bot Telegram nativo dentro de Next.js.
+- Memoria conversacional solo en n8n.
+- Aprobar cualquier tamaño de propuesta por chat.
+
+**Consecuencias:**
+
+- Contrato documentado en `docs/integrations/telegram-copiloto.md`.
+- Workflow n8n queda fuera del repo (GAP operativo).
+- Misma secret que el gateway saliente autentica el canal entrante.
+
+---
+
 ## GAP: decisiones por documentar
 
 - Elección de Groq como proveedor por defecto de transcripción y razonamiento.

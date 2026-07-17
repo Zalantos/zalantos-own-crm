@@ -8,6 +8,7 @@ import { buildAgendaTools } from "./tools/agenda";
 import { buildMeetingTools } from "./tools/meetings";
 import { buildWriteSafeTools } from "./tools/write-safe";
 import { buildProposalTools } from "./tools/write-proposal";
+import { buildConfirmProposalTools } from "./tools/confirm-proposal";
 import { buildAttachmentTools } from "./tools/attachments";
 import { buildContextSourceTools } from "./tools/context-sources";
 
@@ -56,6 +57,8 @@ function withErrorCapture(name: string, toolDefinition: Tool): Tool {
 // Builds the tool set for one agent turn. Autonomy is enforced here by
 // construction: mutation tools live in write-proposal.ts and only ever create
 // CRMChangeProposal rows — there is no code path from them to a direct write.
+// La excepción es confirm_pending_proposal, que aplica una propuesta que el
+// usuario ya aprobó explícitamente en la conversación (no genera cambios nuevos).
 export function buildAgentTools(ctx: AgentToolContext): ToolSet {
   const tools: ToolSet = {
     ...buildReadTools(ctx),
@@ -65,6 +68,7 @@ export function buildAgentTools(ctx: AgentToolContext): ToolSet {
     ...buildMeetingTools(ctx),
     ...buildWriteSafeTools(ctx),
     ...buildProposalTools(ctx),
+    ...buildConfirmProposalTools(ctx),
     ...buildAttachmentTools(ctx),
     ...buildContextSourceTools(ctx),
   };

@@ -39,6 +39,7 @@
 
 - [ ] Crons requieren `CRON_SECRET` ≥ 16 chars, no placeholders.
 - [ ] `/api/meetings/process` protegido con mismo secret.
+- [ ] `/api/telegram/*` requiere Bearer `INTEGRATION_GATEWAY_SECRET` (timing-safe).
 - [ ] Validar input con Zod en todas las rutas que aceptan body.
 
 ## Logs
@@ -68,6 +69,7 @@
 - [ ] `ADMIN_PASSWORD` fuerte solo en seed de dev.
 - [ ] HTTPS en URL pública (`APP_URL`, `AUTH_URL`).
 - [ ] Crons con secret único por entorno.
+- [ ] Si Telegram está activo: `INTEGRATION_GATEWAY_SECRET` rotado y solo en n8n + server.
 
 ## Checklist de deploy
 

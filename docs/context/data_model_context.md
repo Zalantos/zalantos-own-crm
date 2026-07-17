@@ -59,6 +59,16 @@ Fuente de verdad: `prisma/schema.prisma`.
 | `AgentChatMessage` | `agent_chat_messages` | Parts JSON (AI SDK) |
 | `AgentAttachment` | `agent_attachments` | Adjuntos en R2 |
 
+### Telegram (canal copiloto)
+
+| Modelo | Tabla | Notas |
+|--------|-------|-------|
+| `TelegramLink` | `telegram_links` | `telegramChatId` único → `userId` + `organizationId`; `agentThreadId` lazy |
+| `TelegramLinkCode` | `telegram_link_codes` | Código de 6 chars, TTL corto, un solo uso |
+
+Ambas con RLS `tenant_isolation`. Resolución de vínculo en APIs Telegram usa
+`prismaSystem` (sin sesión web). Soft-delete: `TelegramLink.isActive=false`.
+
 ### Enriquecimiento de contexto
 
 | Modelo | Tabla | Notas |
@@ -121,6 +131,11 @@ Estados: pending → approved/rejected → applied/failed/reverted.
 
 `revertData` JSON permite deshacer cambios aplicados.
 
+Campos de presentación (migración `change_item_display_strings`): `label`,
+`before`, `after` — cadenas legibles persistidas al crear la propuesta para
+renderizar cards de revisión (`/agent/proposals`) con paridad al chat. Nullable
+en propuestas anteriores a la migración.
+
 ### Entity context enrichment
 
 - `EntityContextSource.sourceType`: `upload` | `linkedin` | `url` | `manual` |
@@ -169,6 +184,8 @@ Ver `@@index` en `schema.prisma` — la mayoría compuestos con `organizationId`
 | `add_opportunity_traceability` | Trazabilidad de oportunidades |
 | `entity_context_enrichment` | Sources + perfil IA + campos proposal enrichment |
 | `core_creation_traceability` | Trazabilidad de creación CRM core |
+| `add_telegram_link` | `telegram_links` + `telegram_link_codes` |
+| `change_item_display_strings` | `label` / `before` / `after` en `crm_change_items` |
 
 ## Qué no debe romperse
 
@@ -177,3 +194,4 @@ Ver `@@index` en `schema.prisma` — la mayoría compuestos con `organizationId`
 - Flujo de estados de `CRMChangeProposal` / `CRMChangeItem`.
 - Tokens de invitación/reset solo como hash en DB.
 - Separación system vs tenant en Prisma.
+- Unicidad de `TelegramLink.telegramChatId` y resolución tenant vía vínculo.

@@ -131,6 +131,15 @@ curl -X POST "$APP_URL/api/cron/process-entity-context" \
 - Revisar logs n8n.
 - GAP: reintento automático no implementado.
 
+### Telegram / n8n no responde o 401
+
+1. Verificar Bearer `INTEGRATION_GATEWAY_SECRET` en los 3 HTTP Request de n8n.
+2. Probar `POST /api/telegram/context` con `chat_id` conocido.
+3. Si `{}`: el chat no está vinculado — regenerar código en
+   `/admin/settings/telegram`.
+4. Si 401: secret incorrecto o ausente.
+5. Contrato: `docs/integrations/telegram-copiloto.md`.
+
 ## Scripts útiles
 
 | Script | Uso |

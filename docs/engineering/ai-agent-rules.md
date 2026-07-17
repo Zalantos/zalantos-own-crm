@@ -23,7 +23,8 @@ Condicional:
 
 - `context-extended.md` → pipelines, agente, workflows
 - `decisions.md` → arquitectura, infra, auth
-- `integrations.md` → APIs, IA, R2, gateway
+- `integrations.md` → APIs, IA, R2, gateway, Telegram
+- `docs/integrations/telegram-copiloto.md` → contrato n8n ↔ Telegram
 - `security-checklist.md` → auth, PII, producción
 - `testing-strategy.md` → lógica de negocio
 - `operations/*` → deploy, env, runbook

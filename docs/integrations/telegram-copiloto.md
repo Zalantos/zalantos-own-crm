@@ -76,8 +76,23 @@ Un usuario admin genera su código en **Configuración → Telegram**
 Lo envía al bot con `/vincular <código>`. Desde ahí la sección lista los chats
 vinculados y permite desvincularlos (soft-delete: `isActive = false`).
 
+## Confirmación de propuestas por chat
+
+Sin tarjeta interactiva en Telegram, el agente puede usar la tool
+`confirm_pending_proposal` (ver `src/lib/agent/tools/confirm-proposal.ts`)
+cuando el usuario aprueba o rechaza explícitamente una propuesta recién
+generada. Límite: `agentConfig.maxChatConfirmItems` (5). Si hay más cambios,
+se redirige a `/agent/proposals` en la web.
+
 ## Variables de entorno
 
 - `INTEGRATION_GATEWAY_SECRET` (requerida) — Bearer compartido con n8n.
 - `NEXT_PUBLIC_TELEGRAM_BOT_USERNAME` (opcional) — handle del bot para mostrarlo
   en la UI de vinculación. Si falta, se usa un texto genérico.
+
+## Referencias cruzadas
+
+- Resumen en `docs/architecture/integrations.md`.
+- Modelo: `TelegramLink` / `TelegramLinkCode` en
+  `docs/context/data_model_context.md`.
+- Decisión: DEC-008 en `docs/architecture/decisions.md`.

@@ -9,7 +9,8 @@
 | Anthropic | Modelo alternativo (agente/reuniones) | `ANTHROPIC_API_KEY` |
 | OpenAI | Modelo alternativo (agente) | `OPENAI_API_KEY` |
 | Cloudflare R2 | Evidencia y adjuntos | `R2_*` |
-| Gateway webhook | Email, Slack, automaciones | `INTEGRATION_GATEWAY_*` |
+| Gateway webhook | Email, Slack, automaciones (saliente) | `INTEGRATION_GATEWAY_*` |
+| Telegram (vía n8n) | Canal entrante al copiloto IA | `INTEGRATION_GATEWAY_SECRET`, `NEXT_PUBLIC_TELEGRAM_BOT_USERNAME` |
 | Zalantos Observability | Reporte best-effort de costos/tokens de IA | `OBSERVABILITY_BASE_URL`, `OBSERVABILITY_API_KEY` |
 
 ## Gateway de integraciones
@@ -48,10 +49,31 @@ Prompts en `src/lib/meeting-intelligence/prompts/*.md`.
 |--------|-----|
 | Modelo | `AGENT_MODEL` (formato `proveedor/modelo`) |
 | Límite de pasos | Hardcoded: 8 (`src/lib/agent/config.ts`) |
+| Confirmación por chat | Máx. 5 ítems (`maxChatConfirmItems`) |
 
-Tools: lectura CRM, propuestas de escritura, adjuntos.
+Tools: lectura CRM, propuestas de escritura, adjuntos, y
+`confirm_pending_proposal` (aplicar/rechazar la propuesta pendiente del thread;
+pensado para Telegram, donde no hay UI de revisión).
 
-API: `POST /api/agent/chat` (streaming).
+API web: `POST /api/agent/chat` (streaming).
+
+## Telegram ↔ Copiloto (webhooks entrantes)
+
+Detalle completo: `docs/integrations/telegram-copiloto.md`.
+
+n8n actúa de cartero (Telegram Trigger → HTTP al CRM). Endpoints:
+
+| Ruta | Propósito |
+|------|-----------|
+| `POST /api/telegram/link` | Handshake `/vincular <código>` |
+| `POST /api/telegram/context` | Gate: ¿chat vinculado? |
+| `POST /api/telegram/message` | Turno del copiloto (sin streaming) |
+
+Auth: `Authorization: Bearer <INTEGRATION_GATEWAY_SECRET>` (timing-safe).
+Identidad: `telegram_chat_id` → `TelegramLink` → `User` / `organizationId`.
+Memoria: `AgentChatThread` ligado a `telegram_links.agentThreadId`.
+
+UI admin: `/admin/settings/telegram` (código efímero + lista de vínculos).
 
 ## Observability — costos de IA
 
@@ -94,6 +116,7 @@ Endpoints internos que un scheduler debe llamar:
 | Ruta | Propósito |
 |------|-----------|
 | `POST /api/cron/process-evidence` | Catch-up pipeline meetings |
+| `POST /api/cron/process-entity-context` | Catch-up enriquecimiento de fichas |
 | `POST /api/cron/check-overdue` | Alertas de vencimiento |
 | `POST /api/cron/send-task-reminders` | Recordatorios vía gateway |
 
@@ -103,7 +126,11 @@ Pipeline de meeting también: `POST /api/meetings/process`
 
 ## Webhooks entrantes
 
-GAP: no hay webhooks entrantes públicos documentados (ej. Recall, Google Meet).
+Documentados hoy:
+
+- Canal Telegram vía n8n (`/api/telegram/*`) — ver sección arriba.
+
+GAP: webhooks de calendario/videollamada (Recall, Google Meet) no implementados.
 El campo `Meeting.sourceType` anticipa orígenes futuros.
 
 ## Entornos
@@ -123,6 +150,9 @@ El campo `Meeting.sourceType` anticipa orígenes futuros.
 
 ## Gaps
 
-- GAP: documentación del workflow n8n del gateway.
+- GAP: workflow n8n del gateway saliente no versionado en el repo (solo
+  contrato HTTP).
+- GAP: workflow n8n de Telegram no versionado (contrato en
+  `docs/integrations/telegram-copiloto.md`).
 - GAP: límites de rate y costos Groq en producción.
 - GAP: integraciones de calendario/videollamada (Recall, Meet).

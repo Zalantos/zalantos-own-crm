@@ -15,6 +15,7 @@ Nunca incluir secretos reales en este documento. Ver `.env.example`.
 | `CRON_SECRET` | App crons | Prod | Sí* | random ≥16 chars | Proteger endpoints cron | `src/app/api/cron/*` |
 | `ADMIN_EMAIL` | Seed | Dev | No** | `admin@example.com` | Usuario admin seed | `prisma/seed.ts` |
 | `ADMIN_PASSWORD` | Seed | Dev | No** | strong password | Password admin seed | `prisma/seed.ts` |
+| `ALLOW_SEED` | Seed | Prod | No | `true` | Opt-in para seed en entorno desplegado (`RAILWAY_*` / production) | `prisma/seed.ts` |
 | `GROQ_API_KEY` | Groq | Todos | Sí*** | `gsk_...` | Transcripción + LLM | `src/lib/meeting-intelligence/` |
 | `GROQ_TRANSCRIPTION_MODEL` | Groq | Todos | No | `whisper-large-v3` | Modelo STT | `src/lib/meeting-intelligence/config.ts` |
 | `GROQ_REASONING_MODEL` | Groq | Todos | No | `llama-3.3-70b-versatile` | Modelo razonamiento | `src/lib/meeting-intelligence/config.ts` |
@@ -23,8 +24,9 @@ Nunca incluir secretos reales en este documento. Ver `.env.example`.
 | `R2_SECRET_ACCESS_KEY` | Cloudflare R2 | Prod | Sí*** | secret | Storage evidencia | idem |
 | `R2_BUCKET` | Cloudflare R2 | Prod | Sí*** | `crm-zalantos-evidence` | Nombre bucket | idem |
 | `APP_URL` | App | Todos | Sí | `https://app.example.com` | URLs internas/callbacks | varios |
-| `INTEGRATION_GATEWAY_URL` | Webhook | Prod | No | `https://host/webhook` | Despacho integraciones | `src/lib/integrations/gateway.ts` |
-| `INTEGRATION_GATEWAY_SECRET` | Webhook | Prod | No | random string | Auth header gateway | idem |
+| `INTEGRATION_GATEWAY_URL` | Webhook | Prod | No | `https://host/webhook` | Despacho integraciones saliente | `src/lib/integrations/gateway.ts` |
+| `INTEGRATION_GATEWAY_SECRET` | Webhook / Telegram | Prod | Cond.**** | random string | Auth saliente (`x-webhook-secret`) y Bearer entrante Telegram | gateway + `src/lib/telegram/auth.ts` |
+| `NEXT_PUBLIC_TELEGRAM_BOT_USERNAME` | Telegram UI | Todos | No | `mi_bot` | Handle del bot (sin `@`) en UI de vinculación | `admin/settings/telegram` |
 | `SETTINGS_ENCRYPTION_KEY` | App crypto | Prod | Cond. | 32 bytes base64/hex | Cifrar secretos por org | `src/lib/crypto.ts` |
 | `AGENT_MODEL` | IA SDK | Todos | No | `groq/llama-3.3-70b-versatile` | Modelo agente | `src/lib/agent/config.ts` |
 | `MEETING_REASONING_MODEL` | IA SDK | Todos | No | `groq/llama-3.3-70b-versatile` | Modelo análisis reuniones | `src/lib/meeting-intelligence/ai/groq.ts` |
@@ -37,7 +39,8 @@ Nunca incluir secretos reales en este documento. Ver `.env.example`.
 
 \* Requerida si se usan crons en producción.  
 \** Requeridas solo para `npm run prisma:seed`.  
-\*** Requeridas para funcionalidad completa de meetings/agent uploads.
+\*** Requeridas para funcionalidad completa de meetings/agent uploads.  
+\**** Requerida si se usa gateway saliente y/o canal Telegram entrante.
 
 ## Agrupación por servicio
 
@@ -59,13 +62,14 @@ Nunca incluir secretos reales en este documento. Ver `.env.example`.
 
 `OBSERVABILITY_BASE_URL`, `OBSERVABILITY_API_KEY`
 
-### Integraciones
+### Integraciones + Telegram
 
-`INTEGRATION_GATEWAY_URL`, `INTEGRATION_GATEWAY_SECRET`, `SETTINGS_ENCRYPTION_KEY`
+`INTEGRATION_GATEWAY_URL`, `INTEGRATION_GATEWAY_SECRET`,
+`NEXT_PUBLIC_TELEGRAM_BOT_USERNAME`, `SETTINGS_ENCRYPTION_KEY`
 
 ### Operaciones
 
-`CRON_SECRET`, `ADMIN_EMAIL`, `ADMIN_PASSWORD`
+`CRON_SECRET`, `ADMIN_EMAIL`, `ADMIN_PASSWORD`, `ALLOW_SEED`
 
 ## Gaps
 

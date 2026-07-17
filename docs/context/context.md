@@ -17,6 +17,8 @@ personas, oportunidades, actividades, notas y reuniones. Incluye:
   del CRM y propuestas de cambio. Incluye consultas agregadas de pipeline,
   timeline de registros, agenda del usuario y acceso a reuniones y sus
   propuestas pendientes.
+- **Telegram ↔ copiloto**: canal entrante vía n8n (`/api/telegram/*`) con
+  vinculación `telegram_chat_id` ↔ usuario y thread persistente.
 - **Workflows**: automatización por eventos de entidades.
 - **Gateway de integraciones**: despacho de eventos a un webhook externo (email,
   Slack, etc. vía n8n u otro).
@@ -46,10 +48,12 @@ propuestos por IA.
 2. **Reunión con IA**: crear meeting → subir evidencia → pipeline automático →
    revisar propuesta → aplicar cambios al CRM.
 3. **Agente**: abrir chat en contexto de entidad → consultar/actualizar CRM →
-   revisar propuestas del agente.
-4. **Workflows**: evento en entidad → evaluar condiciones → ejecutar acciones
+   revisar propuestas del agente (web) o confirmar/rechazar por chat (Telegram).
+4. **Telegram**: vincular chat con código en Configuración → conversar con el
+   copiloto desde el bot (n8n como cartero).
+5. **Workflows**: evento en entidad → evaluar condiciones → ejecutar acciones
    (ej. crear actividad).
-5. **Integraciones**: evento de negocio → `IntegrationDelivery` → webhook externo.
+6. **Integraciones**: evento de negocio → `IntegrationDelivery` → webhook externo.
 
 ## Stack
 

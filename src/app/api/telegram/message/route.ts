@@ -119,6 +119,7 @@ export async function POST(request: NextRequest) {
         orgName,
         pageContext: null,
         attachments: [],
+        surface: "telegram",
       }),
       messages: await convertToModelMessages([...history, userMessage]),
       tools: buildAgentTools({
@@ -137,16 +138,15 @@ export async function POST(request: NextRequest) {
 
     // Si el turno generó propuestas pendientes, anexar el deep link para
     // aprobarlas desde la web (Telegram no puede mostrar el diff/aprobar inline).
-    const newProposals = await db.cRMChangeProposal.findMany({
+    const newProposalCount = await db.cRMChangeProposal.count({
       where: {
         chatThreadId: threadId,
         source: "agent",
         status: "pending",
         createdAt: { gte: startedAt },
       },
-      select: { items: { select: { label: true, type: true } } },
     });
-    const output = baseText + buildProposalsFooter(newProposals);
+    const output = baseText + buildProposalsFooter(newProposalCount);
 
     await db.agentChatMessage.create({
       data: {
@@ -183,25 +183,12 @@ export async function POST(request: NextRequest) {
   }
 }
 
-// Construye el pie de mensaje con el resumen de propuestas creadas en el turno y
-// el link para aprobarlas. Devuelve "" si no hubo propuestas.
-function buildProposalsFooter(
-  proposals: { items: { label: string | null; type: string }[] }[],
-): string {
-  const labels = proposals
-    .flatMap((proposal) => proposal.items)
-    .map((item) => item.label ?? item.type);
-  if (labels.length === 0) return "";
-
-  const shown = labels.slice(0, 5).map((label) => `• ${label}`);
-  const rest =
-    labels.length > 5 ? `\n…y ${labels.length - 5} más` : "";
-  return (
-    `\n\n📝 Propuse ${labels.length} cambio(s) para tu revisión:\n` +
-    shown.join("\n") +
-    rest +
-    `\n\nAprobalos acá: ${appUrl()}/agent/proposals`
-  );
+// Escape-hatch a la web. El agente ya resume y pide confirmación en su propio
+// texto (surface=telegram); acá solo agregamos el link para revisar el diff /
+// aprobar desde la web. Devuelve "" si el turno no creó propuestas.
+function buildProposalsFooter(newProposalCount: number): string {
+  if (newProposalCount === 0) return "";
+  return `\n\n🔎 Ver detalle o aprobar en la web: ${appUrl()}/agent/proposals`;
 }
 
 // Devuelve el thread persistente del chat, creándolo (lazy) en el primer mensaje

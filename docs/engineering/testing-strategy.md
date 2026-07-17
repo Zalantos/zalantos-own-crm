@@ -2,8 +2,12 @@
 
 ## Estado actual
 
-**GAP:** El repositorio no contiene tests automatizados (`*.test.ts`, `*.spec.ts`
-ni configuración Jest/Vitest).
+Hay un test puntual con el runner nativo de Node:
+
+- `src/lib/observability/reporter.test.ts` → `npm run test:observability`
+
+**GAP:** No hay suite amplia ni configuración Jest/Vitest/Playwright para el
+resto del dominio (tenant, propuestas, agent, Telegram).
 
 ## Qué debe testearse siempre (cuando exista suite)
 
@@ -24,6 +28,7 @@ ni configuración Jest/Vitest).
 - Upload de evidencia y pipeline de meeting (con Groq/R2 configurados).
 - Revisión y aplicación de propuestas.
 - Chat del agente con propuesta de cambio.
+- Telegram: vincular código → mensaje → respuesta; confirmar propuesta pequeña.
 - Crons con `curl` + `CRON_SECRET`.
 
 ## Cómo ejecutar tests (futuro)
@@ -42,6 +47,7 @@ GAP: definir framework (recomendado: Vitest para unit, Playwright para E2E).
 |--------|-----|
 | `npm run lint` | ESLint |
 | `npm run format:check` | Prettier |
+| `npm run test:observability` | Test del payload Observability |
 | `npm run seed:check` | Verificar datos de seed |
 | `npx tsx scripts/check-rls-coverage.ts` | Verificar cobertura RLS |
 
