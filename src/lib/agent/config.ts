@@ -2,11 +2,13 @@
 // call time so the app boots even when the agent isn't configured yet.
 
 export const agentConfig = {
-  // "provider/model", e.g. groq/llama-3.3-70b-versatile | anthropic/claude-sonnet-4-5 | openai/gpt-4o
+  // "provider/model", e.g. groq/openai/gpt-oss-120b | anthropic/claude-sonnet-4-5 | openai/gpt-4o
+  // Note: Groq's gpt-oss ids already contain "/", so the full spec has two
+  // slashes (groq/openai/gpt-oss-120b). resolveModel splits on the first "/".
   get modelSpec() {
     return (
       process.env.AGENT_MODEL ||
-      `groq/${process.env.GROQ_REASONING_MODEL || "llama-3.3-70b-versatile"}`
+      `groq/${process.env.GROQ_REASONING_MODEL || "openai/gpt-oss-120b"}`
     );
   },
   // Hard stop for the tool-calling loop of a single turn.

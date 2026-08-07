@@ -18,7 +18,7 @@ Nunca incluir secretos reales en este documento. Ver `.env.example`.
 | `ALLOW_SEED` | Seed | Prod | No | `true` | Opt-in para seed en entorno desplegado (`RAILWAY_*` / production) | `prisma/seed.ts` |
 | `GROQ_API_KEY` | Groq | Todos | Sí*** | `gsk_...` | Transcripción + LLM | `src/lib/meeting-intelligence/` |
 | `GROQ_TRANSCRIPTION_MODEL` | Groq | Todos | No | `whisper-large-v3` | Modelo STT | `src/lib/meeting-intelligence/config.ts` |
-| `GROQ_REASONING_MODEL` | Groq | Todos | No | `llama-3.3-70b-versatile` | Modelo razonamiento | `src/lib/meeting-intelligence/config.ts` |
+| `GROQ_REASONING_MODEL` | Groq | Todos | No | `openai/gpt-oss-120b` | Modelo razonamiento (id Groq; puede traer `/`) | `src/lib/meeting-intelligence/config.ts` |
 | `R2_ACCOUNT_ID` | Cloudflare R2 | Prod | Sí*** | account id | Storage evidencia | `src/lib/meeting-intelligence/storage/r2.ts` |
 | `R2_ACCESS_KEY_ID` | Cloudflare R2 | Prod | Sí*** | key id | Storage evidencia | idem |
 | `R2_SECRET_ACCESS_KEY` | Cloudflare R2 | Prod | Sí*** | secret | Storage evidencia | idem |
@@ -28,9 +28,9 @@ Nunca incluir secretos reales en este documento. Ver `.env.example`.
 | `INTEGRATION_GATEWAY_SECRET` | Webhook / Telegram | Prod | Cond.**** | random string | Auth saliente (`x-webhook-secret`) y Bearer entrante Telegram | gateway + `src/lib/telegram/auth.ts` |
 | `NEXT_PUBLIC_TELEGRAM_BOT_USERNAME` | Telegram UI | Todos | No | `mi_bot` | Handle del bot (sin `@`) en UI de vinculación | `admin/settings/telegram` |
 | `SETTINGS_ENCRYPTION_KEY` | App crypto | Prod | Cond. | 32 bytes base64/hex | Cifrar secretos por org | `src/lib/crypto.ts` |
-| `AGENT_MODEL` | IA SDK | Todos | No | `groq/llama-3.3-70b-versatile` | Modelo agente | `src/lib/agent/config.ts` |
-| `MEETING_REASONING_MODEL` | IA SDK | Todos | No | `groq/llama-3.3-70b-versatile` | Modelo análisis reuniones | `src/lib/meeting-intelligence/ai/groq.ts` |
-| `ENTITY_CONTEXT_MODEL` | IA SDK | Todos | No | `groq/llama-3.3-70b-versatile` | Modelo enriquecimiento de fichas (fallback: MEETING_REASONING_MODEL) | `src/lib/entity-context/analyze.ts` |
+| `AGENT_MODEL` | IA SDK | Todos | No | `groq/openai/gpt-oss-120b` | Modelo agente (`proveedor/` + id; 1ª `/` separa) | `src/lib/agent/config.ts` |
+| `MEETING_REASONING_MODEL` | IA SDK | Todos | No | `groq/openai/gpt-oss-120b` | Modelo análisis reuniones | `src/lib/meeting-intelligence/ai/groq.ts` |
+| `ENTITY_CONTEXT_MODEL` | IA SDK | Todos | No | `groq/openai/gpt-oss-120b` | Modelo enriquecimiento de fichas (fallback: MEETING_REASONING_MODEL) | `src/lib/entity-context/analyze.ts` |
 | `ANTHROPIC_API_KEY` | Anthropic | Todos | No | `sk-ant-...` | Modelo alternativo | `src/lib/agent/config.ts` |
 | `OPENAI_API_KEY` | OpenAI | Todos | No | `sk-...` | Modelo alternativo | `src/lib/agent/config.ts` |
 | `OBSERVABILITY_BASE_URL` | Observability | Todos | No | `https://observ.zalantos.com` | Base URL ingesta costos IA | `src/lib/observability/reporter.ts` |

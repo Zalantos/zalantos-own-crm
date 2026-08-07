@@ -8,6 +8,8 @@ import { agentConfig } from "./config";
 // reads its API key from the environment at call time so a missing key only
 // fails when that provider is actually selected.
 export function resolveModel(spec: string): LanguageModel {
+  // First "/" separates provider from model id. Model ids may themselves
+  // contain "/" (e.g. groq/openai/gpt-oss-120b → provider=groq, id=openai/gpt-oss-120b).
   const separator = spec.indexOf("/");
   if (separator <= 0) {
     throw new Error(

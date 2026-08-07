@@ -617,7 +617,7 @@ model CRMChangeProposal {
   contextSourceId String?
   confidence      Float
   status          ProposalStatus @default(pending)
-  // Model that produced the proposal, for audit (e.g. groq/llama-3.3-70b-versatile).
+  // Model that produced the proposal, for audit (e.g. groq/openai/gpt-oss-120b).
   model           String?
   rawModelOutput  Json?
   reviewedBy      String?

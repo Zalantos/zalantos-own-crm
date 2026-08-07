@@ -16,7 +16,7 @@ describe("validateAiEvent", () => {
       calls: [
         {
           provider: "groq",
-          model: "llama-3.3-70b-versatile",
+          model: "openai/gpt-oss-120b",
           promptTokens: 1200,
           cachedTokens: 400,
           completionTokens: 150,

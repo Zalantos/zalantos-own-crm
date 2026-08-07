@@ -18,7 +18,9 @@ export const groqConfig = {
     return process.env.GROQ_TRANSCRIPTION_MODEL || "whisper-large-v3";
   },
   get reasoningModel() {
-    return process.env.GROQ_REASONING_MODEL || "llama-3.3-70b-versatile";
+    // Groq model id includes a slash (openai/gpt-oss-120b). Callers that build
+    // AI SDK specs must prefix with "groq/" → "groq/openai/gpt-oss-120b".
+    return process.env.GROQ_REASONING_MODEL || "openai/gpt-oss-120b";
   },
 };
 
