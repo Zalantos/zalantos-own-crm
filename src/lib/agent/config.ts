@@ -2,14 +2,11 @@
 // call time so the app boots even when the agent isn't configured yet.
 
 export const agentConfig = {
-  // "provider/model", e.g. groq/openai/gpt-oss-120b | anthropic/claude-sonnet-4-5 | openai/gpt-4o
-  // Note: Groq's gpt-oss ids already contain "/", so the full spec has two
-  // slashes (groq/openai/gpt-oss-120b). resolveModel splits on the first "/".
+  // "provider/model". Default: OpenAI gpt-6-luna (Responses API).
+  // Overrides may still be groq | anthropic | openai. Groq ids can contain "/",
+  // so groq/openai/gpt-oss-120b splits on the first "/" in resolveModel.
   get modelSpec() {
-    return (
-      process.env.AGENT_MODEL ||
-      `groq/${process.env.GROQ_REASONING_MODEL || "openai/gpt-oss-120b"}`
-    );
+    return process.env.AGENT_MODEL || "openai/gpt-6-luna";
   },
   // Hard stop for the tool-calling loop of a single turn.
   maxSteps: 8,

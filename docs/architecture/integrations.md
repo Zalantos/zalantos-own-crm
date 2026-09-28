@@ -5,9 +5,9 @@
 | Servicio | Uso | Credenciales |
 |----------|-----|--------------|
 | PostgreSQL | Base de datos principal | `DATABASE_URL`, `TENANT_DATABASE_URL` |
-| Groq | Transcripción (Whisper) y razonamiento LLM | `GROQ_API_KEY` |
+| Groq | Transcripción (Whisper) y razonamiento de reuniones/fichas | `GROQ_API_KEY` |
 | Anthropic | Modelo alternativo (agente/reuniones) | `ANTHROPIC_API_KEY` |
-| OpenAI | Modelo alternativo (agente) | `OPENAI_API_KEY` |
+| OpenAI | Agente copiloto (`gpt-6-luna` por defecto) | `OPENAI_API_KEY` |
 | Cloudflare R2 | Evidencia y adjuntos | `R2_*` |
 | Gateway webhook | Email, Slack, automaciones (saliente) | `INTEGRATION_GATEWAY_*` |
 | Telegram (vía n8n) | Canal entrante al copiloto IA | `INTEGRATION_GATEWAY_SECRET`, `NEXT_PUBLIC_TELEGRAM_BOT_USERNAME` |
@@ -47,7 +47,7 @@ Prompts en `src/lib/meeting-intelligence/prompts/*.md`.
 
 | Config | Env |
 |--------|-----|
-| Modelo | `AGENT_MODEL` (formato `proveedor/modelo`) |
+| Modelo | `AGENT_MODEL` (formato `proveedor/modelo`). Default: `openai/gpt-6-luna` |
 | Límite de pasos | Hardcoded: 8 (`src/lib/agent/config.ts`) |
 | Confirmación por chat | Máx. 5 ítems (`maxChatConfirmItems`) |
 

@@ -28,11 +28,11 @@ Nunca incluir secretos reales en este documento. Ver `.env.example`.
 | `INTEGRATION_GATEWAY_SECRET` | Webhook / Telegram | Prod | Cond.**** | random string | Auth saliente (`x-webhook-secret`) y Bearer entrante Telegram | gateway + `src/lib/telegram/auth.ts` |
 | `NEXT_PUBLIC_TELEGRAM_BOT_USERNAME` | Telegram UI | Todos | No | `mi_bot` | Handle del bot (sin `@`) en UI de vinculación | `admin/settings/telegram` |
 | `SETTINGS_ENCRYPTION_KEY` | App crypto | Prod | Cond. | 32 bytes base64/hex | Cifrar secretos por org | `src/lib/crypto.ts` |
-| `AGENT_MODEL` | IA SDK | Todos | No | `groq/openai/gpt-oss-120b` | Modelo agente (`proveedor/` + id; 1ª `/` separa) | `src/lib/agent/config.ts` |
+| `AGENT_MODEL` | IA SDK | Todos | No | `openai/gpt-6-luna` | Modelo del agente copiloto (`proveedor/` + id; 1ª `/` separa). Default: OpenAI gpt-6-luna | `src/lib/agent/config.ts` |
 | `MEETING_REASONING_MODEL` | IA SDK | Todos | No | `groq/openai/gpt-oss-120b` | Modelo análisis reuniones | `src/lib/meeting-intelligence/ai/groq.ts` |
 | `ENTITY_CONTEXT_MODEL` | IA SDK | Todos | No | `groq/openai/gpt-oss-120b` | Modelo enriquecimiento de fichas (fallback: MEETING_REASONING_MODEL) | `src/lib/entity-context/analyze.ts` |
 | `ANTHROPIC_API_KEY` | Anthropic | Todos | No | `sk-ant-...` | Modelo alternativo | `src/lib/agent/config.ts` |
-| `OPENAI_API_KEY` | OpenAI | Todos | No | `sk-...` | Modelo alternativo | `src/lib/agent/config.ts` |
+| `OPENAI_API_KEY` | OpenAI | Todos | Sí (agente) | `sk-...` | Agente copiloto (`gpt-6-luna` por defecto) | `src/lib/agent/model.ts` |
 | `OBSERVABILITY_BASE_URL` | Observability | Todos | No | `https://observ.zalantos.com` | Base URL ingesta costos IA | `src/lib/observability/reporter.ts` |
 | `OBSERVABILITY_API_KEY` | Observability | Todos | No | api key | Auth `X-Api-Key` para ingesta | `src/lib/observability/reporter.ts` |
 | `NODE_ENV` | Node | Todos | Auto | `production` | Entorno runtime | varios |
