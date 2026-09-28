@@ -8,9 +8,8 @@ export default NextAuth(authConfig).auth;
 
 export const config = {
   matcher: [
-    // api/meetings/process y api/telegram se autoprotegen con un Bearer
-    // compartido (worker/n8n sin sesión), igual que api/cron — el gate de
-    // sesión los bloquearía antes de llegar a evaluar el token.
-    "/((?!api/auth|api/cron|api/telegram|api/meetings/process$|_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp|ico)$).*)",
+    // api/meetings/process, api/telegram y api/mcp se autoprotegen con Bearer;
+    // el gate de sesión los bloquearía antes de llegar a evaluar el token.
+    "/((?!api/auth|api/cron|api/telegram|api/mcp$|api/meetings/process$|_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp|ico)$).*)",
   ],
 };

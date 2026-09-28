@@ -1,4 +1,4 @@
-import { tool } from "ai";
+import { defineAgentTool } from "@/lib/agent/tool-definition";
 import { z } from "zod";
 import { withOrgTransaction } from "@/lib/tenant";
 import { appendTimelineEvent } from "@/lib/timeline";
@@ -29,7 +29,7 @@ export function buildWriteSafeTools(ctx: AgentToolContext) {
   }
 
   return {
-    create_note: tool({
+    create_note: defineAgentTool({
       description:
         "Crea una nota en el CRM asociada a una empresa (y opcionalmente a una oportunidad o persona). Se aplica al instante SI es el único cambio del turno; si hay otro cambio en el mismo turno, queda junto a él en una propuesta para revisar.",
       inputSchema: z.object({
@@ -111,7 +111,7 @@ export function buildWriteSafeTools(ctx: AgentToolContext) {
       },
     }),
 
-    create_task: tool({
+    create_task: defineAgentTool({
       description:
         "Crea una tarea pendiente asociada a una empresa (y opcionalmente a una oportunidad o persona). Se aplica al instante SI es el único cambio del turno; si hay otro cambio en el mismo turno, queda junto a él en una propuesta para revisar.",
       inputSchema: z.object({

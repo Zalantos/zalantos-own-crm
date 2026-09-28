@@ -1,4 +1,4 @@
-import { tool } from "ai";
+import { defineAgentTool } from "@/lib/agent/tool-definition";
 import { z } from "zod";
 import { Prisma } from "@prisma/client";
 import { getOrgStages, stagesById, stagesByKey } from "@/lib/pipeline/stages";
@@ -95,7 +95,7 @@ function groupRowsInMemory(
 export function buildAnalyticsTools(ctx: AgentToolContext) {
   const db = ctx.db;
   return {
-    query_opportunities: tool({
+    query_opportunities: defineAgentTool({
       description:
         "Consulta agregada de oportunidades: devuelve conteo, suma de valores y el top de registros según filtros (etapa, status, empresa, montos, fechas de cierre/creación). Usala para preguntas tipo cuánto hay en pipeline o cuántas oportunidades en una etapa. Enviá SOLO los filtros que el usuario pidió; omití el resto.",
       inputSchema: z.object({
@@ -252,7 +252,7 @@ export function buildAnalyticsTools(ctx: AgentToolContext) {
       },
     }),
 
-    find_inactive_opportunities: tool({
+    find_inactive_opportunities: defineAgentTool({
       description:
         "Encuentra oportunidades abiertas sin actividad registrada en los últimos N días (deals estancados o sin seguimiento). Usala SOLO cuando pregunten por inactividad.",
       inputSchema: z.object({

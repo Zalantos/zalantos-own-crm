@@ -1,4 +1,4 @@
-import { tool } from "ai";
+import { defineAgentTool } from "@/lib/agent/tool-definition";
 import { z } from "zod";
 import type { TenantClient } from "@/lib/tenant";
 import { getOrgStages, stagesByKey } from "@/lib/pipeline/stages";
@@ -144,7 +144,7 @@ async function loadTarget(
 // side effect is creating a CRMChangeProposal that the user reviews in chat.
 export function buildProposalTools(ctx: AgentToolContext) {
   return {
-    update_record_fields: tool({
+    update_record_fields: defineAgentTool({
       description:
         "Propone cambios de campos sobre una empresa, oportunidad o persona (incluye campos custom con prefijo 'custom.'). NO aplica los cambios: crea una propuesta que el usuario revisa y aprueba en el chat.",
       inputSchema: z.object({
@@ -244,7 +244,7 @@ export function buildProposalTools(ctx: AgentToolContext) {
       },
     }),
 
-    change_stage: tool({
+    change_stage: defineAgentTool({
       description:
         "Propone un cambio de etapa de una oportunidad. NO lo aplica: crea una propuesta que el usuario aprueba en el chat. El valor de `stage` es el key de una etapa según list_writable_fields.",
       inputSchema: z.object({
@@ -304,7 +304,7 @@ export function buildProposalTools(ctx: AgentToolContext) {
       },
     }),
 
-    create_contact: tool({
+    create_contact: defineAgentTool({
       description:
         "Propone dar de alta un contacto nuevo en una empresa. NO lo crea: genera una propuesta que el usuario aprueba en el chat.",
       inputSchema: z.object({
@@ -455,7 +455,7 @@ export function buildProposalTools(ctx: AgentToolContext) {
       },
     }),
 
-    create_opportunity: tool({
+    create_opportunity: defineAgentTool({
       description:
         "Propone dar de alta una oportunidad nueva en una empresa. NO la crea: genera una propuesta que el usuario aprueba en el chat.",
       inputSchema: z.object({
@@ -529,7 +529,7 @@ export function buildProposalTools(ctx: AgentToolContext) {
       },
     }),
 
-    create_company: tool({
+    create_company: defineAgentTool({
       description:
         "Propone dar de alta una empresa nueva. NO la crea: genera una propuesta que el usuario aprueba en el chat.",
       inputSchema: z.object({

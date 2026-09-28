@@ -8,9 +8,14 @@ import {
 } from "@/lib/meeting-intelligence/internal-auth";
 import { renderNotificationEmail } from "@/lib/integrations/email-template";
 import { dispatchIntegrationEvent } from "@/lib/integrations/gateway";
-import { ACTIVITY_OPEN_STATUSES } from "@/lib/activity-status";
+import {
+  ACTIVITY_OPEN_STATUSES,
+  ACTIVITY_STATUS_LABELS,
+  isActivityStatus,
+} from "@/lib/activity-status";
 
-const DAY_MS = 86_400_000;
+const REMINDER_HOUR = 18;
+const NOTIFICATION_TYPE = "task.daily_overdue";
 
 function appUrl() {
   return (
@@ -20,152 +25,313 @@ function appUrl() {
   ).replace(/\/$/, "");
 }
 
-// Fecha local de la org (YYYY-MM-DD) para el bucket diario del dedupeKey.
-function dayKey(date: Date, timezone: string) {
-  return new Intl.DateTimeFormat("en-CA", {
-    timeZone: timezone,
+type ZonedClock = {
+  day: string;
+  hour: number;
+};
+
+// Día (YYYY-MM-DD) y hora local de la org. La hora 24 de algunos motores
+// al cruzar medianoche se normaliza a 0.
+function zonedClock(date: Date, timeZone: string): ZonedClock {
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone,
+    hourCycle: "h23",
     year: "numeric",
     month: "2-digit",
     day: "2-digit",
-  }).format(date);
+    hour: "2-digit",
+  }).formatToParts(date);
+  const value = (type: Intl.DateTimeFormatPartTypes) =>
+    parts.find((part) => part.type === type)?.value ?? "";
+  const hour = Number(value("hour"));
+  return {
+    day: `${value("year")}-${value("month")}-${value("day")}`,
+    hour: hour === 24 ? 0 : hour,
+  };
 }
 
-function formatDate(date: Date, org: OrgSettings) {
-  return new Intl.DateTimeFormat(org.locale, {
+// Las fechas del formulario se guardan como medianoche UTC
+// (`new Date("YYYY-MM-DD")`). Ese día es el que eligió el usuario;
+// leerlo en la timezone de la org lo correría un día atrás. Un timestamp
+// con hora real sí se interpreta en la timezone de la org.
+function activityCalendarDay(date: Date, timeZone: string) {
+  const isDateOnly =
+    date.getUTCHours() === 0 &&
+    date.getUTCMinutes() === 0 &&
+    date.getUTCSeconds() === 0 &&
+    date.getUTCMilliseconds() === 0;
+  if (isDateOnly) return date.toISOString().slice(0, 10);
+  return zonedClock(date, timeZone).day;
+}
+
+function formatCalendarDay(day: string, locale: string) {
+  const [year, month, date] = day.split("-").map(Number);
+  // Mediodía UTC para que el formateo no desplace el día calendario.
+  return new Intl.DateTimeFormat(locale, {
     dateStyle: "medium",
-    timeZone: org.timezone,
-  }).format(date);
+    timeZone: "UTC",
+  }).format(new Date(Date.UTC(year, month - 1, date, 12)));
 }
 
 type ReminderActivity = Awaited<
-  ReturnType<typeof findReminderActivities>
+  ReturnType<typeof findOpenDatedActivities>
 >[number];
 
-async function findReminderActivities(db: TenantClient, dueSoonLimit: Date) {
+function qualifiesForReminder(
+  activity: ReminderActivity,
+  today: string,
+  timeZone: string,
+) {
+  const planned = activity.plannedDate
+    ? activityCalendarDay(activity.plannedDate, timeZone)
+    : null;
+  const due = activity.dueDate
+    ? activityCalendarDay(activity.dueDate, timeZone)
+    : null;
+  if (planned === today) return true;
+  return due !== null && due <= today;
+}
+
+async function findOpenDatedActivities(db: TenantClient) {
   return db.activity.findMany({
     where: {
       status: { in: ACTIVITY_OPEN_STATUSES },
-      dueDate: { not: null, lt: dueSoonLimit },
-      assignee: { is: { email: { not: null } } },
+      assigneeId: { not: null },
+      OR: [{ plannedDate: { not: null } }, { dueDate: { not: null } }],
     },
     include: {
-      assignee: { select: { id: true, name: true, email: true } },
+      assignee: {
+        select: { id: true, name: true, email: true, userId: true },
+      },
       company: { select: { id: true, name: true } },
       person: { select: { id: true, firstName: true, lastName: true } },
       opportunity: { select: { id: true, name: true } },
     },
-    orderBy: { dueDate: "asc" },
   });
 }
 
-function reminderType(activity: ReminderActivity, now: Date) {
-  if (!activity.dueDate) return null;
-  return activity.dueDate < now ? "task.overdue" : "task.due_soon";
+function statusLabel(status: string) {
+  return isActivityStatus(status) ? ACTIVITY_STATUS_LABELS[status] : status;
 }
 
-function buildReminderPayload(
-  activity: ReminderActivity,
-  type: string,
-  org: OrgSettings,
-) {
-  const baseUrl = appUrl();
-  const dueDate = activity.dueDate;
-  const dueLabel = dueDate ? formatDate(dueDate, org) : "sin fecha";
-  const isOverdue = type === "task.overdue";
-  const assigneeName = activity.assignee?.name ?? "Responsable";
-  const context = [
+function taskContext(activity: ReminderActivity) {
+  return [
     activity.company?.name,
     activity.opportunity?.name,
     activity.person
       ? `${activity.person.firstName} ${activity.person.lastName}`
       : null,
-  ].filter(Boolean);
-  const contextText =
-    context.length > 0 ? `\nContexto: ${context.join(" · ")}` : "";
-  const activityUrl = `${baseUrl}/activities?assignee=me`;
-  const subject = isOverdue
-    ? `Tarea vencida: ${activity.title}`
-    : `Tarea por vencer: ${activity.title}`;
-  const intro = isOverdue
-    ? `${assigneeName}, esta tarea asignada a ti ya esta vencida. Conviene revisarla para no perder el seguimiento.`
-    : `${assigneeName}, esta tarea asignada a ti vence dentro de las proximas 24 horas.`;
-  const description = activity.description
-    ? `\nDescripcion: ${activity.description}`
-    : "";
-  const text = `${subject}\n\n${intro}\n\nVence: ${dueLabel}${contextText}${description}\n\nVer en CRM: ${activityUrl}`;
+  ].filter((part): part is string => Boolean(part));
+}
+
+function compareTasks(
+  a: ReminderActivity,
+  b: ReminderActivity,
+  timeZone: string,
+) {
+  const aDue = a.dueDate
+    ? activityCalendarDay(a.dueDate, timeZone)
+    : "9999-99-99";
+  const bDue = b.dueDate
+    ? activityCalendarDay(b.dueDate, timeZone)
+    : "9999-99-99";
+  if (aDue !== bDue) return aDue < bDue ? -1 : 1;
+  return a.title.localeCompare(b.title, "es");
+}
+
+function taskLines(activity: ReminderActivity, org: OrgSettings) {
+  const lines = [`Columna: ${statusLabel(activity.status)}`];
+  if (activity.plannedDate) {
+    lines.push(
+      `Planeada: ${formatCalendarDay(activityCalendarDay(activity.plannedDate, org.timezone), org.locale)}`,
+    );
+  }
+  if (activity.dueDate) {
+    lines.push(
+      `Vence: ${formatCalendarDay(activityCalendarDay(activity.dueDate, org.timezone), org.locale)}`,
+    );
+  }
+  const context = taskContext(activity);
+  if (context.length > 0) lines.push(`Contexto: ${context.join(" · ")}`);
+  if (activity.status === "blocked" && activity.blockedReason) {
+    lines.push(`Bloqueo: ${activity.blockedReason}`);
+  }
+  return lines;
+}
+
+type AssigneeGroup = {
+  assignee: NonNullable<ReminderActivity["assignee"]>;
+  tasks: ReminderActivity[];
+};
+
+function groupByAssignee(activities: ReminderActivity[], timeZone: string) {
+  const groups = new Map<string, AssigneeGroup>();
+  for (const activity of activities) {
+    if (!activity.assignee) continue;
+    const existing = groups.get(activity.assignee.id);
+    if (existing) {
+      existing.tasks.push(activity);
+      continue;
+    }
+    groups.set(activity.assignee.id, {
+      assignee: activity.assignee,
+      tasks: [activity],
+    });
+  }
+  for (const group of groups.values()) {
+    group.tasks.sort((a, b) => compareTasks(a, b, timeZone));
+  }
+  return [...groups.values()];
+}
+
+function buildDigest(group: AssigneeGroup, org: OrgSettings) {
+  const assigneeName = group.assignee.name || "Responsable";
+  const count = group.tasks.length;
+  const subject = `Tareas vencidas de hoy (${count})`;
+  const intro = `${assigneeName}, pasadas las 18:00 estas tareas siguen sin estar en Hecha. Este recordatorio las toma como vencidas.`;
+  const activityUrl = `${appUrl()}/activities?assignee=me`;
+  const blocks = group.tasks.map((activity, index) => {
+    const lines = taskLines(activity, org);
+    return `${index + 1}. ${activity.title}\n${lines.join("\n")}`;
+  });
+  const text = `${subject}\n\n${intro}\n\n${blocks.join("\n\n")}\n\nVer en CRM: ${activityUrl}`;
+  const tasks = group.tasks.map((activity) => ({
+    id: activity.id,
+    title: activity.title,
+    status: activity.status,
+    statusLabel: statusLabel(activity.status),
+    plannedDate: activity.plannedDate?.toISOString() ?? null,
+    dueDate: activity.dueDate?.toISOString() ?? null,
+    blockedReason:
+      activity.status === "blocked" ? activity.blockedReason : null,
+    companyName: activity.company?.name ?? null,
+    personName: activity.person
+      ? `${activity.person.firstName} ${activity.person.lastName}`
+      : null,
+    opportunityName: activity.opportunity?.name ?? null,
+  }));
 
   return {
     subject,
+    intro,
     text,
+    activityUrl,
+    tasks,
     html: renderNotificationEmail({
       brandName: org.brandName ?? org.name,
       accentColor: org.accentColor,
-      eyebrow: "Recordatorio de tarea",
-      title: activity.title,
+      eyebrow: "Recordatorio de tareas",
+      title: "Tareas vencidas de hoy",
       intro,
-      statusLabel: isOverdue ? "Vencida" : "Vence pronto",
-      statusTone: isOverdue ? "danger" : "warning",
+      statusLabel: "Vencidas",
+      statusTone: "danger",
+      items: group.tasks.map((activity) => ({
+        title: activity.title,
+        lines: taskLines(activity, org),
+      })),
       details: [
-        { label: "Fecha de vencimiento", value: dueLabel },
         { label: "Responsable", value: assigneeName },
-        { label: "Empresa", value: activity.company?.name },
-        { label: "Oportunidad", value: activity.opportunity?.name },
-        {
-          label: "Persona",
-          value: activity.person
-            ? `${activity.person.firstName} ${activity.person.lastName}`
-            : null,
-        },
-        { label: "Descripcion", value: activity.description },
+        { label: "Cantidad", value: String(count) },
       ],
-      ctaLabel: "Ver tarea en CRM",
+      ctaLabel: "Ver tareas en CRM",
       ctaUrl: activityUrl,
     }),
-    ctaUrl: activityUrl,
-    task: {
-      id: activity.id,
-      title: activity.title,
-      type: activity.type,
-      dueDate: dueDate?.toISOString() ?? null,
-      description: activity.description,
-      companyName: activity.company?.name ?? null,
-      personName: activity.person
-        ? `${activity.person.firstName} ${activity.person.lastName}`
-        : null,
-      opportunityName: activity.opportunity?.name ?? null,
-    },
   };
 }
+
+type ReminderResults = {
+  checked: number;
+  sent: number;
+  failed: number;
+  skipped: number;
+  deferred: number;
+};
 
 async function runForOrg(
   org: OrgSettings,
   now: Date,
-  results: { checked: number; sent: number; failed: number; skipped: number },
+  results: ReminderResults,
 ) {
+  const clock = zonedClock(now, org.timezone);
+  if (clock.hour < REMINDER_HOUR) {
+    results.deferred += 1;
+    return;
+  }
+
   const db = forOrg(org.id);
-  const today = dayKey(now, org.timezone);
-  const dueSoonLimit = new Date(now.getTime() + DAY_MS);
-  const activities = await findReminderActivities(db, dueSoonLimit);
+  const activities = (await findOpenDatedActivities(db)).filter((activity) =>
+    qualifiesForReminder(activity, clock.day, org.timezone),
+  );
   results.checked += activities.length;
+  if (activities.length === 0) return;
 
-  for (const activity of activities) {
-    const type = reminderType(activity, now);
-    if (!type || !activity.assignee?.email) continue;
+  const groups = groupByAssignee(activities, org.timezone);
+  const userIds = [
+    ...new Set(
+      groups
+        .map((group) => group.assignee.userId)
+        .filter((userId): userId is string => Boolean(userId)),
+    ),
+  ];
+  const links =
+    userIds.length === 0
+      ? []
+      : await db.telegramLink.findMany({
+          where: { userId: { in: userIds }, isActive: true },
+          select: { userId: true, telegramChatId: true, updatedAt: true },
+          orderBy: { updatedAt: "desc" },
+        });
+  const chatByUserId = new Map<string, string>();
+  for (const link of links) {
+    if (!chatByUserId.has(link.userId)) {
+      chatByUserId.set(link.userId, link.telegramChatId);
+    }
+  }
 
-    const result = await dispatchIntegrationEvent(db, org, {
-      type,
-      channel: "email",
-      entityType: EntityType.activity,
-      entityId: activity.id,
-      recipient: {
-        name: activity.assignee.name,
-        email: activity.assignee.email,
-      },
-      dedupeKey: `${type}:${activity.id}:${today}:${activity.assignee.id}`,
-      payload: buildReminderPayload(activity, type, org),
-    });
+  for (const group of groups) {
+    const email = group.assignee.email?.trim() || null;
+    const chatId = group.assignee.userId
+      ? (chatByUserId.get(group.assignee.userId) ?? null)
+      : null;
+    if (!email && !chatId) {
+      results.skipped += 1;
+      continue;
+    }
 
-    results[result.status] += 1;
+    const digest = buildDigest(group, org);
+    const entityId = group.tasks[0].id;
+
+    if (email) {
+      const result = await dispatchIntegrationEvent(db, org, {
+        type: NOTIFICATION_TYPE,
+        channel: "email",
+        entityType: EntityType.activity,
+        entityId,
+        recipient: { name: group.assignee.name, email },
+        dedupeKey: `${NOTIFICATION_TYPE}:email:${group.assignee.id}:${clock.day}`,
+        payload: {
+          subject: digest.subject,
+          text: digest.text,
+          html: digest.html,
+          ctaUrl: digest.activityUrl,
+          tasks: digest.tasks,
+        },
+      });
+      results[result.status] += 1;
+    }
+
+    if (chatId) {
+      const result = await dispatchIntegrationEvent(db, org, {
+        type: NOTIFICATION_TYPE,
+        channel: "telegram",
+        entityType: EntityType.activity,
+        entityId,
+        recipient: { chatId },
+        dedupeKey: `${NOTIFICATION_TYPE}:telegram:${group.assignee.id}:${clock.day}`,
+        payload: { text: digest.text, tasks: digest.tasks },
+      });
+      results[result.status] += 1;
+    }
   }
 }
 
@@ -186,7 +352,13 @@ export async function POST(request: NextRequest) {
   }
 
   const now = new Date();
-  const results = { checked: 0, sent: 0, failed: 0, skipped: 0 };
+  const results: ReminderResults = {
+    checked: 0,
+    sent: 0,
+    failed: 0,
+    skipped: 0,
+    deferred: 0,
+  };
 
   // Un fallo en una org no debe frenar los recordatorios de las demás.
   const orgs = await prismaSystem.organization.findMany({

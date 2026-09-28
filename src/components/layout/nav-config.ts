@@ -1,5 +1,6 @@
 import {
   Building2Icon,
+  CableIcon,
   CheckSquareIcon,
   ClipboardListIcon,
   HistoryIcon,
@@ -73,6 +74,7 @@ export const ADMIN_SECTION: NavSection = {
       label: "Telegram",
       icon: SendIcon,
     },
+    { href: "/admin/settings/mcp", label: "MCP", icon: CableIcon },
     {
       href: "/admin/settings/general",
       label: "Organización",

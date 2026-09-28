@@ -19,6 +19,8 @@ personas, oportunidades, actividades, notas y reuniones. Incluye:
   propuestas pendientes.
 - **Telegram ↔ copiloto**: canal entrante vía n8n (`/api/telegram/*`) con
   vinculación `telegram_chat_id` ↔ usuario y thread persistente.
+- **MCP ↔ copiloto**: servidor de tools en `/api/mcp` para clientes externos,
+  autenticado con tokens personales y sin un modelo de IA adicional.
 - **Workflows**: automatización por eventos de entidades.
 - **Gateway de integraciones**: despacho de eventos a un webhook externo (email,
   Slack, etc. vía n8n u otro).

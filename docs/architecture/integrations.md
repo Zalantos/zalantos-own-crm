@@ -11,6 +11,7 @@
 | Cloudflare R2 | Evidencia y adjuntos | `R2_*` |
 | Gateway webhook | Email, Slack, automaciones (saliente) | `INTEGRATION_GATEWAY_*` |
 | Telegram (vía n8n) | Canal entrante al copiloto IA | `INTEGRATION_GATEWAY_SECRET`, `NEXT_PUBLIC_TELEGRAM_BOT_USERNAME` |
+| MCP | Tools CRM para Cursor u otros clientes | Token personal `zcrm_…` (solo hash en BD) |
 | Zalantos Observability | Reporte best-effort de costos/tokens de IA | `OBSERVABILITY_BASE_URL`, `OBSERVABILITY_API_KEY` |
 
 ## Gateway de integraciones
@@ -49,13 +50,29 @@ Prompts en `src/lib/meeting-intelligence/prompts/*.md`.
 |--------|-----|
 | Modelo | `AGENT_MODEL` (formato `proveedor/modelo`). Default: `openai/gpt-6-luna` |
 | Límite de pasos | Hardcoded: 8 (`src/lib/agent/config.ts`) |
-| Confirmación por chat | Máx. 5 ítems (`maxChatConfirmItems`) |
+| Confirmación por chat | Máx. 1 ítem (`maxChatConfirmItems`) |
 
 Tools: lectura CRM, propuestas de escritura, adjuntos, y
 `confirm_pending_proposal` (aplicar/rechazar la propuesta pendiente del thread;
 pensado para Telegram, donde no hay UI de revisión).
 
 API web: `POST /api/agent/chat` (streaming).
+
+## MCP
+
+El servidor MCP vive dentro del mismo proceso Next.js en `/api/mcp`; no hay un
+servicio, worker ni modelo de IA adicional. Usa Streamable HTTP stateless y
+exige `Authorization: Bearer <token personal>` en cada request.
+
+El lookup inicial del hash usa `prismaSystem`; después de resolver al usuario y
+su organización activa, todas las tools usan `forOrg(organizationId)`. Las
+lecturas, notas y tareas son directas. Cambios de campos/etapa y altas crean
+propuestas `source=agent`, `model=mcp`, visibles en `/agent/proposals`.
+`confirm_proposal` opera por id: puede aplicar una propuesta de un ítem o
+derivar propuestas mayores a la bandeja web.
+
+UI admin: `/admin/settings/mcp` (crear, copiar una vez y revocar tokens propios).
+La URL publicada se construye con `APP_URL`; MCP no agrega variables nuevas.
 
 ## Telegram ↔ Copiloto (webhooks entrantes)
 
@@ -118,9 +135,22 @@ Endpoints internos que un scheduler debe llamar:
 | `POST /api/cron/process-evidence` | Catch-up pipeline meetings |
 | `POST /api/cron/process-entity-context` | Catch-up enriquecimiento de fichas |
 | `POST /api/cron/check-overdue` | Alertas de vencimiento |
-| `POST /api/cron/send-task-reminders` | Recordatorios vía gateway |
+| `POST /api/cron/send-task-reminders` | Resumen diario de tareas vencidas (18:00, timezone de la org) por mail y Telegram |
 
 Autenticación: `Authorization: Bearer <CRON_SECRET>`
+
+`send-task-reminders` no cambia el estado del tablero. A partir de las 18:00
+hora local de cada organización manda **un resumen por responsable**: tareas
+abiertas (`todo`, `in_progress`, `blocked`) planeadas para ese día, o con
+`dueDate` de hoy o anterior. El texto las trata como vencidas. Canales:
+`email` si el `TeamMember` tiene email, y `telegram` si su usuario tiene un
+`TelegramLink` activo. Dedupe diario:
+`task.daily_overdue:{email|telegram}:{assigneeId}:{YYYY-MM-DD}`.
+
+El scheduler es externo. Hay que invocarlo al menos una vez por hora para que
+cada timezone cruce las 18:00. Si se llama antes, no se envía nada y la
+respuesta cuenta esa org en `deferred`. El payload de mail trae `subject`, `text` y `html`; el de
+Telegram trae `text`. Tipo de notificación: `task.daily_overdue`.
 
 Pipeline de meeting también: `POST /api/meetings/process`
 
@@ -151,7 +181,10 @@ El campo `Meeting.sourceType` anticipa orígenes futuros.
 ## Gaps
 
 - GAP: workflow n8n del gateway saliente no versionado en el repo (solo
-  contrato HTTP).
+  contrato HTTP). Tiene que aceptar `notificationType=task.daily_overdue` en
+  los canales `email` y `telegram`, usando `payload.html` / `payload.text` /
+  `payload.subject` (mail) y `payload.text` (Telegram). El tipo anterior
+  `task.overdue` / `task.due_soon` (un mail por tarea) ya no se emite.
 - GAP: workflow n8n de Telegram no versionado (contrato en
   `docs/integrations/telegram-copiloto.md`).
 - GAP: límites de rate y costos Groq en producción.

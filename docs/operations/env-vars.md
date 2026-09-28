@@ -67,6 +67,11 @@ Nunca incluir secretos reales en este documento. Ver `.env.example`.
 `INTEGRATION_GATEWAY_URL`, `INTEGRATION_GATEWAY_SECRET`,
 `NEXT_PUBLIC_TELEGRAM_BOT_USERNAME`, `SETTINGS_ENCRYPTION_KEY`
 
+### MCP
+
+No agrega variables de entorno. El endpoint público usa `APP_URL` y los tokens
+personales se crean desde `/admin/settings/mcp`.
+
 ### Operaciones
 
 `CRON_SECRET`, `ADMIN_EMAIL`, `ADMIN_PASSWORD`, `ALLOW_SEED`

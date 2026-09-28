@@ -65,9 +65,15 @@ Fuente de verdad: `prisma/schema.prisma`.
 | ------------------ | --------------------- | -------------------------------------------------------------------------- |
 | `TelegramLink`     | `telegram_links`      | `telegramChatId` único → `userId` + `organizationId`; `agentThreadId` lazy |
 | `TelegramLinkCode` | `telegram_link_codes` | Código de 6 chars, TTL corto, un solo uso                                  |
+| `McpAccessToken`   | `mcp_access_tokens`   | Token personal hasheado; thread de propuestas MCP creado lazy              |
 
 Ambas con RLS `tenant_isolation`. Resolución de vínculo en APIs Telegram usa
 `prismaSystem` (sin sesión web). Soft-delete: `TelegramLink.isActive=false`.
+
+`McpAccessToken` también usa RLS `tenant_isolation`. El secreto `zcrm_…` se
+muestra una sola vez y nunca se persiste: solo se guarda su hash SHA-256 y un
+prefijo visible. El lookup del Bearer usa `prismaSystem`; una vez resueltos
+usuario y organización, las tools operan con `forOrg(organizationId)`.
 
 ### Enriquecimiento de contexto
 
@@ -154,7 +160,10 @@ en propuestas anteriores a la migración.
   (Por hacer), `in_progress` (En curso), `blocked` (Bloqueada), `done` (Hecha).
   Constante única en `src/lib/activity-status.ts`.
 - `plannedDate` (cuándo se planea trabajar la tarea) es distinto de `dueDate`
-  (vencimiento/compromiso, ya usado por los crons de recordatorio).
+  (vencimiento/compromiso). El cron `send-task-reminders` usa las dos a las
+  18:00 (timezone de la org): entran las abiertas planeadas para ese día o con
+  `dueDate` de hoy o anterior. El aviso las llama vencidas; no escribe
+  `status` ni `dueDate`.
 - `completedById` → `TeamMember` (relación `ActivityCompletedBy`, separada de
   `assigneeId`/`ActivityAssignee`): quién hizo la tarea. Se autocompleta con
   el responsable actual al mover a `done`, pero es editable/limpiable; no se
@@ -215,6 +224,7 @@ Ver `@@index` en `schema.prisma` — la mayoría compuestos con `organizationId`
 | `change_item_display_strings`          | `label` / `before` / `after` en `crm_change_items`                                                                                                                    |
 | `activity_task_kanban_fields`          | Tablero Kanban de tareas: `plannedDate`, `completedById`, `blockedReason`, `statusChangedAt` en `activities`; remapea `status` (`pending`→`todo`, `completed`→`done`) |
 | `person_dedup_and_proposal_apply_lock` | Normaliza identidad de personas, hace único el email por organización y agrega el lease `applying` a propuestas                                                       |
+| `add_mcp_access_token`                 | Tokens personales MCP con revocación, último uso, thread lazy y RLS                                                                                                   |
 
 ## Qué no debe romperse
 

@@ -1,4 +1,4 @@
-import { tool } from "ai";
+import { defineAgentTool } from "@/lib/agent/tool-definition";
 import { z } from "zod";
 import { describeFieldsForModel } from "@/lib/agent/field-registry";
 import {
@@ -13,7 +13,7 @@ const entitySchema = z.enum(["company", "opportunity", "person"]);
 export function buildReadTools(ctx: AgentToolContext) {
   const db = ctx.db;
   return {
-    search_crm: tool({
+    search_crm: defineAgentTool({
       description:
         "Busca empresas, personas y oportunidades por nombre o email. Usala para resolver nombres a ids antes de actuar sobre un registro. Para conteos, sumas o filtros de pipeline usá query_opportunities.",
       inputSchema: z.object({
@@ -110,7 +110,7 @@ export function buildReadTools(ctx: AgentToolContext) {
       },
     }),
 
-    get_record: tool({
+    get_record: defineAgentTool({
       description:
         "Devuelve el detalle de un registro puntual (empresa, oportunidad o persona) incluyendo sus campos custom.",
       inputSchema: z.object({
@@ -192,7 +192,7 @@ export function buildReadTools(ctx: AgentToolContext) {
       },
     }),
 
-    get_company_snapshot: tool({
+    get_company_snapshot: defineAgentTool({
       description:
         "Devuelve una foto completa y acotada de una empresa: datos, oportunidades, contactos, notas y actividades recientes, y resúmenes de reuniones previas. Para el detalle de una reunión puntual usá list_meetings/get_meeting.",
       inputSchema: z.object({
@@ -201,7 +201,7 @@ export function buildReadTools(ctx: AgentToolContext) {
       execute: async ({ companyId }) => buildCompanySnapshot(db, companyId),
     }),
 
-    list_writable_fields: tool({
+    list_writable_fields: defineAgentTool({
       description:
         "Lista los campos que se pueden modificar en una entidad, con su tipo, valores permitidos y campos custom. Consultala antes de proponer cambios de campos.",
       inputSchema: z.object({

@@ -49,10 +49,14 @@ type CreateAgentProposalInput = {
   companyId: string | null;
   opportunityId?: string | null;
   items: AgentProposalItemInput[];
+  model?: string;
 };
 
 // Los creates anidados no pasan por el auto-scoping: org explícita.
-function toItemCreateData(organizationId: string, item: AgentProposalItemInput) {
+function toItemCreateData(
+  organizationId: string,
+  item: AgentProposalItemInput,
+) {
   return {
     organizationId,
     type: item.type,
@@ -79,7 +83,13 @@ function toItemCreateData(organizationId: string, item: AgentProposalItemInput) 
 export async function createAgentProposal(
   db: TenantClient,
   organizationId: string,
-  { threadId, companyId, opportunityId, items }: CreateAgentProposalInput,
+  {
+    threadId,
+    companyId,
+    opportunityId,
+    items,
+    model,
+  }: CreateAgentProposalInput,
 ) {
   // Proposal-level confidence = the least confident item (the weakest link).
   const proposalConfidence = items.length
@@ -94,7 +104,7 @@ export async function createAgentProposal(
       opportunityId: opportunityId ?? null,
       chatThreadId: threadId,
       confidence: proposalConfidence,
-      model: agentConfig.modelSpec,
+      model: model ?? agentConfig.modelSpec,
       items: {
         create: items.map((item) => toItemCreateData(organizationId, item)),
       },
@@ -204,6 +214,7 @@ export async function registerProposalChange(
         companyId: target.companyId,
         opportunityId: target.opportunityId ?? null,
         items: itemsToAdd,
+        model: ctx.proposalModel,
       });
 
   state.proposalId = result.proposalId;

@@ -37,6 +37,7 @@ export type AgentToolContext = {
   db: TenantClient;
   userId: string;
   threadId: string;
+  proposalModel?: string;
   pageContext: ResolvedPageContext | null;
   turnState: AgentTurnState;
 };
@@ -46,13 +47,28 @@ export type AgentToolContext = {
 // el prompt al re-validarlo tras el paso de tools ("The messages do not match
 // the ModelMessage[] schema"). Date/Decimal tienen toJSON, así que
 // JSON.stringify los serializa; el replacer cubre bigint, que no lo tiene.
-function toJsonSafe(value: unknown): unknown {
+export function toJsonSafe(value: unknown): unknown {
   if (value === undefined) return value;
   return JSON.parse(
     JSON.stringify(value, (_key, val) =>
       typeof val === "bigint" ? val.toString() : val,
     ),
   );
+}
+
+export function buildAgentToolDefinitions(ctx: AgentToolContext) {
+  return {
+    ...buildReadTools(ctx),
+    ...buildAnalyticsTools(ctx),
+    ...buildTimelineTools(ctx),
+    ...buildAgendaTools(ctx),
+    ...buildMeetingTools(ctx),
+    ...buildWriteSafeTools(ctx),
+    ...buildProposalTools(ctx),
+    ...buildConfirmProposalTools(ctx),
+    ...buildAttachmentTools(ctx),
+    ...buildContextSourceTools(ctx),
+  };
 }
 
 // Tool execute errors are returned as results (never thrown into the stream)
@@ -90,18 +106,7 @@ export function buildAgentTools(
     ...input,
     turnState: { changeCount: 0, pendingInstant: null, proposalId: null },
   };
-  const tools: ToolSet = {
-    ...buildReadTools(ctx),
-    ...buildAnalyticsTools(ctx),
-    ...buildTimelineTools(ctx),
-    ...buildAgendaTools(ctx),
-    ...buildMeetingTools(ctx),
-    ...buildWriteSafeTools(ctx),
-    ...buildProposalTools(ctx),
-    ...buildConfirmProposalTools(ctx),
-    ...buildAttachmentTools(ctx),
-    ...buildContextSourceTools(ctx),
-  };
+  const tools: ToolSet = buildAgentToolDefinitions(ctx);
   return Object.fromEntries(
     Object.entries(tools).map(([name, toolDefinition]) => [
       name,

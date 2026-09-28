@@ -3,6 +3,11 @@ type EmailDetail = {
   value: string | null | undefined;
 };
 
+type NotificationEmailItem = {
+  title: string;
+  lines: string[];
+};
+
 type NotificationEmailInput = {
   // Branding por organización (nombre y color de acento).
   brandName?: string;
@@ -13,6 +18,8 @@ type NotificationEmailInput = {
   statusLabel: string;
   statusTone: "warning" | "danger" | "neutral";
   details: EmailDetail[];
+  // Lista opcional (un resumen de varias tareas, por ejemplo).
+  items?: NotificationEmailItem[];
   ctaLabel: string;
   ctaUrl: string;
   footer?: string;
@@ -69,13 +76,35 @@ function renderDetails(details: EmailDetail[]) {
   `;
 }
 
+function renderItems(items: NotificationEmailItem[] | undefined) {
+  if (!items || items.length === 0) return "";
+
+  const blocks = items
+    .map((item) => {
+      const lines = item.lines
+        .map(
+          (line) =>
+            `<div style="margin-top: 4px; color: #475569; font-size: 13px; line-height: 1.5;">${escapeHtml(line)}</div>`,
+        )
+        .join("");
+      return `
+        <div style="margin-top: 14px; padding-top: 14px; border-top: 1px solid #e2e8f0;">
+          <div style="color: #0f172a; font-size: 15px; font-weight: 700;">${escapeHtml(item.title)}</div>
+          ${lines}
+        </div>
+      `;
+    })
+    .join("");
+
+  return `<div style="margin-top: 8px;">${blocks}</div>`;
+}
+
 export function renderNotificationEmail(input: NotificationEmailInput) {
   const tone = toneStyles[input.statusTone];
   const brandName = input.brandName ?? DEFAULT_BRAND_NAME;
   const accentColor = input.accentColor ?? DEFAULT_ACCENT_COLOR;
   const footer =
-    input.footer ??
-    `Este aviso fue enviado automaticamente por ${brandName}.`;
+    input.footer ?? `Este aviso fue enviado automaticamente por ${brandName}.`;
 
   return `<!doctype html>
 <html lang="es">
@@ -103,6 +132,7 @@ export function renderNotificationEmail(input: NotificationEmailInput) {
                   <h1 style="margin: 0 0 12px 0; color: #0f172a; font-size: 24px; line-height: 1.25; font-weight: 700;">${escapeHtml(input.title)}</h1>
                   <p style="margin: 0; color: #475569; font-size: 15px; line-height: 1.6;">${escapeHtml(input.intro)}</p>
                   <div style="display: inline-block; margin-top: 18px; padding: 8px 12px; background: ${tone.background}; color: ${tone.color}; border: 1px solid ${tone.border}; border-radius: 999px; font-size: 13px; font-weight: 700;">${escapeHtml(input.statusLabel)}</div>
+                  ${renderItems(input.items)}
                   ${renderDetails(input.details)}
                   <div style="margin-top: 26px;">
                     <a href="${escapeHtml(input.ctaUrl)}" style="display: inline-block; background: ${escapeHtml(accentColor)}; color: #ffffff; text-decoration: none; font-size: 14px; font-weight: 700; padding: 12px 18px; border-radius: 8px;">${escapeHtml(input.ctaLabel)}</a>

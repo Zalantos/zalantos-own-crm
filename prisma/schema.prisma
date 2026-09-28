@@ -104,6 +104,7 @@ model Organization {
   entityContextProfiles  EntityContextProfile[]
   telegramLinks          TelegramLink[]
   telegramLinkCodes      TelegramLinkCode[]
+  mcpAccessTokens        McpAccessToken[]
 
   @@map("organizations")
 }
@@ -842,6 +843,28 @@ model TelegramLinkCode {
 
   @@index([organizationId])
   @@map("telegram_link_codes")
+}
+
+// Token personal para clientes MCP. El secreto se muestra una sola vez y la
+// base guarda únicamente su hash sha256.
+model McpAccessToken {
+  id             String       @id @default(cuid())
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  // String plano sin FK: replica AgentChatThread.userId y TelegramLink.userId.
+  userId         String
+  name           String
+  tokenHash      String       @unique
+  tokenPrefix    String
+  // Thread persistente para que sus propuestas aparezcan en la bandeja web.
+  agentThreadId  String?
+  lastUsedAt     DateTime?
+  revokedAt      DateTime?
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+
+  @@index([organizationId])
+  @@map("mcp_access_tokens")
 }
 
 model TimelineEvent {

@@ -1,4 +1,4 @@
-import { tool } from "ai";
+import { defineAgentTool } from "@/lib/agent/tool-definition";
 import { z } from "zod";
 import type { AgentToolContext } from "@/lib/agent/executor";
 import { agentConfig } from "@/lib/agent/config";
@@ -16,7 +16,7 @@ import { appendTimelineEvent } from "@/lib/timeline";
 // chatThreadId con el cliente ya scopeado por organización.
 export function buildConfirmProposalTools(ctx: AgentToolContext) {
   return {
-    confirm_pending_proposal: tool({
+    confirm_pending_proposal: defineAgentTool({
       description:
         "Aplica o rechaza la propuesta de cambios pendiente más reciente de esta conversación. Usala SOLO cuando el usuario confirme o rechace explícitamente, en respuesta directa a una propuesta que acabás de generar. approve=true aplica todos los cambios; approve=false la rechaza.",
       inputSchema: z.object({

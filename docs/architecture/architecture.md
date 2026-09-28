@@ -57,7 +57,8 @@ No hay worker separado. Procesamiento asíncrono vía:
 
 ## Integraciones
 
-Gateway webhook saliente + canal Telegram entrante (n8n → `/api/telegram/*`).
+Gateway webhook saliente + canal Telegram entrante (n8n → `/api/telegram/*`) +
+servidor MCP stateless en `/api/mcp`, todo dentro del monolito Next.js.
 Ver `docs/architecture/integrations.md` y
 `docs/integrations/telegram-copiloto.md`.
 

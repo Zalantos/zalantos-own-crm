@@ -1,4 +1,4 @@
-import { tool } from "ai";
+import { defineAgentTool } from "@/lib/agent/tool-definition";
 import { z } from "zod";
 import type { Prisma } from "@prisma/client";
 import { extractHeadline } from "./meetings";
@@ -28,7 +28,7 @@ function formatTask(task: TaskRow) {
 export function buildAgendaTools(ctx: AgentToolContext) {
   const db = ctx.db;
   return {
-    get_my_agenda: tool({
+    get_my_agenda: defineAgentTool({
       description:
         "Arma la agenda del usuario actual: tareas vencidas y próximas, oportunidades que cierran pronto y sus reuniones recientes y próximas. Usala cuando pregunte por sus pendientes o qué tiene que hacer.",
       inputSchema: z.object({

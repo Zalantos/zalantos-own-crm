@@ -130,9 +130,11 @@ Endpoints POST protegidos con `Authorization: Bearer <CRON_SECRET>`:
 | `/api/cron/process-evidence` | Reprocesa meetings atascados en pipeline |
 | `/api/cron/process-entity-context` | Reprocesa fuentes de contexto atascadas |
 | `/api/cron/check-overdue` | Oportunidades/actividades vencidas |
-| `/api/cron/send-task-reminders` | Recordatorios de tareas vía gateway |
+| `/api/cron/send-task-reminders` | Resumen de tareas abiertas del día (y vencidas) a las 18:00, por mail y Telegram |
 
-GAP: configuración de schedule en Railway no versionada en el repo.
+GAP: configuración de schedule en Railway no versionada en el repo. Ese cron
+conviene invocarlo al menos una vez por hora: cada org envía solo si su hora
+local ya es ≥ 18:00, una vez por responsable y canal.
 
 ## Auth
 

@@ -1,4 +1,4 @@
-import { tool } from "ai";
+import { defineAgentTool } from "@/lib/agent/tool-definition";
 import { z } from "zod";
 import { TYPE_LABELS } from "@/lib/timeline";
 import type { AgentToolContext } from "@/lib/agent/executor";
@@ -12,7 +12,7 @@ function truncate(text: string, max: number): string {
 export function buildTimelineTools(ctx: AgentToolContext) {
   const db = ctx.db;
   return {
-    get_record_timeline: tool({
+    get_record_timeline: defineAgentTool({
       description:
         "Devuelve la historia reciente de una empresa u oportunidad: notas, tareas, reuniones, cambios de etapa y demás eventos, del más nuevo al más viejo.",
       inputSchema: z.object({
