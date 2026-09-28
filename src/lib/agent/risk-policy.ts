@@ -1,7 +1,10 @@
-// Risk classification per tool. "auto" executes immediately; "proposal" tools
-// can only create a reviewable CRMChangeProposal (enforced by construction in
-// executor.ts — proposal tools contain no direct-write code). Exported as a
-// plain const so it can be swapped for a DB-backed policy later.
+// Risk classification per tool. "auto" ejecuta al instante — excepto
+// create_note/create_task, que solo escriben directo si son el único cambio
+// del turno; a partir del segundo cambio, caen en la misma CRMChangeProposal
+// que las "proposal" (ver registerProposalChange en proposals.ts). "proposal"
+// tools can only create a reviewable CRMChangeProposal (enforced by
+// construction in executor.ts — they contain no direct-write code). Exported
+// as a plain const so it can be swapped for a DB-backed policy later.
 
 export type ToolRisk = "auto" | "proposal";
 

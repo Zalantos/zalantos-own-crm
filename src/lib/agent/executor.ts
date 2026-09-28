@@ -1,6 +1,7 @@
 import type { Tool, ToolSet } from "ai";
 import type { TenantClient } from "@/lib/tenant";
 import type { ResolvedPageContext } from "./context";
+import type { AgentProposalItemInput } from "./proposals";
 import { buildReadTools } from "./tools/read";
 import { buildAnalyticsTools } from "./tools/analytics";
 import { buildTimelineTools } from "./tools/timeline";
@@ -12,12 +13,32 @@ import { buildConfirmProposalTools } from "./tools/confirm-proposal";
 import { buildAttachmentTools } from "./tools/attachments";
 import { buildContextSourceTools } from "./tools/context-sources";
 
+// Nota/tarea ya escrita al instante en este turno porque era el primer (y por
+// ahora único) cambio. Si aparece un segundo cambio, se revierte esta fila y
+// `item` se reinserta como CRMChangeItem (ver registerProposalChange).
+export type PendingInstantChange = {
+  kind: "note" | "task";
+  entityId: string;
+  companyId: string;
+  opportunityId: string | null;
+  item: AgentProposalItemInput;
+};
+
+// Estado mutable compartido por todas las tools de UN turno (mismo
+// buildAgentTools). No sobrevive entre turnos: se recrea en cada request.
+export type AgentTurnState = {
+  changeCount: number;
+  pendingInstant: PendingInstantChange | null;
+  proposalId: string | null;
+};
+
 export type AgentToolContext = {
   organizationId: string;
   db: TenantClient;
   userId: string;
   threadId: string;
   pageContext: ResolvedPageContext | null;
+  turnState: AgentTurnState;
 };
 
 // Normaliza el resultado de una tool a JSON puro. Prisma devuelve Date y
@@ -57,9 +78,18 @@ function withErrorCapture(name: string, toolDefinition: Tool): Tool {
 // Builds the tool set for one agent turn. Autonomy is enforced here by
 // construction: mutation tools live in write-proposal.ts and only ever create
 // CRMChangeProposal rows — there is no code path from them to a direct write.
-// La excepción es confirm_pending_proposal, que aplica una propuesta que el
+// La excepción son create_note/create_task (write-safe.ts), que escriben
+// directo SOLO si son el único cambio del turno; turnState (creado acá, una
+// vez por turno) es lo que decide eso y lo que junta cambios mixtos en una
+// sola propuesta. confirm_pending_proposal aplica una propuesta que el
 // usuario ya aprobó explícitamente en la conversación (no genera cambios nuevos).
-export function buildAgentTools(ctx: AgentToolContext): ToolSet {
+export function buildAgentTools(
+  input: Omit<AgentToolContext, "turnState">,
+): ToolSet {
+  const ctx: AgentToolContext = {
+    ...input,
+    turnState: { changeCount: 0, pendingInstant: null, proposalId: null },
+  };
   const tools: ToolSet = {
     ...buildReadTools(ctx),
     ...buildAnalyticsTools(ctx),

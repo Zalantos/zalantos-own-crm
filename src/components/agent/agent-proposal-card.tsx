@@ -47,11 +47,17 @@ type ToolPart = {
   errorText?: string;
 };
 
-const CLOSED_LABELS: Record<string, string> = {
-  applied: "Aplicada",
-  partially_approved: "Aplicada parcialmente",
+// Estado real de la propuesta, no lo que diga el texto del modelo — se lee
+// siempre de getAgentProposalState. "pending" también tiene chip: antes solo
+// se mostraba un badge una vez cerrada la propuesta.
+const STATUS_LABELS: Record<string, string> = {
+  pending: "Pendiente de tu aprobación",
+  applied: "Aprobada y ejecutada",
+  partially_approved: "Aprobada parcialmente",
   rejected: "Rechazada",
 };
+
+const CLOSED_STATUSES = new Set(["applied", "partially_approved", "rejected"]);
 
 // Inline review card for an agent-generated CRMChangeProposal. The tool output
 // stored in the message is a snapshot; live status is re-read on mount so
@@ -118,7 +124,7 @@ export function AgentProposalCard({ part }: { part: ToolPart }) {
   }
 
   const items = output.items ?? [];
-  const closed = status in CLOSED_LABELS;
+  const closed = CLOSED_STATUSES.has(status);
   const approvedCount = Object.values(approvals).filter(Boolean).length;
 
   function toggleItem(itemId: string, approved: boolean) {
@@ -189,19 +195,22 @@ export function AgentProposalCard({ part }: { part: ToolPart }) {
       <div className="bg-muted/50 flex items-center gap-2 border-b px-3 py-2 text-xs font-medium">
         <ClipboardListIcon className="size-3.5" />
         Propuesta de cambios
-        {closed && (
-          <span
-            className={cn(
-              "ml-auto inline-flex items-center gap-1 rounded-full px-2 py-0.5",
-              status === "rejected"
-                ? "bg-muted text-muted-foreground"
+        {/* Chip de estado: siempre visible, no clickeable — informa, no decide. */}
+        <span
+          className={cn(
+            "ml-auto inline-flex items-center gap-1 rounded-full px-2 py-0.5",
+            status === "rejected"
+              ? "bg-muted text-muted-foreground"
+              : status === "pending"
+                ? "bg-amber-100 text-amber-700"
                 : "bg-emerald-100 text-emerald-700",
-            )}
-          >
-            {status !== "rejected" && <CheckCircle2Icon className="size-3" />}
-            {CLOSED_LABELS[status]}
-          </span>
-        )}
+          )}
+        >
+          {closed && status !== "rejected" && (
+            <CheckCircle2Icon className="size-3" />
+          )}
+          {STATUS_LABELS[status] ?? status}
+        </span>
       </div>
 
       <div className="flex flex-col gap-2 p-3">
@@ -269,6 +278,11 @@ export function AgentProposalCard({ part }: { part: ToolPart }) {
             {itemStatus[item.id] === "reverted" && (
               <span className="text-muted-foreground shrink-0 text-[10px]">
                 Deshecho
+              </span>
+            )}
+            {itemStatus[item.id] === "failed" && (
+              <span className="shrink-0 rounded-full bg-amber-100 px-1.5 py-0.5 text-[10px] text-amber-700">
+                Falló
               </span>
             )}
           </div>

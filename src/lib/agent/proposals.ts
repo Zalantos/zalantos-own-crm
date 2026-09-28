@@ -1,7 +1,8 @@
 import type { Prisma } from "@prisma/client";
-import type { TenantClient } from "@/lib/tenant";
+import { withOrgTransaction, type TenantClient } from "@/lib/tenant";
 import { approvalFromConfidence } from "@/lib/crm/proposal-policy";
 import { agentConfig } from "./config";
+import type { AgentToolContext, PendingInstantChange } from "./executor";
 
 export type AgentProposalItemInput = {
   type:
@@ -10,8 +11,10 @@ export type AgentProposalItemInput = {
     | "add_contact"
     | "link_contact"
     | "add_opportunity"
-    | "add_company";
-  entity: "company" | "opportunity" | "person";
+    | "add_company"
+    | "add_note"
+    | "create_task";
+  entity: "company" | "opportunity" | "person" | "note" | "activity";
   entityId: string | null;
   beforeValue: Prisma.InputJsonValue | null;
   afterValue: Prisma.InputJsonValue;
@@ -28,6 +31,17 @@ export type AgentProposalItemInput = {
   after: string;
 };
 
+type ProposalItemResult = {
+  id: string;
+  label: string;
+  before: string;
+  after: string;
+  explanation: string;
+  evidence: string | null;
+  confidence: number;
+  approved: boolean;
+};
+
 type CreateAgentProposalInput = {
   threadId: string;
   // Null only for add_company proposals, which have no existing company to
@@ -36,6 +50,28 @@ type CreateAgentProposalInput = {
   opportunityId?: string | null;
   items: AgentProposalItemInput[];
 };
+
+// Los creates anidados no pasan por el auto-scoping: org explícita.
+function toItemCreateData(organizationId: string, item: AgentProposalItemInput) {
+  return {
+    organizationId,
+    type: item.type,
+    entity: item.entity,
+    entityId: item.entityId,
+    beforeValue: item.beforeValue ?? undefined,
+    afterValue: item.afterValue,
+    confidence: item.confidence,
+    explanation: item.explanation,
+    evidence: item.evidence || null,
+    duplicateOfId: item.duplicateOfId ?? null,
+    // Cadenas legibles para renderizar el card desde la DB (ver schema).
+    label: item.label,
+    before: item.before,
+    after: item.after,
+    // Pre-approve only high-confidence items; the rest need a tick.
+    ...approvalFromConfidence(item.confidence),
+  };
+}
 
 // The only write path available to "proposal"-classified agent tools: it
 // persists a reviewable CRMChangeProposal. Items start approved so the user
@@ -60,42 +96,129 @@ export async function createAgentProposal(
       confidence: proposalConfidence,
       model: agentConfig.modelSpec,
       items: {
-        // Los creates anidados no pasan por el auto-scoping: org explícita.
-        create: items.map((item) => ({
-          organizationId,
-          type: item.type,
-          entity: item.entity,
-          entityId: item.entityId,
-          beforeValue: item.beforeValue ?? undefined,
-          afterValue: item.afterValue,
-          confidence: item.confidence,
-          explanation: item.explanation,
-          evidence: item.evidence || null,
-          duplicateOfId: item.duplicateOfId ?? null,
-          // Cadenas legibles para renderizar el card desde la DB (ver schema).
-          label: item.label,
-          before: item.before,
-          after: item.after,
-          // Pre-approve only high-confidence items; the rest need a tick.
-          ...approvalFromConfidence(item.confidence),
-        })),
+        create: items.map((item) => toItemCreateData(organizationId, item)),
       },
     },
-    include: { items: { select: { id: true } } },
+    include: { items: true },
   });
 
   return {
     status: "proposal_created" as const,
     proposalId: proposal.id,
-    items: proposal.items.map((item, index) => ({
+    items: proposal.items.map((item): ProposalItemResult => ({
       id: item.id,
-      label: items[index].label,
-      before: items[index].before,
-      after: items[index].after,
-      explanation: items[index].explanation,
-      evidence: items[index].evidence ?? null,
-      confidence: items[index].confidence,
-      approved: approvalFromConfidence(items[index].confidence).approved,
+      label: item.label ?? "",
+      before: item.before ?? "",
+      after: item.after ?? "",
+      explanation: item.explanation,
+      evidence: item.evidence ?? null,
+      confidence: item.confidence,
+      approved: item.approved,
     })),
+  };
+}
+
+// Suma ítems a una propuesta que ya existe (el turno ya generó un cambio
+// antes). Devuelve TODOS los ítems de la propuesta, no solo los nuevos, para
+// que la tarjeta del chat se pueda renderizar completa de una sola vez.
+export async function appendItemsToProposal(
+  db: TenantClient,
+  organizationId: string,
+  proposalId: string,
+  items: AgentProposalItemInput[],
+) {
+  const proposal = await db.cRMChangeProposal.update({
+    where: { id: proposalId },
+    data: {
+      items: {
+        create: items.map((item) => toItemCreateData(organizationId, item)),
+      },
+    },
+    include: { items: true },
+  });
+
+  return {
+    status: "moved_to_proposal" as const,
+    proposalId: proposal.id,
+    items: proposal.items.map((item): ProposalItemResult => ({
+      id: item.id,
+      label: item.label ?? "",
+      before: item.before ?? "",
+      after: item.after ?? "",
+      explanation: item.explanation,
+      evidence: item.evidence ?? null,
+      confidence: item.confidence,
+      approved: item.approved,
+    })),
+  };
+}
+
+async function revertPendingInstant(
+  ctx: AgentToolContext,
+  pending: PendingInstantChange,
+) {
+  await withOrgTransaction(ctx.organizationId, async (tx) => {
+    if (pending.kind === "note") {
+      await tx.note.delete({
+        where: { id: pending.entityId, organizationId: ctx.organizationId },
+      });
+    } else {
+      await tx.activity.delete({
+        where: { id: pending.entityId, organizationId: ctx.organizationId },
+      });
+    }
+  });
+}
+
+// Punto único por el que pasa cualquier cambio del turno que no pueda (o ya
+// no pueda) aplicarse al instante: field/stage/contact/opportunity/company
+// (siempre) y note/task (a partir del segundo cambio del turno). Todo cae en
+// UNA sola CRMChangeProposal por turno — crea la primera vez, agrega después.
+// `items` acepta más de uno porque update_record_fields puede proponer varios
+// campos en un mismo llamado; para el resto de las tools es un array de 1.
+export async function registerProposalChange(
+  ctx: AgentToolContext,
+  target: { companyId: string | null; opportunityId?: string | null },
+  items: AgentProposalItemInput[],
+): Promise<{
+  status: "proposal_created" | "moved_to_proposal";
+  proposalId: string;
+  items: ProposalItemResult[];
+}> {
+  const state = ctx.turnState;
+  state.changeCount += 1;
+  const isFirstChange = state.changeCount === 1;
+
+  const pending = state.pendingInstant;
+  const itemsToAdd = pending ? [pending.item, ...items] : items;
+
+  const result = state.proposalId
+    ? await appendItemsToProposal(
+        ctx.db,
+        ctx.organizationId,
+        state.proposalId,
+        itemsToAdd,
+      )
+    : await createAgentProposal(ctx.db, ctx.organizationId, {
+        threadId: ctx.threadId,
+        companyId: target.companyId,
+        opportunityId: target.opportunityId ?? null,
+        items: itemsToAdd,
+      });
+
+  state.proposalId = result.proposalId;
+
+  // Recién ahora, con el ítem ya persistido en la propuesta, borrar la fila
+  // que se había escrito al instante (si falla la creación de arriba, la
+  // fila original queda intacta en vez de perderse).
+  if (pending) {
+    await revertPendingInstant(ctx, pending);
+    state.pendingInstant = null;
+  }
+
+  return {
+    status: isFirstChange ? "proposal_created" : "moved_to_proposal",
+    proposalId: result.proposalId,
+    items: result.items,
   };
 }

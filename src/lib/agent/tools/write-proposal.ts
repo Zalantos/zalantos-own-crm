@@ -8,7 +8,7 @@ import {
   type AgentEntity,
 } from "@/lib/agent/field-registry";
 import { snapshotCustomFields } from "@/lib/agent/snapshot";
-import { createAgentProposal } from "@/lib/agent/proposals";
+import { registerProposalChange } from "@/lib/agent/proposals";
 import { findExistingPerson } from "@/lib/crm/person-dedup";
 import type { AgentToolContext } from "@/lib/agent/executor";
 
@@ -159,15 +159,17 @@ export function buildProposalTools(ctx: AgentToolContext) {
           });
         }
 
-        return createAgentProposal(ctx.db, ctx.organizationId, {
-          threadId: ctx.threadId,
-          companyId,
-          opportunityId:
-            entity === "opportunity"
-              ? entityId
-              : ctx.pageContext?.opportunityId,
+        return registerProposalChange(
+          ctx,
+          {
+            companyId,
+            opportunityId:
+              entity === "opportunity"
+                ? entityId
+                : ctx.pageContext?.opportunityId,
+          },
           items,
-        });
+        );
       },
     }),
 
@@ -203,11 +205,10 @@ export function buildProposalTools(ctx: AgentToolContext) {
           };
         }
 
-        return createAgentProposal(ctx.db, ctx.organizationId, {
-          threadId: ctx.threadId,
-          companyId: opportunity.companyId,
-          opportunityId,
-          items: [
+        return registerProposalChange(
+          ctx,
+          { companyId: opportunity.companyId, opportunityId },
+          [
             {
               type: "stage_change",
               entity: "opportunity",
@@ -222,7 +223,7 @@ export function buildProposalTools(ctx: AgentToolContext) {
               after: target.label,
             },
           ],
-        });
+        );
       },
     }),
 
@@ -275,11 +276,10 @@ export function buildProposalTools(ctx: AgentToolContext) {
         });
 
         if (existing) {
-          return createAgentProposal(ctx.db, ctx.organizationId, {
-            threadId: ctx.threadId,
-            companyId,
-            opportunityId: ctx.pageContext?.opportunityId,
-            items: [
+          return registerProposalChange(
+            ctx,
+            { companyId, opportunityId: ctx.pageContext?.opportunityId },
+            [
               {
                 type: "link_contact",
                 entity: "person",
@@ -296,14 +296,13 @@ export function buildProposalTools(ctx: AgentToolContext) {
                 after: `${fullName}${contact.roleTitle ? ` (${contact.roleTitle})` : ""}`,
               },
             ],
-          });
+          );
         }
 
-        return createAgentProposal(ctx.db, ctx.organizationId, {
-          threadId: ctx.threadId,
-          companyId,
-          opportunityId: ctx.pageContext?.opportunityId,
-          items: [
+        return registerProposalChange(
+          ctx,
+          { companyId, opportunityId: ctx.pageContext?.opportunityId },
+          [
             {
               type: "add_contact",
               entity: "person",
@@ -318,7 +317,7 @@ export function buildProposalTools(ctx: AgentToolContext) {
               after: `${fullName}${contact.roleTitle ? ` (${contact.roleTitle})` : ""}`,
             },
           ],
-        });
+        );
       },
     }),
 
@@ -378,25 +377,21 @@ export function buildProposalTools(ctx: AgentToolContext) {
           mainPain: mainPain ?? null,
         };
 
-        return createAgentProposal(ctx.db, ctx.organizationId, {
-          threadId: ctx.threadId,
-          companyId,
-          items: [
-            {
-              type: "add_opportunity",
-              entity: "opportunity",
-              entityId: null,
-              beforeValue: null,
-              afterValue,
-              explanation: reason,
-              confidence,
-              evidence: evidence ?? null,
-              label: `Nueva oportunidad en ${company.name}`,
-              before: "—",
-              after: `${name} (${target.label})${estimatedValue ? ` · $${estimatedValue}` : ""}`,
-            },
-          ],
-        });
+        return registerProposalChange(ctx, { companyId }, [
+          {
+            type: "add_opportunity",
+            entity: "opportunity",
+            entityId: null,
+            beforeValue: null,
+            afterValue,
+            explanation: reason,
+            confidence,
+            evidence: evidence ?? null,
+            label: `Nueva oportunidad en ${company.name}`,
+            before: "—",
+            after: `${name} (${target.label})${estimatedValue ? ` · $${estimatedValue}` : ""}`,
+          },
+        ]);
       },
     }),
 
@@ -446,25 +441,21 @@ export function buildProposalTools(ctx: AgentToolContext) {
           description: company.description ?? null,
         };
 
-        return createAgentProposal(ctx.db, ctx.organizationId, {
-          threadId: ctx.threadId,
-          companyId: null,
-          items: [
-            {
-              type: "add_company",
-              entity: "company",
-              entityId: null,
-              beforeValue: null,
-              afterValue,
-              explanation: reason,
-              confidence,
-              evidence: evidence ?? null,
-              label: "Nueva empresa",
-              before: "—",
-              after: `${name}${company.industry ? ` (${company.industry})` : ""}`,
-            },
-          ],
-        });
+        return registerProposalChange(ctx, { companyId: null }, [
+          {
+            type: "add_company",
+            entity: "company",
+            entityId: null,
+            beforeValue: null,
+            afterValue,
+            explanation: reason,
+            confidence,
+            evidence: evidence ?? null,
+            label: "Nueva empresa",
+            before: "—",
+            after: `${name}${company.industry ? ` (${company.industry})` : ""}`,
+          },
+        ]);
       },
     }),
   };
