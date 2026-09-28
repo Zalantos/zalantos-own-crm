@@ -2,7 +2,10 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { LandingButton } from "@/components/landing/landing-button";
 import { LandingMobileMenu } from "@/components/landing/landing-mobile-menu";
-import { CopilotVisual, FeatureVisual } from "@/components/landing/landing-visuals";
+import {
+  CopilotVisual,
+  FeatureVisual,
+} from "@/components/landing/landing-visuals";
 
 const navItems = [
   { href: "#producto", label: "Producto" },
@@ -46,7 +49,7 @@ export const metadata: Metadata = {
 export default function RootPage() {
   return (
     <main className="min-h-screen bg-[#fbfbf8] text-[#171717]">
-      <header className="sticky top-0 z-40 border-b border-black/[0.07] bg-[#fbfbf8]/90 backdrop-blur-md">
+      <header className="sticky top-[var(--app-update-banner-height,0px)] z-40 border-b border-black/[0.07] bg-[#fbfbf8]/90 backdrop-blur-md">
         <nav
           aria-label="Navegación principal"
           className="mx-auto flex h-16 max-w-7xl items-center justify-between px-5 md:px-8"
@@ -99,7 +102,11 @@ export default function RootPage() {
             <LandingButton href="#demo" variant="primary" size="large">
               Solicitar demo
             </LandingButton>
-            <LandingButton href="#como-funciona" variant="secondary" size="large">
+            <LandingButton
+              href="#como-funciona"
+              variant="secondary"
+              size="large"
+            >
               Ver cómo funciona
             </LandingButton>
           </div>
@@ -117,8 +124,8 @@ export default function RootPage() {
             El problema
           </p>
           <h2 className="font-display max-w-4xl text-4xl leading-[1.04] font-semibold text-balance md:text-6xl">
-            Los equipos comerciales saltan entre notas, grabaciones y el CRM.
-            El siguiente paso del lead se improvisa.
+            Los equipos comerciales saltan entre notas, grabaciones y el CRM. El
+            siguiente paso del lead se improvisa.
           </h2>
         </div>
       </section>

@@ -10,7 +10,7 @@ export default async function SuperadminLayout({
   const user = await requireSuperAdmin();
 
   return (
-    <div className="flex min-h-screen flex-col">
+    <div className="flex h-[calc(100svh-var(--app-update-banner-height))] w-full flex-col overflow-hidden">
       <header className="flex h-14 shrink-0 items-center justify-between border-b px-4 md:px-6">
         <div className="flex items-center gap-4">
           <Link href="/superadmin" className="text-sm font-semibold">
@@ -32,7 +32,9 @@ export default async function SuperadminLayout({
           <LogoutButton />
         </div>
       </header>
-      <main className="flex-1 p-4 md:p-6">{children}</main>
+      <main className="min-h-0 flex-1 overflow-y-auto p-4 md:p-6">
+        {children}
+      </main>
     </div>
   );
 }

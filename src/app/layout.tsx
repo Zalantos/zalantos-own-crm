@@ -2,6 +2,8 @@ import type { Metadata, Viewport } from "next";
 import { Geist, Geist_Mono, Newsreader } from "next/font/google";
 import { Toaster } from "@/components/ui/sonner";
 import { ThemeProvider } from "@/components/theme-provider";
+import { AppUpdateBanner } from "@/components/layout/app-update-banner";
+import { readAppBuildId } from "@/lib/app-build-id";
 import "./globals.css";
 
 const geistSans = Geist({
@@ -43,8 +45,9 @@ export default function RootLayout({
       className={`${geistSans.variable} ${geistMono.variable} ${newsreader.variable} h-full antialiased`}
       suppressHydrationWarning
     >
-      <body className="flex min-h-full flex-col">
+      <body className="flex min-h-svh flex-col">
         <ThemeProvider attribute="class" defaultTheme="system" enableSystem>
+          <AppUpdateBanner buildId={readAppBuildId()} />
           {children}
           <Toaster />
         </ThemeProvider>

@@ -56,8 +56,10 @@ export function Sidebar({
   ];
 
   return (
-    <aside className="bg-sidebar border-sidebar-border text-sidebar-foreground hidden w-56 shrink-0 flex-col border-r p-4 md:flex">
-      <div className="mb-6 truncate px-2 text-lg font-semibold">{brandName}</div>
+    <aside className="bg-sidebar border-sidebar-border text-sidebar-foreground hidden min-h-0 w-56 shrink-0 flex-col overflow-y-auto border-r p-4 md:flex">
+      <div className="mb-6 truncate px-2 text-lg font-semibold">
+        {brandName}
+      </div>
       <nav className="flex flex-1 flex-col gap-6">
         <div className="space-y-1">
           <NavLink {...HOME_ITEM} isActive={pathname === HOME_ITEM.href} />

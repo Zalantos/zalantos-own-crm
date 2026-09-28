@@ -13,15 +13,15 @@ export default async function DashboardLayout({
   const brandName = org.brandName ?? org.name;
 
   return (
-    <div className="flex min-h-screen flex-1">
+    <div className="flex h-[calc(100svh-var(--app-update-banner-height))] w-full overflow-hidden">
       <Sidebar
         role={user.role}
         isSuperAdmin={user.isSuperAdmin}
         brandName={brandName}
       />
-      <div className="flex min-w-0 flex-1 flex-col">
+      <div className="flex min-h-0 min-w-0 flex-1 flex-col">
         <Topbar userName={user.name ?? user.email} />
-        <main className="min-w-0 flex-1 overflow-y-auto p-4 pb-20 md:p-6 md:pb-6">
+        <main className="min-h-0 min-w-0 flex-1 overflow-y-auto p-4 pb-20 md:p-6 md:pb-6">
           {children}
         </main>
       </div>

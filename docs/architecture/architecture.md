@@ -24,6 +24,9 @@ Handlers. No hay backend NestJS separado; la lógica vive en `src/lib/`.
 - UI: Tailwind CSS 4 + Base UI/shadcn según el área.
 - Estado local React; sin Jotai/Redux global.
 - Agente: panel lateral con `@ai-sdk/react`.
+- Barra de actualización: la página guarda el build id con el que se abrió y
+  lo compara con `GET /api/version` (público, solo el id). Si difieren, pide
+  recargar.
 
 ## Backend (dentro de Next.js)
 
@@ -72,9 +75,9 @@ Ver `docs/architecture/integrations.md` y
 
 ## Entornos
 
-| Entorno | Notas |
-|---------|-------|
-| Local | `npm run dev`, PostgreSQL local |
+| Entorno    | Notas                                               |
+| ---------- | --------------------------------------------------- |
+| Local      | `npm run dev`, PostgreSQL local                     |
 | Producción | (supuesto: Railway) `npm run start`, env inyectados |
 
 GAP: archivos de configuración Railway/Vercel no presentes en el repo.

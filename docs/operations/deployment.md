@@ -2,9 +2,9 @@
 
 ## Entornos
 
-| Entorno | Propósito | Notas |
-|---------|-----------|-------|
-| Local | Desarrollo | `npm run dev` |
+| Entorno    | Propósito       | Notas               |
+| ---------- | --------------- | ------------------- |
+| Local      | Desarrollo      | `npm run dev`       |
 | Producción | Usuarios reales | (supuesto: Railway) |
 
 GAP: entorno de staging no documentado en el repo.
@@ -50,18 +50,18 @@ Las migraciones se aplican automáticamente al arrancar.
 
 ## Variables de entorno requeridas (producción mínimo)
 
-| Variable | Requerida |
-|----------|-----------|
-| `DATABASE_URL` | Sí |
-| `AUTH_SECRET` | Sí |
-| `AUTH_TRUST_HOST` | Sí (proxy) |
-| `APP_URL` | Sí |
-| `CRON_SECRET` | Sí (si hay crons) |
-| `GROQ_API_KEY` | Sí (Meeting Intelligence) |
-| `R2_*` | Sí (uploads) |
-| `INTEGRATION_GATEWAY_*` | Si hay notificaciones |
-| `TENANT_DATABASE_URL` | Recomendado (RLS) |
-| `SETTINGS_ENCRYPTION_KEY` | Si gateway por org |
+| Variable                  | Requerida                 |
+| ------------------------- | ------------------------- |
+| `DATABASE_URL`            | Sí                        |
+| `AUTH_SECRET`             | Sí                        |
+| `AUTH_TRUST_HOST`         | Sí (proxy)                |
+| `APP_URL`                 | Sí                        |
+| `CRON_SECRET`             | Sí (si hay crons)         |
+| `GROQ_API_KEY`            | Sí (Meeting Intelligence) |
+| `R2_*`                    | Sí (uploads)              |
+| `INTEGRATION_GATEWAY_*`   | Si hay notificaciones     |
+| `TENANT_DATABASE_URL`     | Recomendado (RLS)         |
+| `SETTINGS_ENCRYPTION_KEY` | Si gateway por org        |
 
 Ver tabla completa en `docs/operations/env-vars.md`.
 
@@ -71,7 +71,10 @@ Ver tabla completa en `docs/operations/env-vars.md`.
 2. Build automático (`npm run build`).
 3. Start con migraciones.
 4. Verificar health: login, dashboard, cron 401 sin secret.
-5. GAP: smoke tests automatizados post-deploy.
+5. Quien tenga el CRM abierto ve una barra para recargar: el cliente compara
+   el build id de la pestaña con `GET /api/version` (lee `.next/BUILD_ID`,
+   que cambia en cada `next build`).
+6. GAP: smoke tests automatizados post-deploy.
 
 ## Rollback
 
