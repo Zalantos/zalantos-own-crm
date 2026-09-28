@@ -6,75 +6,75 @@ Fuente de verdad: `prisma/schema.prisma`.
 
 ### Multi-tenancy y auth
 
-| Modelo | Tabla | Descripción |
-|--------|-------|-------------|
-| `Organization` | `organizations` | Tenant; settings inline (moneda, timezone, branding, gateway) |
-| `User` | `users` | Usuario; `organizationId` nullable solo para super-admins |
-| `Invitation` | `invitations` | Invitaciones por email con token hasheado |
-| `PasswordResetToken` | `password_reset_tokens` | Reset de contraseña |
-| `TeamMember` | `team_members` | Catálogo de asignables a tareas (vínculo opcional a User) |
-| `PipelineStage` | `pipeline_stages` | Etapas del pipeline por org (`key` estable) |
+| Modelo               | Tabla                   | Descripción                                                   |
+| -------------------- | ----------------------- | ------------------------------------------------------------- |
+| `Organization`       | `organizations`         | Tenant; settings inline (moneda, timezone, branding, gateway) |
+| `User`               | `users`                 | Usuario; `organizationId` nullable solo para super-admins     |
+| `Invitation`         | `invitations`           | Invitaciones por email con token hasheado                     |
+| `PasswordResetToken` | `password_reset_tokens` | Reset de contraseña                                           |
+| `TeamMember`         | `team_members`          | Catálogo de asignables a tareas (vínculo opcional a User)     |
+| `PipelineStage`      | `pipeline_stages`       | Etapas del pipeline por org (`key` estable)                   |
 
 ### CRM core
 
-| Modelo | Tabla | Relaciones clave |
-|--------|-------|------------------|
-| `Company` | `companies` | → opportunities, people, meetings, activities |
-| `Person` | `people` | → company (opcional); roles en opportunities |
-| `Opportunity` | `opportunities` | → company, stage, decisionMaker, sponsor |
-| `Activity` | `activities` | → company/person/opportunity, assignee (TeamMember) |
-| `Note` | `notes` | → company/person/opportunity |
+| Modelo        | Tabla           | Relaciones clave                                                  |
+| ------------- | --------------- | ----------------------------------------------------------------- |
+| `Company`     | `companies`     | → opportunities, people, meetings, activities                     |
+| `Person`      | `people`        | → company (opcional); roles en opportunities                      |
+| `Opportunity` | `opportunities` | → company, stage, decisionMaker, sponsor                          |
+| `Activity`    | `activities`    | → company/person/opportunity, assignee y completedBy (TeamMember) |
+| `Note`        | `notes`         | → company/person/opportunity                                      |
 
 ### Extensibilidad
 
-| Modelo | Tabla | Notas |
-|--------|-------|-------|
-| `CustomFieldDefinition` | `custom_field_definitions` | Por `EntityType` |
-| `CustomFieldValue` | `custom_field_values` | Valores tipados |
-| `SavedView` | `saved_views` | Filtros/columnas por entidad |
+| Modelo                  | Tabla                      | Notas                        |
+| ----------------------- | -------------------------- | ---------------------------- |
+| `CustomFieldDefinition` | `custom_field_definitions` | Por `EntityType`             |
+| `CustomFieldValue`      | `custom_field_values`      | Valores tipados              |
+| `SavedView`             | `saved_views`              | Filtros/columnas por entidad |
 
 ### Automatización
 
-| Modelo | Tabla | Notas |
-|--------|-------|-------|
-| `Workflow` | `workflows` | trigger + conditions + actions en JSON |
-| `WorkflowLog` | `workflow_logs` | Auditoría de ejecución |
+| Modelo                | Tabla                    | Notas                                       |
+| --------------------- | ------------------------ | ------------------------------------------- |
+| `Workflow`            | `workflows`              | trigger + conditions + actions en JSON      |
+| `WorkflowLog`         | `workflow_logs`          | Auditoría de ejecución                      |
 | `IntegrationDelivery` | `integration_deliveries` | Cola de despacho al gateway; dedupe por org |
 
 ### Meeting Intelligence
 
-| Modelo | Tabla | Notas |
-|--------|-------|-------|
-| `Meeting` | `meetings` | `processingStatus` enum; evidencia y propuestas |
-| `Evidence` | `evidence` | Archivos en R2; `extractedText` |
-| `CRMChangeProposal` | `crm_change_proposals` | Origen `meeting` o `agent` |
-| `CRMChangeItem` | `crm_change_items` | Items atómicos con reversión |
-| `TimelineEvent` | `timeline_events` | Historial por empresa |
+| Modelo              | Tabla                  | Notas                                           |
+| ------------------- | ---------------------- | ----------------------------------------------- |
+| `Meeting`           | `meetings`             | `processingStatus` enum; evidencia y propuestas |
+| `Evidence`          | `evidence`             | Archivos en R2; `extractedText`                 |
+| `CRMChangeProposal` | `crm_change_proposals` | Origen `meeting` o `agent`                      |
+| `CRMChangeItem`     | `crm_change_items`     | Items atómicos con reversión                    |
+| `TimelineEvent`     | `timeline_events`      | Historial por empresa                           |
 
 ### Agente IA
 
-| Modelo | Tabla | Notas |
-|--------|-------|-------|
-| `AgentChatThread` | `agent_chat_threads` | Contexto de página opcional |
-| `AgentChatMessage` | `agent_chat_messages` | Parts JSON (AI SDK) |
-| `AgentAttachment` | `agent_attachments` | Adjuntos en R2 |
+| Modelo             | Tabla                 | Notas                       |
+| ------------------ | --------------------- | --------------------------- |
+| `AgentChatThread`  | `agent_chat_threads`  | Contexto de página opcional |
+| `AgentChatMessage` | `agent_chat_messages` | Parts JSON (AI SDK)         |
+| `AgentAttachment`  | `agent_attachments`   | Adjuntos en R2              |
 
 ### Telegram (canal copiloto)
 
-| Modelo | Tabla | Notas |
-|--------|-------|-------|
-| `TelegramLink` | `telegram_links` | `telegramChatId` único → `userId` + `organizationId`; `agentThreadId` lazy |
-| `TelegramLinkCode` | `telegram_link_codes` | Código de 6 chars, TTL corto, un solo uso |
+| Modelo             | Tabla                 | Notas                                                                      |
+| ------------------ | --------------------- | -------------------------------------------------------------------------- |
+| `TelegramLink`     | `telegram_links`      | `telegramChatId` único → `userId` + `organizationId`; `agentThreadId` lazy |
+| `TelegramLinkCode` | `telegram_link_codes` | Código de 6 chars, TTL corto, un solo uso                                  |
 
 Ambas con RLS `tenant_isolation`. Resolución de vínculo en APIs Telegram usa
 `prismaSystem` (sin sesión web). Soft-delete: `TelegramLink.isActive=false`.
 
 ### Enriquecimiento de contexto
 
-| Modelo | Tabla | Notas |
-|--------|-------|-------|
-| `EntityContextSource` | `entity_context_sources` | Documento/fuente ligada a company/person/opportunity; R2 + `extractedText` |
-| `EntityContextProfile` | `entity_context_profiles` | Perfil IA consolidado (summary, keyFacts, topics); unique por entidad |
+| Modelo                 | Tabla                     | Notas                                                                      |
+| ---------------------- | ------------------------- | -------------------------------------------------------------------------- |
+| `EntityContextSource`  | `entity_context_sources`  | Documento/fuente ligada a company/person/opportunity; R2 + `extractedText` |
+| `EntityContextProfile` | `entity_context_profiles` | Perfil IA consolidado (summary, keyFacts, topics); unique por entidad      |
 
 ## Enums relevantes
 
@@ -147,6 +147,26 @@ en propuestas anteriores a la migración.
 - Política híbrida: perfil + nota (`createdVia=enrichment`) auto; campos CRM
   solo vía propuesta (siempre pending, sin auto-aprobación).
 
+### Activity (tablero Kanban de tareas)
+
+- `status` string libre (no enum de Prisma, mismo criterio que `Opportunity.status`),
+  con 4 valores usados por el tablero en `/activities?view=board`: `todo`
+  (Por hacer), `in_progress` (En curso), `blocked` (Bloqueada), `done` (Hecha).
+  Constante única en `src/lib/activity-status.ts`.
+- `plannedDate` (cuándo se planea trabajar la tarea) es distinto de `dueDate`
+  (vencimiento/compromiso, ya usado por los crons de recordatorio).
+- `completedById` → `TeamMember` (relación `ActivityCompletedBy`, separada de
+  `assigneeId`/`ActivityAssignee`): quién hizo la tarea. Se autocompleta con
+  el responsable actual al mover a `done`, pero es editable/limpiable; no se
+  backfillea para tareas `done` previas a esta migración (quedan sin
+  registrar en vez de asumir que las completó el responsable).
+- `blockedReason` (texto libre) solo tiene sentido mientras `status="blocked"`;
+  se limpia automáticamente al salir de ese estado.
+- `statusChangedAt` se actualiza en cada cambio de estado (vía
+  `updateActivityStatus` en `activities/actions.ts`), que además dispara un
+  evento de timeline (`task_status_changed`) y `evaluateWorkflows` con
+  `entityType: "activity", eventName: "status_changed"`.
+
 ### Person dedup
 
 - Lógica en `src/lib/crm/person-dedup.ts` y `src/lib/meeting-intelligence/dedup-items.ts`.
@@ -173,19 +193,20 @@ Ver `@@index` en `schema.prisma` — la mayoría compuestos con `organizationId`
 
 ## Migraciones relevantes
 
-| Migración | Cambio |
-|-----------|--------|
-| `init` | Esquema base |
-| `meeting_intelligence` | Meetings, evidence, proposals |
-| `agent_chat` | Threads y mensajes |
-| `multi_tenant_foundation` | Refactor multi-tenant |
-| `integration_deliveries` | Gateway |
-| `enable_row_level_security` | RLS |
-| `add_opportunity_traceability` | Trazabilidad de oportunidades |
-| `entity_context_enrichment` | Sources + perfil IA + campos proposal enrichment |
-| `core_creation_traceability` | Trazabilidad de creación CRM core |
-| `add_telegram_link` | `telegram_links` + `telegram_link_codes` |
-| `change_item_display_strings` | `label` / `before` / `after` en `crm_change_items` |
+| Migración                      | Cambio                                                                                                                                                                |
+| ------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `init`                         | Esquema base                                                                                                                                                          |
+| `meeting_intelligence`         | Meetings, evidence, proposals                                                                                                                                         |
+| `agent_chat`                   | Threads y mensajes                                                                                                                                                    |
+| `multi_tenant_foundation`      | Refactor multi-tenant                                                                                                                                                 |
+| `integration_deliveries`       | Gateway                                                                                                                                                               |
+| `enable_row_level_security`    | RLS                                                                                                                                                                   |
+| `add_opportunity_traceability` | Trazabilidad de oportunidades                                                                                                                                         |
+| `entity_context_enrichment`    | Sources + perfil IA + campos proposal enrichment                                                                                                                      |
+| `core_creation_traceability`   | Trazabilidad de creación CRM core                                                                                                                                     |
+| `add_telegram_link`            | `telegram_links` + `telegram_link_codes`                                                                                                                              |
+| `change_item_display_strings`  | `label` / `before` / `after` en `crm_change_items`                                                                                                                    |
+| `activity_task_kanban_fields`  | Tablero Kanban de tareas: `plannedDate`, `completedById`, `blockedReason`, `statusChangedAt` en `activities`; remapea `status` (`pending`→`todo`, `completed`→`done`) |
 
 ## Qué no debe romperse
 

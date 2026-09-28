@@ -39,6 +39,15 @@ export function formatDateTimeValue(
   }).format(new Date(value));
 }
 
+export function initials(name: string) {
+  return name
+    .split(/\s+/)
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((part) => part[0]?.toUpperCase())
+    .join("");
+}
+
 // Conveniencia para Server Components/actions que ya tienen `org` a mano
 // (via requireOrgContext): evita repetir los 3 argumentos en cada llamado.
 export function createFormatters(org: {

@@ -3,6 +3,7 @@ import { z } from "zod";
 import type { Prisma } from "@prisma/client";
 import { extractHeadline } from "./meetings";
 import type { AgentToolContext } from "@/lib/agent/executor";
+import { ACTIVITY_OPEN_STATUSES } from "@/lib/activity-status";
 
 const taskSelect = {
   id: true,
@@ -54,7 +55,11 @@ export function buildAgendaTools(ctx: AgentToolContext) {
         const taskFilter = teamMember
           ? { assigneeId: teamMember.id }
           : { createdById: ctx.userId };
-        const pendingTaskWhere = { type: "task", status: "pending", ...taskFilter };
+        const pendingTaskWhere = {
+          type: "task",
+          status: { in: ACTIVITY_OPEN_STATUSES },
+          ...taskFilter,
+        };
 
         const [
           overdueTasks,
@@ -78,7 +83,10 @@ export function buildAgendaTools(ctx: AgentToolContext) {
           }),
           db.activity.count({ where: { ...pendingTaskWhere, dueDate: null } }),
           db.opportunity.findMany({
-            where: { status: "open", expectedCloseDate: { gte: now, lte: until } },
+            where: {
+              status: "open",
+              expectedCloseDate: { gte: now, lte: until },
+            },
             orderBy: { expectedCloseDate: "asc" },
             take: 10,
             select: {
@@ -99,10 +107,18 @@ export function buildAgendaTools(ctx: AgentToolContext) {
             },
             orderBy: { meetingDate: "desc" },
             take: 5,
-            select: { id: true, title: true, meetingDate: true, aiSummary: true },
+            select: {
+              id: true,
+              title: true,
+              meetingDate: true,
+              aiSummary: true,
+            },
           }),
           db.meeting.findMany({
-            where: { createdBy: ctx.userId, meetingDate: { gte: now, lte: until } },
+            where: {
+              createdBy: ctx.userId,
+              meetingDate: { gte: now, lte: until },
+            },
             orderBy: { meetingDate: "asc" },
             take: 5,
             select: { id: true, title: true, meetingDate: true },

@@ -4,6 +4,7 @@ import { requireOrgContext } from "@/lib/tenant";
 import { getActiveTeamMembers } from "@/lib/team";
 import { PageHeader } from "@/components/shared/page-header";
 import { ActivityRow } from "@/components/shared/activities/activity-row";
+import { TaskKanbanBoard } from "@/components/shared/tasks/task-kanban-board";
 import { Button } from "@/components/ui/button";
 import {
   Select,
@@ -13,10 +14,12 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { ACTIVITY_OPEN_STATUSES } from "@/lib/activity-status";
 
 type SearchParams = {
   filter?: string;
   assignee?: string;
+  view?: string;
 };
 
 function buildQuery(params: SearchParams, overrides: Partial<SearchParams>) {
@@ -36,16 +39,17 @@ export default async function ActivitiesPage({
   const params = await searchParams;
   const filter = params.filter ?? "upcoming";
   const assignee = params.assignee;
+  const view = params.view === "board" ? "board" : "list";
 
   const { user, db } = await requireOrgContext();
 
   const now = new Date();
   const statusWhere: Prisma.ActivityWhereInput =
     filter === "completed"
-      ? { status: "completed" }
+      ? { status: "done" }
       : filter === "overdue"
-        ? { status: "pending", dueDate: { lt: now } }
-        : { status: "pending" };
+        ? { status: { in: ACTIVITY_OPEN_STATUSES }, dueDate: { lt: now } }
+        : { status: { in: ACTIVITY_OPEN_STATUSES } };
 
   const assigneeWhere: Prisma.ActivityWhereInput =
     assignee === "me"
@@ -56,18 +60,35 @@ export default async function ActivitiesPage({
           ? { assigneeId: assignee }
           : {};
 
-  const [activities, teamMembers] = await Promise.all([
-    db.activity.findMany({
-      where: { ...statusWhere, ...assigneeWhere },
-      include: {
-        company: true,
-        person: true,
-        opportunity: true,
-        assignee: { select: { id: true, name: true } },
-      },
-      orderBy:
-        filter === "completed" ? { completedAt: "desc" } : { dueDate: "asc" },
-    }),
+  const [activities, boardActivities, teamMembers] = await Promise.all([
+    view === "list"
+      ? db.activity.findMany({
+          where: { ...statusWhere, ...assigneeWhere },
+          include: {
+            company: true,
+            person: true,
+            opportunity: true,
+            assignee: { select: { id: true, name: true } },
+          },
+          orderBy:
+            filter === "completed"
+              ? { completedAt: "desc" }
+              : { dueDate: "asc" },
+        })
+      : Promise.resolve([]),
+    view === "board"
+      ? db.activity.findMany({
+          where: { ...assigneeWhere },
+          include: {
+            company: true,
+            person: true,
+            opportunity: true,
+            assignee: { select: { id: true, name: true } },
+            completedBy: { select: { id: true, name: true } },
+          },
+          orderBy: { dueDate: "asc" },
+        })
+      : Promise.resolve([]),
     getActiveTeamMembers(db),
   ]);
 
@@ -91,6 +112,18 @@ export default async function ActivitiesPage({
         >
           Mis tareas
         </Button>
+        <Button
+          variant="secondary"
+          render={
+            <Link
+              href={buildQuery(params, {
+                view: view === "board" ? undefined : "board",
+              })}
+            />
+          }
+        >
+          {view === "board" ? "Ver como lista" : "Ver como tablero"}
+        </Button>
         <form className="flex items-center gap-2">
           <input type="hidden" name="filter" value={filter} />
           <Select name="assignee" defaultValue={isMine ? "" : (assignee ?? "")}>
@@ -113,71 +146,82 @@ export default async function ActivitiesPage({
         </form>
       </div>
 
-      <Tabs defaultValue={filter}>
-        <TabsList>
-          <TabsTrigger
-            value="upcoming"
-            nativeButton={false}
-            render={<Link href={buildQuery(params, { filter: "upcoming" })} />}
-          >
-            Próximas
-          </TabsTrigger>
-          <TabsTrigger
-            value="overdue"
-            nativeButton={false}
-            render={<Link href={buildQuery(params, { filter: "overdue" })} />}
-          >
-            Vencidas
-          </TabsTrigger>
-          <TabsTrigger
-            value="completed"
-            nativeButton={false}
-            render={<Link href={buildQuery(params, { filter: "completed" })} />}
-          >
-            Completadas
-          </TabsTrigger>
-        </TabsList>
+      {view === "board" ? (
+        <TaskKanbanBoard
+          activities={boardActivities}
+          teamMembers={teamMembers}
+        />
+      ) : (
+        <Tabs defaultValue={filter}>
+          <TabsList>
+            <TabsTrigger
+              value="upcoming"
+              nativeButton={false}
+              render={
+                <Link href={buildQuery(params, { filter: "upcoming" })} />
+              }
+            >
+              Próximas
+            </TabsTrigger>
+            <TabsTrigger
+              value="overdue"
+              nativeButton={false}
+              render={<Link href={buildQuery(params, { filter: "overdue" })} />}
+            >
+              Vencidas
+            </TabsTrigger>
+            <TabsTrigger
+              value="completed"
+              nativeButton={false}
+              render={
+                <Link href={buildQuery(params, { filter: "completed" })} />
+              }
+            >
+              Completadas
+            </TabsTrigger>
+          </TabsList>
 
-        <TabsContent value={filter} className="space-y-2 pt-4">
-          {activities.length === 0 ? (
-            <p className="text-muted-foreground text-sm">
-              No hay actividades en este filtro.
-            </p>
-          ) : (
-            activities.map((activity) => (
-              <div key={activity.id} className="space-y-1">
-                <ActivityRow activity={activity} teamMembers={teamMembers} />
-                <p className="text-muted-foreground pl-3 text-xs">
-                  {activity.company && (
-                    <Link
-                      href={`/companies/${activity.company.id}`}
-                      className="hover:underline"
-                    >
-                      {activity.company.name}
-                    </Link>
-                  )}
-                  {activity.person && (
-                    <Link
-                      href={`/people/${activity.person.id}`}
-                      className="hover:underline"
-                    >
-                      {activity.person.firstName} {activity.person.lastName}
-                    </Link>
-                  )}
-                  {activity.opportunity && (
-                    <Link
-                      href={`/opportunities/${activity.opportunity.id}`}
-                      className="hover:underline"
-                    >
-                      {activity.opportunity.name}
-                    </Link>
-                  )}
-                </p>
-              </div>
-            ))
-          )}
-        </TabsContent>
-      </Tabs>
+          <TabsContent value={filter} className="space-y-2 pt-4">
+            {activities.length === 0 ? (
+              <p className="text-muted-foreground text-sm">
+                No hay actividades en este filtro.
+              </p>
+            ) : (
+              activities.map((activity) => (
+                <div key={activity.id} className="space-y-1">
+                  <ActivityRow activity={activity} teamMembers={teamMembers} />
+                  <p className="text-muted-foreground pl-3 text-xs">
+                    {activity.company && (
+                      <Link
+                        href={`/companies/${activity.company.id}`}
+                        className="hover:underline"
+                      >
+                        {activity.company.name}
+                      </Link>
+                    )}
+                    {activity.person && (
+                      <Link
+                        href={`/people/${activity.person.id}`}
+                        className="hover:underline"
+                      >
+                        {activity.person.firstName} {activity.person.lastName}
+                      </Link>
+                    )}
+                    {activity.opportunity && (
+                      <Link
+                        href={`/opportunities/${activity.opportunity.id}`}
+                        className="hover:underline"
+                      >
+                        {activity.opportunity.name}
+                      </Link>
+                    )}
+                  </p>
+                </div>
+              ))
+            )}
+          </TabsContent>
+        </Tabs>
+      )}
     </div>
   );
 }

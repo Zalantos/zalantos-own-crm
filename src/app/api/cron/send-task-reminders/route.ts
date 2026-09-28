@@ -8,12 +8,16 @@ import {
 } from "@/lib/meeting-intelligence/internal-auth";
 import { renderNotificationEmail } from "@/lib/integrations/email-template";
 import { dispatchIntegrationEvent } from "@/lib/integrations/gateway";
+import { ACTIVITY_OPEN_STATUSES } from "@/lib/activity-status";
 
 const DAY_MS = 86_400_000;
 
 function appUrl() {
-  return (process.env.APP_URL ?? process.env.AUTH_URL ?? "http://localhost:3000")
-    .replace(/\/$/, "");
+  return (
+    process.env.APP_URL ??
+    process.env.AUTH_URL ??
+    "http://localhost:3000"
+  ).replace(/\/$/, "");
 }
 
 // Fecha local de la org (YYYY-MM-DD) para el bucket diario del dedupeKey.
@@ -37,13 +41,10 @@ type ReminderActivity = Awaited<
   ReturnType<typeof findReminderActivities>
 >[number];
 
-async function findReminderActivities(
-  db: TenantClient,
-  dueSoonLimit: Date,
-) {
+async function findReminderActivities(db: TenantClient, dueSoonLimit: Date) {
   return db.activity.findMany({
     where: {
-      status: "pending",
+      status: { in: ACTIVITY_OPEN_STATUSES },
       dueDate: { not: null, lt: dueSoonLimit },
       assignee: { is: { email: { not: null } } },
     },
@@ -79,7 +80,8 @@ function buildReminderPayload(
       ? `${activity.person.firstName} ${activity.person.lastName}`
       : null,
   ].filter(Boolean);
-  const contextText = context.length > 0 ? `\nContexto: ${context.join(" · ")}` : "";
+  const contextText =
+    context.length > 0 ? `\nContexto: ${context.join(" · ")}` : "";
   const activityUrl = `${baseUrl}/activities?assignee=me`;
   const subject = isOverdue
     ? `Tarea vencida: ${activity.title}`
@@ -194,7 +196,10 @@ export async function POST(request: NextRequest) {
     try {
       await runForOrg(org, now, results);
     } catch (error) {
-      console.error(`[cron] recordatorios fallaron para org ${org.slug}`, error);
+      console.error(
+        `[cron] recordatorios fallaron para org ${org.slug}`,
+        error,
+      );
     }
   }
 

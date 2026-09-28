@@ -37,7 +37,7 @@ async function executeCreateActivity(
       dueDate: action.dueInDays
         ? addDays(new Date(), action.dueInDays)
         : undefined,
-      status: "pending",
+      status: "todo",
       createdById: event.actorId ?? null,
       createdVia: "workflow",
     },

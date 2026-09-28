@@ -9,6 +9,7 @@ import { StatRow } from "@/components/shared/dashboard/stat-row";
 import { PipelineChart } from "@/components/shared/dashboard/pipeline-chart";
 import { RecentActivityFeed } from "@/components/shared/dashboard/recent-activity-feed";
 import { ActivityRow } from "@/components/shared/activities/activity-row";
+import { ACTIVITY_OPEN_STATUSES } from "@/lib/activity-status";
 
 const MY_TASKS_LIMIT = 6;
 
@@ -36,7 +37,7 @@ export default async function DashboardPage() {
       _sum: { estimatedValue: true },
     }),
     db.activity.count({
-      where: { status: "pending", dueDate: { lt: now } },
+      where: { status: { in: ACTIVITY_OPEN_STATUSES }, dueDate: { lt: now } },
     }),
     db.meeting.count(),
     db.meeting.count({ where: { processingStatus: "ready" } }),
@@ -49,7 +50,7 @@ export default async function DashboardPage() {
     getActivityFeed(db, { page: 1 }),
     db.activity.findMany({
       where: {
-        status: "pending",
+        status: { in: ACTIVITY_OPEN_STATUSES },
         assignee: { userId: user.id },
       },
       include: {
@@ -63,7 +64,7 @@ export default async function DashboardPage() {
     }),
     db.activity.count({
       where: {
-        status: "pending",
+        status: { in: ACTIVITY_OPEN_STATUSES },
         assignee: { userId: user.id },
       },
     }),

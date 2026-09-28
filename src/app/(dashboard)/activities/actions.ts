@@ -2,12 +2,15 @@
 
 import { revalidatePath } from "next/cache";
 import { requireOrgContext } from "@/lib/tenant";
-import {
-  activityCreateSchema,
-  activityUpdateSchema,
-} from "@/lib/zod/activity";
+import { activityCreateSchema, activityUpdateSchema } from "@/lib/zod/activity";
 import { handleMutationError } from "@/lib/prisma-errors";
 import { appendTimelineEvent } from "@/lib/timeline";
+import { evaluateWorkflows } from "@/lib/workflows/engine";
+import {
+  ACTIVITY_STATUS_LABELS,
+  isActivityStatus,
+  type ActivityStatus,
+} from "@/lib/activity-status";
 
 function parentPath(entity: {
   companyId?: string | null;
@@ -35,18 +38,17 @@ export async function createActivity(
 
   const linkedCompanyId =
     parsed.data.companyId ??
-    (
-      parsed.data.opportunityId
-        ? await db.opportunity.findUnique({
-            where: { id: parsed.data.opportunityId },
+    (parsed.data.opportunityId
+      ? await db.opportunity.findUnique({
+          where: { id: parsed.data.opportunityId },
+          select: { companyId: true },
+        })
+      : parsed.data.personId
+        ? await db.person.findUnique({
+            where: { id: parsed.data.personId },
             select: { companyId: true },
           })
-        : parsed.data.personId
-          ? await db.person.findUnique({
-              where: { id: parsed.data.personId },
-              select: { companyId: true },
-            })
-          : null
+        : null
     )?.companyId ??
     null;
 
@@ -132,36 +134,84 @@ export async function assignActivity(id: string, assigneeId: string | null) {
   revalidatePath("/dashboard");
 }
 
-export async function completeActivity(id: string) {
-  const { db } = await requireOrgContext();
+export async function updateActivityStatus(
+  id: string,
+  status: ActivityStatus,
+  options?: { completedById?: string | null },
+) {
+  const { user, org, db } = await requireOrgContext();
+
+  const before = await db.activity.findUnique({ where: { id } });
+  if (!before) return;
+
+  const data: {
+    status: ActivityStatus;
+    statusChangedAt: Date;
+    completedAt?: Date | null;
+    completedById?: string | null;
+    blockedReason?: string | null;
+  } = {
+    status,
+    statusChangedAt: new Date(),
+  };
+
+  if (status === "done" && before.status !== "done") {
+    data.completedAt = new Date();
+    data.completedById = options?.completedById ?? before.assigneeId ?? null;
+  } else if (before.status === "done" && status !== "done") {
+    data.completedAt = null;
+    data.completedById = null;
+  } else if (options && "completedById" in options) {
+    data.completedById = options.completedById ?? null;
+  }
+
+  if (status !== "blocked") {
+    data.blockedReason = null;
+  }
+
   let activity;
   try {
-    activity = await db.activity.update({
-      where: { id },
-      data: { status: "completed", completedAt: new Date() },
-    });
+    activity = await db.activity.update({ where: { id }, data });
   } catch (error) {
     handleMutationError(error);
   }
+
+  const beforeLabel = isActivityStatus(before.status)
+    ? ACTIVITY_STATUS_LABELS[before.status]
+    : before.status;
+
+  await appendTimelineEvent(db, {
+    organizationId: org.id,
+    companyId: activity.companyId,
+    opportunityId: activity.opportunityId,
+    type: "task_status_changed",
+    title: `Tarea "${activity.title}"`,
+    summary: `${beforeLabel} → ${ACTIVITY_STATUS_LABELS[status]}`,
+    refType: "activity",
+    refId: activity.id,
+    actorId: user.id,
+  });
+
+  await evaluateWorkflows(db, org.id, {
+    entityType: "activity",
+    entityId: activity.id,
+    eventName: "status_changed",
+    actorId: user.id,
+    before: { status: before.status },
+    after: { status: activity.status },
+  });
+
   revalidatePath(parentPath(activity));
   revalidatePath("/activities");
   revalidatePath("/dashboard");
 }
 
+export async function completeActivity(id: string) {
+  await updateActivityStatus(id, "done");
+}
+
 export async function reopenActivity(id: string) {
-  const { db } = await requireOrgContext();
-  let activity;
-  try {
-    activity = await db.activity.update({
-      where: { id },
-      data: { status: "pending", completedAt: null },
-    });
-  } catch (error) {
-    handleMutationError(error);
-  }
-  revalidatePath(parentPath(activity));
-  revalidatePath("/activities");
-  revalidatePath("/dashboard");
+  await updateActivityStatus(id, "todo");
 }
 
 export async function deleteActivity(id: string) {

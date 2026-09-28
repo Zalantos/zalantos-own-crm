@@ -2,7 +2,11 @@ import type { Prisma } from "@prisma/client";
 import { withOrgTransaction, type TenantClient } from "@/lib/tenant";
 import { appendTimelineEvent } from "@/lib/timeline";
 import { evaluateWorkflows } from "@/lib/workflows/engine";
-import { getOrgStages, stagesByKey, type StageOption } from "@/lib/pipeline/stages";
+import {
+  getOrgStages,
+  stagesByKey,
+  type StageOption,
+} from "@/lib/pipeline/stages";
 import {
   coerceFieldValue,
   getWritableFields,
@@ -78,7 +82,11 @@ async function assertPersonInCompany(
   personId: string,
 ): Promise<void> {
   const person = await tx.person.findFirst({
-    where: { id: personId, companyId: ctx.companyId, organizationId: ctx.organizationId },
+    where: {
+      id: personId,
+      companyId: ctx.companyId,
+      organizationId: ctx.organizationId,
+    },
     select: { id: true },
   });
   if (!person) {
@@ -185,8 +193,13 @@ async function linkFlaggedContactToOpportunity(
   tx: Prisma.TransactionClient,
   ctx: ApplyContext,
   person: { id: string; isDecisionMaker: boolean; isSponsor: boolean },
-): Promise<Pick<RevertData, "opportunityId" | "prevDecisionMakerId" | "prevSponsorId">> {
-  if (!ctx.defaultOpportunityId || (!person.isDecisionMaker && !person.isSponsor)) {
+): Promise<
+  Pick<RevertData, "opportunityId" | "prevDecisionMakerId" | "prevSponsorId">
+> {
+  if (
+    !ctx.defaultOpportunityId ||
+    (!person.isDecisionMaker && !person.isSponsor)
+  ) {
     return {};
   }
   const prev = await tx.opportunity.findUnique({
@@ -202,7 +215,9 @@ async function linkFlaggedContactToOpportunity(
   });
   return {
     opportunityId: ctx.defaultOpportunityId,
-    prevDecisionMakerId: person.isDecisionMaker ? (prev?.decisionMakerId ?? null) : undefined,
+    prevDecisionMakerId: person.isDecisionMaker
+      ? (prev?.decisionMakerId ?? null)
+      : undefined,
     prevSponsorId: person.isSponsor ? (prev?.sponsorId ?? null) : undefined,
   };
 }
@@ -273,7 +288,10 @@ async function applyItem(
         title: "Dolor principal actualizado",
         summary: String(after.value ?? ""),
       });
-      return { opportunityId: item.entityId, prevMainPain: prev?.mainPain ?? null };
+      return {
+        opportunityId: item.entityId,
+        prevMainPain: prev?.mainPain ?? null,
+      };
     }
 
     case "update_next_step": {
@@ -409,7 +427,13 @@ async function applyItem(
         );
       }
       // Fill only the fields the existing record is missing; never overwrite.
-      const fillable = ["email", "phone", "roleTitle", "linkedinUrl", "notes"] as const;
+      const fillable = [
+        "email",
+        "phone",
+        "roleTitle",
+        "linkedinUrl",
+        "notes",
+      ] as const;
       const data: Record<string, string> = {};
       const filledFields: string[] = [];
       for (const field of fillable) {
@@ -451,21 +475,29 @@ async function applyItem(
     }
 
     case "create_task": {
+      // El chat propone dueDate absoluto (ISO); la pipeline de reuniones
+      // propone dueInDays relativo a cuándo se aplica. Se prioriza el
+      // absoluto cuando ambos podrían estar presentes.
       const dueInDays =
         after.dueInDays == null ? null : Number(after.dueInDays);
+      const dueDate =
+        after.dueDate != null ? new Date(String(after.dueDate)) : null;
       const task = await tx.activity.create({
         data: {
           organizationId: ctx.organizationId,
           companyId: ctx.companyId,
           opportunityId: ctx.defaultOpportunityId,
+          personId: after.personId ? String(after.personId) : null,
           type: "task",
           title: String(after.title ?? "Tarea"),
           description: after.description ? String(after.description) : null,
           dueDate:
-            dueInDays == null
-              ? null
-              : new Date(Date.now() + dueInDays * 86_400_000),
-          status: "pending",
+            dueDate && !Number.isNaN(dueDate.getTime())
+              ? dueDate
+              : dueInDays == null
+                ? null
+                : new Date(Date.now() + dueInDays * 86_400_000),
+          status: "todo",
           createdById: ctx.actorId,
           createdVia,
         },
@@ -487,6 +519,7 @@ async function applyItem(
           organizationId: ctx.organizationId,
           companyId: ctx.companyId,
           opportunityId: ctx.defaultOpportunityId,
+          personId: after.personId ? String(after.personId) : null,
           title: after.title ? String(after.title) : null,
           body: String(after.body ?? ""),
           createdById: ctx.actorId,
@@ -720,15 +753,28 @@ export async function revertItem(
     status: item.status,
   };
 
-  let stageReverted: { opportunityId: string; from: unknown; to: unknown } | null =
-    null;
+  let stageReverted: {
+    opportunityId: string;
+    from: unknown;
+    to: unknown;
+  } | null = null;
 
   await withOrgTransaction(organizationId, async (tx) => {
     switch (item.type) {
       case "update_field": {
         const field = String(after.field);
-        await applyFieldUpdate(tx, itemRecord, ctx, field, before.value ?? null);
-        if (item.entity === "opportunity" && field === "stage" && item.entityId) {
+        await applyFieldUpdate(
+          tx,
+          itemRecord,
+          ctx,
+          field,
+          before.value ?? null,
+        );
+        if (
+          item.entity === "opportunity" &&
+          field === "stage" &&
+          item.entityId
+        ) {
           stageReverted = {
             opportunityId: item.entityId,
             from: after.value,
@@ -766,7 +812,8 @@ export async function revertItem(
           await tx.opportunity.update({
             where: { id: item.entityId, organizationId },
             data: {
-              nextStep: before.nextStep == null ? null : String(before.nextStep),
+              nextStep:
+                before.nextStep == null ? null : String(before.nextStep),
               nextStepDueDate: before.nextStepDueDate
                 ? new Date(String(before.nextStepDueDate))
                 : null,

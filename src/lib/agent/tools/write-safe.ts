@@ -3,12 +3,18 @@ import { z } from "zod";
 import { withOrgTransaction } from "@/lib/tenant";
 import { appendTimelineEvent } from "@/lib/timeline";
 import type { AgentToolContext } from "@/lib/agent/executor";
+import {
+  registerProposalChange,
+  type AgentProposalItemInput,
+} from "@/lib/agent/proposals";
 
 const emptyToNull = (value: string | undefined | null) =>
   value && value.trim() !== "" ? value : null;
 
-// Low-risk writes ("auto" in the risk policy): they execute immediately but
-// always leave a TimelineEvent audit trail attributed to the acting user.
+// Low-risk writes ("auto" en la política de riesgo): se aplican al instante
+// SOLO si son el único cambio del turno. Si el turno ya trae otro cambio (u
+// otra nota/tarea aparece después), quedan como ítem de una CRMChangeProposal
+// junto con el resto — ver registerProposalChange en proposals.ts.
 export function buildWriteSafeTools(ctx: AgentToolContext) {
   // La empresa destino debe existir dentro de la org (una id ajena es
   // invisible para el cliente scoped).
@@ -25,7 +31,7 @@ export function buildWriteSafeTools(ctx: AgentToolContext) {
   return {
     create_note: tool({
       description:
-        "Crea una nota en el CRM asociada a una empresa (y opcionalmente a una oportunidad o persona). Se aplica al instante.",
+        "Crea una nota en el CRM asociada a una empresa (y opcionalmente a una oportunidad o persona). Se aplica al instante SI es el único cambio del turno; si hay otro cambio en el mismo turno, queda junto a él en una propuesta para revisar.",
       inputSchema: z.object({
         companyId: z.string().min(1),
         opportunityId: z.string().optional(),
@@ -35,43 +41,79 @@ export function buildWriteSafeTools(ctx: AgentToolContext) {
       }),
       execute: async ({ companyId, opportunityId, personId, title, body }) => {
         await assertCompanyInOrg(companyId);
-        const note = await withOrgTransaction(
-          ctx.organizationId,
-          async (tx) => {
-            const created = await tx.note.create({
-              data: {
+        const opportunityIdOrNull = emptyToNull(opportunityId);
+        const personIdOrNull = emptyToNull(personId);
+        const titleOrNull = emptyToNull(title);
+
+        const item: AgentProposalItemInput = {
+          type: "add_note",
+          entity: "note",
+          entityId: null,
+          beforeValue: null,
+          afterValue: { title: titleOrNull, body, personId: personIdOrNull },
+          explanation: "Nota creada por el copiloto desde el chat.",
+          confidence: 1,
+          evidence: null,
+          label: titleOrNull ? `Nota: ${titleOrNull}` : "Nota",
+          before: "—",
+          after: body.length > 200 ? `${body.slice(0, 200)}…` : body,
+        };
+
+        if (ctx.turnState.changeCount === 0) {
+          ctx.turnState.changeCount += 1;
+          const note = await withOrgTransaction(
+            ctx.organizationId,
+            async (tx) => {
+              const created = await tx.note.create({
+                data: {
+                  organizationId: ctx.organizationId,
+                  companyId,
+                  opportunityId: opportunityIdOrNull,
+                  personId: personIdOrNull,
+                  title: titleOrNull,
+                  body,
+                  createdById: ctx.userId,
+                  createdVia: "agent",
+                },
+              });
+              await appendTimelineEvent(tx, {
                 organizationId: ctx.organizationId,
                 companyId,
-                opportunityId: emptyToNull(opportunityId),
-                personId: emptyToNull(personId),
-                title: emptyToNull(title),
-                body,
-                createdById: ctx.userId,
-                createdVia: "agent",
-              },
-            });
-            await appendTimelineEvent(tx, {
-              organizationId: ctx.organizationId,
-              companyId,
-              opportunityId: emptyToNull(opportunityId),
-              type: "note_added",
-              title: created.title ? `Nota: ${created.title}` : "Nota agregada",
-              summary: body.length > 200 ? `${body.slice(0, 200)}…` : body,
-              refType: "agent_chat",
-              refId: ctx.threadId,
-              actorId: ctx.userId,
-              metadata: { via: "agent" },
-            });
-            return created;
-          },
+                opportunityId: opportunityIdOrNull,
+                type: "note_added",
+                title: created.title
+                  ? `Nota: ${created.title}`
+                  : "Nota agregada",
+                summary: body.length > 200 ? `${body.slice(0, 200)}…` : body,
+                refType: "agent_chat",
+                refId: ctx.threadId,
+                actorId: ctx.userId,
+                metadata: { via: "agent" },
+              });
+              return created;
+            },
+          );
+          ctx.turnState.pendingInstant = {
+            kind: "note",
+            entityId: note.id,
+            companyId,
+            opportunityId: opportunityIdOrNull,
+            item,
+          };
+          return { status: "created", noteId: note.id };
+        }
+
+        return registerProposalChange(
+          ctx,
+          { companyId, opportunityId: opportunityIdOrNull },
+          [item],
         );
-        return { status: "created", noteId: note.id };
       },
     }),
 
     create_task: tool({
       description:
-        "Crea una tarea pendiente asociada a una empresa (y opcionalmente a una oportunidad o persona). Se aplica al instante.",
+        "Crea una tarea pendiente asociada a una empresa (y opcionalmente a una oportunidad o persona). Se aplica al instante SI es el único cambio del turno; si hay otro cambio en el mismo turno, queda junto a él en una propuesta para revisar.",
       inputSchema: z.object({
         companyId: z.string().min(1),
         opportunityId: z.string().optional(),
@@ -96,40 +138,81 @@ export function buildWriteSafeTools(ctx: AgentToolContext) {
           return { error: `dueDate inválida: ${dueDate}. Usar formato ISO.` };
         }
         await assertCompanyInOrg(companyId);
-        const task = await withOrgTransaction(
-          ctx.organizationId,
-          async (tx) => {
-            const created = await tx.activity.create({
-              data: {
+        const opportunityIdOrNull = emptyToNull(opportunityId);
+        const personIdOrNull = emptyToNull(personId);
+        const descriptionOrNull = emptyToNull(description);
+
+        const item: AgentProposalItemInput = {
+          type: "create_task",
+          entity: "activity",
+          entityId: null,
+          beforeValue: null,
+          afterValue: {
+            title,
+            description: descriptionOrNull,
+            dueDate: dueDate ?? null,
+            personId: personIdOrNull,
+          },
+          explanation: "Tarea creada por el copiloto desde el chat.",
+          confidence: 1,
+          evidence: null,
+          label: `Tarea: ${title}`,
+          before: "—",
+          after: due ? `${title} (vence ${dueDate})` : title,
+        };
+
+        if (ctx.turnState.changeCount === 0) {
+          ctx.turnState.changeCount += 1;
+          const task = await withOrgTransaction(
+            ctx.organizationId,
+            async (tx) => {
+              const created = await tx.activity.create({
+                data: {
+                  organizationId: ctx.organizationId,
+                  companyId,
+                  opportunityId: opportunityIdOrNull,
+                  personId: personIdOrNull,
+                  type: "task",
+                  title,
+                  description: descriptionOrNull,
+                  dueDate: due,
+                  status: "todo",
+                  createdById: ctx.userId,
+                  createdVia: "agent",
+                },
+              });
+              await appendTimelineEvent(tx, {
                 organizationId: ctx.organizationId,
                 companyId,
-                opportunityId: emptyToNull(opportunityId),
-                personId: emptyToNull(personId),
-                type: "task",
-                title,
-                description: emptyToNull(description),
-                dueDate: due,
-                status: "pending",
-                createdById: ctx.userId,
-                createdVia: "agent",
-              },
-            });
-            await appendTimelineEvent(tx, {
-              organizationId: ctx.organizationId,
-              companyId,
-              opportunityId: emptyToNull(opportunityId),
-              type: "task_created",
-              title: `Tarea creada: ${title}`,
-              summary: due ? `Vence ${due.toLocaleDateString("es-AR")}` : null,
-              refType: "agent_chat",
-              refId: ctx.threadId,
-              actorId: ctx.userId,
-              metadata: { via: "agent" },
-            });
-            return created;
-          },
+                opportunityId: opportunityIdOrNull,
+                type: "task_created",
+                title: `Tarea creada: ${title}`,
+                summary: due
+                  ? `Vence ${due.toLocaleDateString("es-AR")}`
+                  : null,
+                refType: "agent_chat",
+                refId: ctx.threadId,
+                actorId: ctx.userId,
+                metadata: { via: "agent" },
+              });
+              return created;
+            },
+          );
+          ctx.turnState.pendingInstant = {
+            kind: "task",
+            entityId: task.id,
+            companyId,
+            opportunityId: opportunityIdOrNull,
+            item,
+          };
+          return { status: "created", taskId: task.id };
+        }
+
+        return registerProposalChange(
+          ctx,
+          { companyId, opportunityId: opportunityIdOrNull },
+          [item],
         );
-        return { status: "created", taskId: task.id };
       },
     }),
   };

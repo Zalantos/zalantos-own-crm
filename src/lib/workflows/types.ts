@@ -1,6 +1,7 @@
 import { EntityType } from "@prisma/client";
 
-export type WorkflowTriggerEvent = "stage_changed" | "field_overdue";
+export type WorkflowTriggerEvent =
+  "stage_changed" | "field_overdue" | "status_changed";
 
 export type WorkflowEvent = {
   entityType: EntityType;

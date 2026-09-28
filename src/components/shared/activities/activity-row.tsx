@@ -18,6 +18,8 @@ import {
   type ActivityFormState,
 } from "@/app/(dashboard)/activities/actions";
 import { actorLabel, createdViaLabel } from "@/lib/traceability";
+import { initials } from "@/lib/format";
+import { TeamMemberSelect } from "@/components/shared/activities/team-member-select";
 import type { Activity } from "@prisma/client";
 import type { AssignableTeamMember } from "@/lib/team";
 
@@ -30,56 +32,6 @@ type ActivityWithAssignee = Activity & {
 
 function formatDueDateForInput(dueDate: Date | null) {
   return dueDate ? new Date(dueDate).toISOString().slice(0, 10) : "";
-}
-
-function initials(name: string) {
-  return name
-    .split(/\s+/)
-    .filter(Boolean)
-    .slice(0, 2)
-    .map((part) => part[0]?.toUpperCase())
-    .join("");
-}
-
-// El asignado actual puede estar desactivado (fuera de teamMembers); se
-// agrega como opción para que el select refleje el estado real.
-function AssigneeSelect({
-  activity,
-  teamMembers,
-  name,
-  onChange,
-}: {
-  activity: ActivityWithAssignee;
-  teamMembers: AssignableTeamMember[];
-  name?: string;
-  onChange?: (assigneeId: string | null) => void;
-}) {
-  const currentIsListed =
-    !activity.assigneeId ||
-    teamMembers.some((member) => member.id === activity.assigneeId);
-
-  return (
-    <select
-      name={name}
-      defaultValue={activity.assigneeId ?? ""}
-      onChange={
-        onChange ? (event) => onChange(event.target.value || null) : undefined
-      }
-      className="bg-background h-8 rounded-md border px-2 text-xs"
-    >
-      <option value="">Sin responsable</option>
-      {!currentIsListed && activity.assigneeId && (
-        <option value={activity.assigneeId}>
-          {activity.assignee?.name ?? "Persona desactivada"}
-        </option>
-      )}
-      {teamMembers.map((member) => (
-        <option key={member.id} value={member.id}>
-          {member.name}
-        </option>
-      ))}
-    </select>
-  );
 }
 
 export function ActivityRow({
@@ -95,7 +47,7 @@ export function ActivityRow({
     undefined,
   );
 
-  const isCompleted = activity.status === "completed";
+  const isCompleted = activity.status === "done";
   const isOverdue =
     !isCompleted && activity.dueDate && isPast(activity.dueDate);
 
@@ -201,10 +153,13 @@ export function ActivityRow({
       </div>
       <div className="flex items-center gap-2">
         {isOverdue && <Badge variant="destructive">Vencida</Badge>}
-        <AssigneeSelect
-          activity={activity}
+        <TeamMemberSelect
           teamMembers={teamMembers}
-          onChange={(assigneeId) => void assignActivity(activity.id, assigneeId)}
+          currentId={activity.assigneeId}
+          currentName={activity.assignee?.name}
+          onChange={(assigneeId) =>
+            void assignActivity(activity.id, assigneeId)
+          }
         />
         <Button
           type="button"

@@ -3,6 +3,7 @@ import { NextResponse, type NextRequest } from "next/server";
 import { prismaSystem } from "@/lib/prisma";
 import { forOrg } from "@/lib/tenant";
 import { evaluateWorkflows } from "@/lib/workflows/engine";
+import { ACTIVITY_OPEN_STATUSES } from "@/lib/activity-status";
 
 // Known placeholder values that must never be treated as a valid secret.
 const PLACEHOLDER_CRON_SECRETS = new Set([
@@ -12,9 +13,7 @@ const PLACEHOLDER_CRON_SECRETS = new Set([
 
 function isCronSecretConfigured(secret: string | undefined): secret is string {
   return (
-    !!secret &&
-    secret.length >= 16 &&
-    !PLACEHOLDER_CRON_SECRETS.has(secret)
+    !!secret && secret.length >= 16 && !PLACEHOLDER_CRON_SECRETS.has(secret)
   );
 }
 
@@ -41,7 +40,7 @@ async function runForOrg(orgId: string) {
       where: {
         opportunityId: opportunity.id,
         type: "overdue_follow_up",
-        status: "pending",
+        status: { in: ACTIVITY_OPEN_STATUSES },
       },
     });
     if (existingFollowUp) continue;
