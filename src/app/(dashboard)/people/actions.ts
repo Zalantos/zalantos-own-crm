@@ -1,9 +1,14 @@
 "use server";
 
+import { Prisma } from "@prisma/client";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { requireOrgContext, withOrgTransaction } from "@/lib/tenant";
 import { personCreateSchema, personUpdateSchema } from "@/lib/zod/person";
+import {
+  findExistingPerson,
+  type ExistingPersonMatch,
+} from "@/lib/crm/person-dedup";
 import {
   deleteCustomFieldValues,
   upsertCustomFieldValues,
@@ -11,8 +16,53 @@ import {
 import { handleMutationError } from "@/lib/prisma-errors";
 
 export type FormState =
-  | { error: string; fieldErrors?: Record<string, string[] | undefined> }
+  | {
+      error: string;
+      fieldErrors?: Record<string, string[] | undefined>;
+      conflict?: {
+        kind: "email" | "name";
+        personId: string;
+        name: string;
+        email: string | null;
+        companyName: string | null;
+        href: string;
+      };
+    }
   | undefined;
+
+function conflictState(
+  match: ExistingPersonMatch,
+  requestedCompanyId: string | undefined,
+): Exclude<FormState, undefined> {
+  const name = `${match.firstName} ${match.lastName}`.trim();
+  const conflict = {
+    kind: match.matchedBy,
+    personId: match.id,
+    name,
+    email: match.email,
+    companyName: match.companyName,
+    href: `/people/${match.id}`,
+  } as const;
+
+  if (match.matchedBy === "name") {
+    return {
+      error: `Ya existe ${name} en esta empresa.`,
+      conflict,
+    };
+  }
+
+  const email = match.email ? ` (${match.email})` : "";
+  const companySuffix =
+    match.companyId === requestedCompanyId
+      ? ""
+      : match.companyName
+        ? ` en ${match.companyName}`
+        : " sin empresa";
+  return {
+    error: `Ya existe ${name}${email}${companySuffix}.`,
+    conflict,
+  };
+}
 
 export async function createPerson(
   _prevState: FormState,
@@ -28,14 +78,41 @@ export async function createPerson(
     };
   }
 
-  const person = await db.person.create({
-    data: {
-      ...parsed.data,
-      organizationId: org.id,
-      createdById: user.id,
-      createdVia: "manual",
-    },
-  });
+  const existing = await findExistingPerson(db, org.id, parsed.data);
+  const confirmedNameMatch = formData.get("confirmNameMatch");
+  if (
+    existing &&
+    (existing.matchedBy === "email" || confirmedNameMatch !== existing.id)
+  ) {
+    return conflictState(existing, parsed.data.companyId);
+  }
+
+  let person;
+  try {
+    person = await db.person.create({
+      data: {
+        ...parsed.data,
+        organizationId: org.id,
+        createdById: user.id,
+        createdVia: "manual",
+      },
+    });
+  } catch (error) {
+    if (
+      error instanceof Prisma.PrismaClientKnownRequestError &&
+      error.code === "P2002" &&
+      parsed.data.email
+    ) {
+      const concurrentMatch = await findExistingPerson(db, org.id, {
+        email: parsed.data.email,
+      });
+      if (concurrentMatch) {
+        return conflictState(concurrentMatch, parsed.data.companyId);
+      }
+    }
+    handleMutationError(error);
+  }
+
   await upsertCustomFieldValues(db, org.id, "person", person.id, formData);
   revalidatePath("/people");
   if (person.companyId) revalidatePath(`/companies/${person.companyId}`);

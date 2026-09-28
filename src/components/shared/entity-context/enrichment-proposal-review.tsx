@@ -25,6 +25,15 @@ const TYPE_LABELS: Record<string, string> = {
   link_contact: "Vincular contacto existente",
 };
 
+const PROPOSAL_STATUS_LABELS: Record<string, string> = {
+  pending: "Pendiente",
+  applying: "Aplicando…",
+  approved: "Aprobada",
+  partially_approved: "Aprobada parcialmente",
+  applied: "Aplicada",
+  rejected: "Rechazada",
+};
+
 function asObj(value: unknown): Record<string, unknown> {
   return value && typeof value === "object" && !Array.isArray(value)
     ? (value as Record<string, unknown>)
@@ -71,7 +80,10 @@ export function EnrichmentProposalReview({
 }) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
-  const isFinal = ["applied", "rejected"].includes(proposal.status);
+  const isApplying = proposal.status === "applying";
+  const isFinal = ["applied", "partially_approved", "rejected"].includes(
+    proposal.status,
+  );
   const approvedCount = proposal.items.filter((item) => item.approved).length;
   const appliedCount = proposal.items.filter(
     (item) => item.status === "applied",
@@ -106,12 +118,14 @@ export function EnrichmentProposalReview({
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div className="flex items-center gap-2">
           <h3 className="text-sm font-medium">Propuesta de enriquecimiento</h3>
-          <Badge variant="outline">{proposal.status}</Badge>
+          <Badge variant="outline">
+            {PROPOSAL_STATUS_LABELS[proposal.status] ?? proposal.status}
+          </Badge>
           <Badge variant={confidenceVariant(proposal.confidence)}>
             {Math.round(proposal.confidence * 100)}%
           </Badge>
         </div>
-        {!isFinal && (
+        {!isFinal && !isApplying && (
           <div className="flex gap-2">
             <Button
               size="sm"
@@ -207,7 +221,12 @@ export function EnrichmentProposalReview({
                   type="checkbox"
                   className="mt-1"
                   defaultChecked={item.approved}
-                  disabled={pending || isFinal || item.status === "applied"}
+                  disabled={
+                    pending ||
+                    isFinal ||
+                    isApplying ||
+                    item.status === "applied"
+                  }
                   onChange={(event) =>
                     run(
                       () =>
@@ -240,7 +259,7 @@ export function EnrichmentProposalReview({
                         size="sm"
                         variant="ghost"
                         className="ml-auto h-6 px-2 text-xs"
-                        disabled={pending}
+                        disabled={pending || isApplying}
                         onClick={() =>
                           run(async () => {
                             const result = await revertEnrichmentItemAction(

@@ -12,6 +12,19 @@ import {
   type ContextEntityType,
 } from "@/lib/entity-context/types";
 
+async function requirePendingProposal(
+  db: Awaited<ReturnType<typeof requireOrgContext>>["db"],
+  proposalId: string,
+) {
+  const proposal = await db.cRMChangeProposal.findUnique({
+    where: { id: proposalId },
+    select: { status: true },
+  });
+  if (!proposal || proposal.status !== "pending") {
+    throw new Error("La propuesta ya no se puede editar");
+  }
+}
+
 async function revalidateEntityPath(
   entityType: ContextEntityType,
   entityId: string,
@@ -30,14 +43,15 @@ export async function setEnrichmentItemApproval(
   const { user, org, db } = await requireOrgContext();
   if (!isContextEntityType(entityType)) throw new Error("entityType inválido");
 
-  const item = await db.cRMChangeItem.update({
+  const item = await db.cRMChangeItem.findUnique({
     where: { id: itemId },
-    data: { approved, status: approved ? "approved" : "pending" },
     select: {
       type: true,
       entity: true,
+      proposalId: true,
       proposal: {
         select: {
+          status: true,
           companyId: true,
           opportunityId: true,
           contextSourceId: true,
@@ -45,6 +59,15 @@ export async function setEnrichmentItemApproval(
       },
     },
   });
+  if (!item || item.proposal.status !== "pending") {
+    throw new Error("La propuesta ya no se puede editar");
+  }
+  const updated = await db.cRMChangeItem.updateMany({
+    where: { id: itemId, proposal: { status: "pending" } },
+    data: { approved, status: approved ? "approved" : "pending" },
+  });
+  if (updated.count !== 1)
+    throw new Error("La propuesta ya no se puede editar");
 
   if (item.proposal.companyId) {
     await appendTimelineEvent(db, {
@@ -71,9 +94,14 @@ export async function setAllEnrichmentItemsApproval(
 ) {
   const { user, org, db } = await requireOrgContext();
   if (!isContextEntityType(entityType)) throw new Error("entityType inválido");
+  await requirePendingProposal(db, proposalId);
 
   const { count } = await db.cRMChangeItem.updateMany({
-    where: { proposalId, status: { notIn: ["applied"] } },
+    where: {
+      proposalId,
+      proposal: { status: "pending" },
+      status: { notIn: ["applied"] },
+    },
     data: { approved, status: approved ? "approved" : "pending" },
   });
 
@@ -121,7 +149,11 @@ export async function updateEnrichmentItemValue(
   });
   if (!item) return { error: "El cambio no existe." };
   if (item.status === "applied") return { error: "El cambio ya fue aplicado." };
-  if (["applied", "rejected"].includes(item.proposal.status)) {
+  if (
+    ["applying", "applied", "partially_approved", "rejected"].includes(
+      item.proposal.status,
+    )
+  ) {
     return { error: "La propuesta ya fue cerrada." };
   }
 
@@ -135,14 +167,17 @@ export async function updateEnrichmentItemValue(
     };
   }
 
-  await db.cRMChangeItem.update({
-    where: { id: itemId },
+  const updated = await db.cRMChangeItem.updateMany({
+    where: { id: itemId, proposal: { status: "pending" } },
     data: {
       afterValue: parsed.data as Prisma.InputJsonValue,
       approved: true,
       status: "approved",
     },
   });
+  if (updated.count !== 1) {
+    return { error: "La propuesta ya no se puede editar." };
+  }
 
   await revalidateEntityPath(entityType, entityId);
   return {};
@@ -167,9 +202,15 @@ export async function rejectEnrichmentProposalAction(
   const { user, org, db } = await requireOrgContext();
   if (!isContextEntityType(entityType)) throw new Error("entityType inválido");
 
-  const proposal = await db.cRMChangeProposal.update({
-    where: { id: proposalId },
+  const rejected = await db.cRMChangeProposal.updateMany({
+    where: { id: proposalId, status: "pending" },
     data: { status: "rejected", reviewedBy: user.id, reviewedAt: new Date() },
+  });
+  if (rejected.count !== 1) {
+    throw new Error("La propuesta ya no se puede rechazar");
+  }
+  const proposal = await db.cRMChangeProposal.findUniqueOrThrow({
+    where: { id: proposalId },
     select: {
       companyId: true,
       opportunityId: true,

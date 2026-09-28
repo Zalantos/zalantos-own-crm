@@ -2,24 +2,27 @@
 
 ## Estado actual
 
-Hay un test puntual con el runner nativo de Node:
+Hay tests puntuales con el runner nativo de Node:
 
 - `src/lib/observability/reporter.test.ts` → `npm run test:observability`
+- `src/lib/crm/person-dedup.test.ts` y
+  `src/lib/meeting-intelligence/apply-lock.test.ts` →
+  `npm run test:contact-dedup`
 
 **GAP:** No hay suite amplia ni configuración Jest/Vitest/Playwright para el
 resto del dominio (tenant, propuestas, agent, Telegram).
 
 ## Qué debe testearse siempre (cuando exista suite)
 
-| Área | Prioridad | Motivo |
-|------|-----------|--------|
-| `src/lib/tenant.ts` | Crítica | Aislamiento multi-tenant |
-| `src/lib/crm/person-dedup.ts` | Alta | Evitar duplicados de contactos |
-| `src/lib/crm/proposal-policy.ts` | Alta | Reglas de auto-aprobación |
-| `src/lib/meeting-intelligence/apply.ts` | Alta | Aplicar/revertir propuestas |
-| `src/lib/integrations/gateway.ts` | Media | Dedupe y despacho |
-| `src/lib/zod/*` | Media | Validación de input |
-| Workflows (`src/lib/workflows/`) | Media | Automatización |
+| Área                                    | Prioridad | Motivo                         |
+| --------------------------------------- | --------- | ------------------------------ |
+| `src/lib/tenant.ts`                     | Crítica   | Aislamiento multi-tenant       |
+| `src/lib/crm/person-dedup.ts`           | Alta      | Evitar duplicados de contactos |
+| `src/lib/crm/proposal-policy.ts`        | Alta      | Reglas de auto-aprobación      |
+| `src/lib/meeting-intelligence/apply.ts` | Alta      | Aplicar/revertir propuestas    |
+| `src/lib/integrations/gateway.ts`       | Media     | Dedupe y despacho              |
+| `src/lib/zod/*`                         | Media     | Validación de input            |
+| Workflows (`src/lib/workflows/`)        | Media     | Automatización                 |
 
 ## Qué puede testearse manualmente al inicio
 
@@ -43,13 +46,14 @@ GAP: definir framework (recomendado: Vitest para unit, Playwright para E2E).
 
 ## Scripts disponibles hoy
 
-| Script | Uso |
-|--------|-----|
-| `npm run lint` | ESLint |
-| `npm run format:check` | Prettier |
-| `npm run test:observability` | Test del payload Observability |
-| `npm run seed:check` | Verificar datos de seed |
-| `npx tsx scripts/check-rls-coverage.ts` | Verificar cobertura RLS |
+| Script                                  | Uso                                                |
+| --------------------------------------- | -------------------------------------------------- |
+| `npm run lint`                          | ESLint                                             |
+| `npm run format:check`                  | Prettier                                           |
+| `npm run test:contact-dedup`            | Normalización de contactos y candado de propuestas |
+| `npm run test:observability`            | Test del payload Observability                     |
+| `npm run seed:check`                    | Verificar datos de seed                            |
+| `npx tsx scripts/check-rls-coverage.ts` | Verificar cobertura RLS                            |
 
 ## Casos críticos
 

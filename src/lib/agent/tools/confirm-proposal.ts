@@ -3,7 +3,10 @@ import { z } from "zod";
 import type { AgentToolContext } from "@/lib/agent/executor";
 import { agentConfig } from "@/lib/agent/config";
 import { appUrl } from "@/lib/meeting-intelligence/config";
-import { applyProposal, getProposalContext } from "@/lib/meeting-intelligence/apply";
+import {
+  applyProposal,
+  getProposalContext,
+} from "@/lib/meeting-intelligence/apply";
 import { appendTimelineEvent } from "@/lib/timeline";
 
 // Aplica o rechaza la propuesta pendiente más reciente del thread desde la
@@ -59,6 +62,7 @@ export function buildConfirmProposalTools(ctx: AgentToolContext) {
           await ctx.db.cRMChangeItem.updateMany({
             where: {
               proposalId: proposal.id,
+              proposal: { status: "pending" },
               status: { notIn: ["applied", "reverted", "failed"] },
             },
             data: { approved: true, status: "approved" },
@@ -78,14 +82,17 @@ export function buildConfirmProposalTools(ctx: AgentToolContext) {
         }
 
         // Rechazo: replica la lógica de rejectAgentProposal (no hay función core).
-        await ctx.db.cRMChangeProposal.update({
-          where: { id: proposal.id },
+        const rejected = await ctx.db.cRMChangeProposal.updateMany({
+          where: { id: proposal.id, status: "pending" },
           data: {
             status: "rejected",
             reviewedBy: ctx.userId,
             reviewedAt: new Date(),
           },
         });
+        if (rejected.count !== 1) {
+          return { error: "La propuesta ya no se puede rechazar." };
+        }
         await ctx.db.cRMChangeItem.updateMany({
           where: { proposalId: proposal.id, status: { notIn: ["applied"] } },
           data: { approved: false, status: "rejected" },

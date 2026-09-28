@@ -1,9 +1,11 @@
 "use client";
 
+import Link from "next/link";
 import { useActionState } from "react";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
+import { Button } from "@/components/ui/button";
 import { SubmitButton } from "@/components/shared/submit-button";
 import { createPerson, updatePerson, type FormState } from "./actions";
 import type { Company, Person } from "@prisma/client";
@@ -20,7 +22,7 @@ export function PersonForm({
   customFieldsSection?: React.ReactNode;
 }) {
   const action = person ? updatePerson : createPerson;
-  const [state, formAction] = useActionState<FormState, FormData>(
+  const [state, formAction, pending] = useActionState<FormState, FormData>(
     action,
     undefined,
   );
@@ -116,9 +118,29 @@ export function PersonForm({
 
       {customFieldsSection}
 
-      {state?.error && (
+      {state?.conflict ? (
+        <div className="space-y-3 rounded-md border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900">
+          <p>{state.error}</p>
+          <Link href={state.conflict.href} className="font-medium underline">
+            Ver contacto existente
+          </Link>
+          {state.conflict.kind === "name" && (
+            <div>
+              <Button
+                type="submit"
+                name="confirmNameMatch"
+                value={state.conflict.personId}
+                variant="secondary"
+                disabled={pending}
+              >
+                Crear igual
+              </Button>
+            </div>
+          )}
+        </div>
+      ) : state?.error ? (
         <p className="text-destructive text-sm">{state.error}</p>
-      )}
+      ) : null}
 
       <SubmitButton>
         {person ? "Guardar cambios" : "Crear persona"}

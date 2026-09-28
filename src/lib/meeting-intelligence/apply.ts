@@ -1,5 +1,10 @@
-import type { Prisma } from "@prisma/client";
+import type { Person, Prisma } from "@prisma/client";
 import { withOrgTransaction, type TenantClient } from "@/lib/tenant";
+import {
+  findExistingPerson,
+  normalizeEmail,
+  normalizePersonName,
+} from "@/lib/crm/person-dedup";
 import { appendTimelineEvent } from "@/lib/timeline";
 import { evaluateWorkflows } from "@/lib/workflows/engine";
 import {
@@ -115,7 +120,15 @@ async function applyFieldUpdate(
   const entity = asAgentEntity(item.entity);
   const fields = await getWritableFields(ctx.db, entity);
   const spec = resolveField(fields, entity, field);
-  const coerced = coerceFieldValue(spec, field, value);
+  const coercedValue = coerceFieldValue(spec, field, value);
+  const coerced =
+    entity === "person" && field === "email"
+      ? normalizeEmail(coercedValue == null ? null : String(coercedValue))
+      : entity === "person" && (field === "firstName" || field === "lastName")
+        ? normalizePersonName(
+            coercedValue == null ? null : String(coercedValue),
+          )
+        : coercedValue;
 
   const entityId =
     item.entityId ?? (entity === "company" ? ctx.companyId : null);
@@ -177,6 +190,7 @@ async function applyFieldUpdate(
 // items revert from their stored beforeValue, so they return null.
 type RevertData = {
   createdEntityId?: string;
+  personId?: string;
   opportunityId?: string | null;
   prevDecisionMakerId?: string | null;
   prevSponsorId?: string | null;
@@ -186,6 +200,101 @@ type RevertData = {
   // revert only clears what it actually set.
   filledFields?: string[];
 };
+
+type NormalizedContact = {
+  firstName: string;
+  lastName: string;
+  email: string | null;
+  phone: string | null;
+  roleTitle: string | null;
+  linkedinUrl: string | null;
+  notes: string | null;
+  isDecisionMaker: boolean;
+  isSponsor: boolean;
+};
+
+function optionalString(value: unknown): string | null {
+  return value == null || value === "" ? null : String(value);
+}
+
+function normalizeContact(after: Record<string, unknown>): NormalizedContact {
+  return {
+    firstName: normalizePersonName(
+      after.firstName == null ? null : String(after.firstName),
+    ),
+    lastName: normalizePersonName(
+      after.lastName == null ? null : String(after.lastName),
+    ),
+    email: normalizeEmail(after.email == null ? null : String(after.email)),
+    phone: optionalString(after.phone),
+    roleTitle: optionalString(after.roleTitle),
+    linkedinUrl: optionalString(after.linkedinUrl),
+    notes: optionalString(after.notes),
+    isDecisionMaker: Boolean(after.isDecisionMaker),
+    isSponsor: Boolean(after.isSponsor),
+  };
+}
+
+async function fillEmptyPersonFields(
+  tx: Prisma.TransactionClient,
+  organizationId: string,
+  person: Person,
+  proposed: NormalizedContact,
+): Promise<{ person: Person; filledFields: string[] }> {
+  const fillable = [
+    "email",
+    "phone",
+    "roleTitle",
+    "linkedinUrl",
+    "notes",
+  ] as const;
+  const data: Record<string, string | boolean> = {};
+  const filledFields: string[] = [];
+
+  for (const field of fillable) {
+    const current = person[field];
+    const value = proposed[field];
+    if ((current == null || current === "") && value) {
+      data[field] = value;
+      filledFields.push(field);
+    }
+  }
+  if (proposed.isDecisionMaker && !person.isDecisionMaker) {
+    data.isDecisionMaker = true;
+    filledFields.push("isDecisionMaker");
+  }
+  if (proposed.isSponsor && !person.isSponsor) {
+    data.isSponsor = true;
+    filledFields.push("isSponsor");
+  }
+
+  if (!filledFields.length) return { person, filledFields };
+  const updated = await tx.person.update({
+    where: { id: person.id, organizationId },
+    data,
+  });
+  return { person: updated, filledFields };
+}
+
+async function clearFilledPersonFields(
+  tx: Prisma.TransactionClient,
+  organizationId: string,
+  personId: string,
+  filledFields: string[],
+): Promise<void> {
+  const data: Record<string, string | null | boolean> = {};
+  for (const field of filledFields) {
+    if (field === "isDecisionMaker" || field === "isSponsor") {
+      data[field] = false;
+    } else {
+      data[field] = null;
+    }
+  }
+  await tx.person.update({
+    where: { id: personId, organizationId },
+    data,
+  });
+}
 
 // Links a decision-maker/sponsor contact onto the target opportunity, capturing
 // the prior ids so the link can be undone. Shared by add_contact and link_contact.
@@ -233,7 +342,12 @@ async function applyItem(
 ): Promise<RevertData | null> {
   const after = asRecord(item.afterValue);
   const before = asRecord(item.beforeValue);
-  const createdVia = ctx.source === "agent" ? "agent" : "meeting";
+  const createdVia =
+    ctx.source === "agent"
+      ? "agent"
+      : ctx.source === "enrichment"
+        ? "enrichment"
+        : "meeting";
 
   const timelineBase = {
     organizationId: ctx.organizationId,
@@ -332,19 +446,71 @@ async function applyItem(
     }
 
     case "add_contact": {
+      const contact = normalizeContact(after);
+      const match = await findExistingPerson(tx, ctx.organizationId, {
+        companyId: ctx.companyId,
+        email: contact.email,
+        firstName: contact.firstName,
+        lastName: contact.lastName,
+      });
+
+      if (match) {
+        if (
+          !ctx.companyId ||
+          !match.companyId ||
+          match.companyId !== ctx.companyId
+        ) {
+          const location = match.companyName
+            ? `en ${match.companyName}`
+            : "sin empresa";
+          throw new Error(
+            `Ya existe ${match.firstName} ${match.lastName} (${match.email ?? "sin email"}) ${location}; no se creó otro contacto.`.trim(),
+          );
+        }
+
+        const existing = await tx.person.findFirst({
+          where: {
+            id: match.id,
+            companyId: ctx.companyId,
+            organizationId: ctx.organizationId,
+          },
+        });
+        if (!existing)
+          throw new Error("El contacto existente ya no está disponible");
+
+        const filled = await fillEmptyPersonFields(
+          tx,
+          ctx.organizationId,
+          existing,
+          contact,
+        );
+        const revert = await linkFlaggedContactToOpportunity(
+          tx,
+          ctx,
+          filled.person,
+        );
+        await appendTimelineEvent(tx, {
+          ...timelineBase,
+          type: "contact_linked",
+          title:
+            `Contacto vinculado: ${existing.firstName} ${existing.lastName}`.trim(),
+          summary: filled.filledFields.length
+            ? `Campos completados: ${filled.filledFields.join(", ")}`
+            : "Sin cambios (ya estaba completo)",
+        });
+        return {
+          personId: existing.id,
+          filledFields: filled.filledFields,
+          ...revert,
+        };
+      }
+
       const person = await tx.person.create({
         data: {
           organizationId: ctx.organizationId,
           companyId: ctx.companyId,
-          firstName: String(after.firstName ?? "").trim() || "Sin nombre",
-          lastName: String(after.lastName ?? ""),
-          email: after.email ? String(after.email) : null,
-          phone: after.phone ? String(after.phone) : null,
-          roleTitle: after.roleTitle ? String(after.roleTitle) : null,
-          linkedinUrl: after.linkedinUrl ? String(after.linkedinUrl) : null,
-          notes: after.notes ? String(after.notes) : null,
-          isDecisionMaker: Boolean(after.isDecisionMaker),
-          isSponsor: Boolean(after.isSponsor),
+          ...contact,
+          firstName: contact.firstName || "Sin nombre",
           createdById: ctx.actorId,
           createdVia,
         },
@@ -414,6 +580,7 @@ async function applyItem(
 
     case "link_contact": {
       if (!item.entityId) throw new Error("Falta contacto destino");
+      const contact = normalizeContact(after);
       const person = await tx.person.findFirst({
         where: {
           id: item.entityId,
@@ -426,52 +593,27 @@ async function applyItem(
           `El contacto ${item.entityId} no existe o no pertenece a la empresa`,
         );
       }
-      // Fill only the fields the existing record is missing; never overwrite.
-      const fillable = [
-        "email",
-        "phone",
-        "roleTitle",
-        "linkedinUrl",
-        "notes",
-      ] as const;
-      const data: Record<string, string> = {};
-      const filledFields: string[] = [];
-      for (const field of fillable) {
-        const current = (person as Record<string, unknown>)[field];
-        const proposed = after[field];
-        if ((current == null || current === "") && proposed) {
-          data[field] = String(proposed);
-          filledFields.push(field);
-        }
-      }
-      // Flags are set (not cleared) if the proposal marks them.
-      const flagData: Record<string, boolean> = {};
-      if (after.isDecisionMaker && !person.isDecisionMaker) {
-        flagData.isDecisionMaker = true;
-        filledFields.push("isDecisionMaker");
-      }
-      if (after.isSponsor && !person.isSponsor) {
-        flagData.isSponsor = true;
-        filledFields.push("isSponsor");
-      }
-      if (filledFields.length) {
-        await tx.person.update({
-          where: { id: person.id, organizationId: ctx.organizationId },
-          data: { ...data, ...flagData },
-        });
-      }
-      const merged = { ...person, ...flagData };
-      const revert = await linkFlaggedContactToOpportunity(tx, ctx, merged);
+      const filled = await fillEmptyPersonFields(
+        tx,
+        ctx.organizationId,
+        person,
+        contact,
+      );
+      const revert = await linkFlaggedContactToOpportunity(
+        tx,
+        ctx,
+        filled.person,
+      );
       await appendTimelineEvent(tx, {
         ...timelineBase,
         type: "contact_linked",
         title:
           `Contacto vinculado: ${person.firstName} ${person.lastName}`.trim(),
-        summary: filledFields.length
-          ? `Campos completados: ${filledFields.join(", ")}`
+        summary: filled.filledFields.length
+          ? `Campos completados: ${filled.filledFields.join(", ")}`
           : "Sin cambios (ya estaba completo)",
       });
-      return { createdEntityId: undefined, filledFields, ...revert };
+      return { filledFields: filled.filledFields, ...revert };
     }
 
     case "create_task": {
@@ -605,6 +747,77 @@ export async function getProposalContext(db: TenantClient, proposalId: string) {
   };
 }
 
+const APPLY_LOCK_TIMEOUT_MS = 2 * 60 * 1000;
+
+function appliedResult(items: { status: string }[]) {
+  return {
+    applied: items.filter((item) => item.status === "applied").length,
+    failed: items.filter((item) => item.status === "failed").length,
+  };
+}
+
+export async function claimProposalForApply(
+  db: TenantClient,
+  proposalId: string,
+): Promise<{ applied: number; failed: number } | null> {
+  const now = new Date();
+  const claimed = await db.cRMChangeProposal.updateMany({
+    where: { id: proposalId, status: "pending" },
+    data: { status: "applying", applyStartedAt: now },
+  });
+  if (claimed.count === 1) return null;
+
+  let current = await db.cRMChangeProposal.findUnique({
+    where: { id: proposalId },
+    select: {
+      status: true,
+      applyStartedAt: true,
+      items: { select: { status: true } },
+    },
+  });
+  if (!current) throw new Error("Propuesta no encontrada");
+
+  const staleBefore = new Date(now.getTime() - APPLY_LOCK_TIMEOUT_MS);
+  if (
+    current.status === "applying" &&
+    current.applyStartedAt &&
+    current.applyStartedAt < staleBefore
+  ) {
+    const reclaimed = await db.cRMChangeProposal.updateMany({
+      where: {
+        id: proposalId,
+        status: "applying",
+        applyStartedAt: { lt: staleBefore },
+      },
+      data: { applyStartedAt: now },
+    });
+    if (reclaimed.count === 1) return null;
+    current = await db.cRMChangeProposal.findUnique({
+      where: { id: proposalId },
+      select: {
+        status: true,
+        applyStartedAt: true,
+        items: { select: { status: true } },
+      },
+    });
+    if (!current) throw new Error("Propuesta no encontrada");
+  }
+
+  if (current.status === "applying") {
+    throw new Error("La propuesta ya se está aplicando");
+  }
+  if (
+    current.status === "applied" ||
+    current.status === "partially_approved" ||
+    current.status === "rejected"
+  ) {
+    return appliedResult(current.items);
+  }
+  throw new Error(
+    `La propuesta no se puede aplicar desde el estado ${current.status}`,
+  );
+}
+
 // Applies every approved item of a proposal. Each item is applied in its own
 // transaction so one failure doesn't roll back the rest (item → status=failed).
 export async function applyProposal(
@@ -613,11 +826,17 @@ export async function applyProposal(
   proposalId: string,
   actorId: string,
 ): Promise<{ applied: number; failed: number }> {
+  const previousResult = await claimProposalForApply(db, proposalId);
+  if (previousResult) return previousResult;
+
   const proposal = await db.cRMChangeProposal.findUnique({
     where: { id: proposalId },
     include: { items: true },
   });
   if (!proposal) throw new Error("Propuesta no encontrada");
+  if (proposal.status !== "applying") {
+    throw new Error("La propuesta perdió el candado de aplicación");
+  }
 
   const context = await getProposalContext(db, proposalId);
   const ctx: ApplyContext = {
@@ -669,10 +888,22 @@ export async function applyProposal(
   const nextStatus =
     failed > 0 || hasRejected ? "partially_approved" : "applied";
 
-  await db.cRMChangeProposal.update({
-    where: { id: proposalId },
-    data: { status: nextStatus, reviewedBy: actorId, reviewedAt: new Date() },
+  const finalized = await db.cRMChangeProposal.updateMany({
+    where: {
+      id: proposalId,
+      status: "applying",
+      applyStartedAt: proposal.applyStartedAt,
+    },
+    data: {
+      status: nextStatus,
+      applyStartedAt: null,
+      reviewedBy: actorId,
+      reviewedAt: new Date(),
+    },
   });
+  if (finalized.count !== 1) {
+    throw new Error("La propuesta perdió el candado de aplicación");
+  }
 
   await appendTimelineEvent(db, {
     organizationId,
@@ -719,9 +950,12 @@ export async function revertItem(
 ): Promise<void> {
   const item = await db.cRMChangeItem.findFirst({
     where: { id: itemId, organizationId },
-    include: { proposal: { select: { id: true } } },
+    include: { proposal: { select: { id: true, status: true } } },
   });
   if (!item) throw new Error("Cambio no encontrado");
+  if (item.proposal.status === "applying") {
+    throw new Error("La propuesta todavía se está aplicando");
+  }
   if (item.status !== "applied") {
     throw new Error("Solo se pueden deshacer cambios aplicados");
   }
@@ -828,6 +1062,13 @@ export async function revertItem(
           await tx.person.delete({
             where: { id: revert.createdEntityId, organizationId },
           });
+        } else if (revert.personId && revert.filledFields?.length) {
+          await clearFilledPersonFields(
+            tx,
+            organizationId,
+            revert.personId,
+            revert.filledFields,
+          );
         }
         break;
       }
@@ -849,20 +1090,13 @@ export async function revertItem(
       }
       case "link_contact": {
         await restoreOpportunityLinks(tx, organizationId, revert);
-        // Clear only the fields this item filled on the existing person.
         if (item.entityId && revert.filledFields?.length) {
-          const data: Record<string, string | null | boolean> = {};
-          for (const field of revert.filledFields) {
-            if (field === "isDecisionMaker" || field === "isSponsor") {
-              data[field] = false;
-            } else {
-              data[field] = null;
-            }
-          }
-          await tx.person.update({
-            where: { id: item.entityId, organizationId },
-            data,
-          });
+          await clearFilledPersonFields(
+            tx,
+            organizationId,
+            item.entityId,
+            revert.filledFields,
+          );
         }
         break;
       }

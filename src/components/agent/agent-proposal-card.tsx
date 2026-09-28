@@ -52,6 +52,7 @@ type ToolPart = {
 // se mostraba un badge una vez cerrada la propuesta.
 const STATUS_LABELS: Record<string, string> = {
   pending: "Pendiente de tu aprobación",
+  applying: "Aplicando…",
   applied: "Aprobada y ejecutada",
   partially_approved: "Aprobada parcialmente",
   rejected: "Rechazada",
@@ -125,6 +126,7 @@ export function AgentProposalCard({ part }: { part: ToolPart }) {
 
   const items = output.items ?? [];
   const closed = CLOSED_STATUSES.has(status);
+  const applying = status === "applying";
   const approvedCount = Object.values(approvals).filter(Boolean).length;
 
   function toggleItem(itemId: string, approved: boolean) {
@@ -201,7 +203,7 @@ export function AgentProposalCard({ part }: { part: ToolPart }) {
             "ml-auto inline-flex items-center gap-1 rounded-full px-2 py-0.5",
             status === "rejected"
               ? "bg-muted text-muted-foreground"
-              : status === "pending"
+              : status === "pending" || status === "applying"
                 ? "bg-amber-100 text-amber-700"
                 : "bg-emerald-100 text-emerald-700",
           )}
@@ -216,13 +218,13 @@ export function AgentProposalCard({ part }: { part: ToolPart }) {
       <div className="flex flex-col gap-2 p-3">
         {items.map((item) => (
           <div key={item.id} className="flex items-start gap-2 text-xs">
-            {!closed && (
+            {!closed && !applying && (
               <Checkbox
                 checked={approvals[item.id] ?? item.approved ?? false}
                 onCheckedChange={(checked) =>
                   toggleItem(item.id, checked === true)
                 }
-                disabled={pending || !loaded}
+                disabled={pending || !loaded || applying}
                 className="mt-0.5"
               />
             )}
@@ -270,7 +272,7 @@ export function AgentProposalCard({ part }: { part: ToolPart }) {
                 size="sm"
                 className="h-6 shrink-0 px-2 text-xs"
                 onClick={() => revert(item.id)}
-                disabled={pending || !loaded}
+                disabled={pending || !loaded || applying}
               >
                 Deshacer
               </Button>
@@ -289,7 +291,7 @@ export function AgentProposalCard({ part }: { part: ToolPart }) {
         ))}
       </div>
 
-      {!closed && (
+      {!closed && !applying && (
         <div className="bg-muted/30 flex items-center justify-end gap-2 border-t px-3 py-2">
           <Button
             variant="ghost"

@@ -63,11 +63,15 @@ export async function setAgentItemApproval(
   approved: boolean,
 ) {
   const { user, db } = await requireOrgContext();
-  await requireOwnedAgentProposal(db, proposalId, user.id);
-  await db.cRMChangeItem.update({
-    where: { id: itemId, proposalId },
+  const proposal = await requireOwnedAgentProposal(db, proposalId, user.id);
+  if (proposal.status !== "pending") {
+    throw new Error("La propuesta ya no se puede editar");
+  }
+  const { count } = await db.cRMChangeItem.updateMany({
+    where: { id: itemId, proposalId, proposal: { status: "pending" } },
     data: { approved, status: approved ? "approved" : "pending" },
   });
+  if (count !== 1) throw new Error("La propuesta ya no se puede editar");
 }
 
 function entityPaths(context: {
@@ -187,10 +191,11 @@ export async function rejectAgentProposal(proposalId: string) {
   const { user, org, db } = await requireOrgContext();
   await requireOwnedAgentProposal(db, proposalId, user.id);
 
-  await db.cRMChangeProposal.update({
-    where: { id: proposalId },
+  const { count } = await db.cRMChangeProposal.updateMany({
+    where: { id: proposalId, status: "pending" },
     data: { status: "rejected", reviewedBy: user.id, reviewedAt: new Date() },
   });
+  if (count !== 1) throw new Error("La propuesta ya no se puede rechazar");
   await db.cRMChangeItem.updateMany({
     where: { proposalId, status: { notIn: ["applied"] } },
     data: { approved: false, status: "rejected" },

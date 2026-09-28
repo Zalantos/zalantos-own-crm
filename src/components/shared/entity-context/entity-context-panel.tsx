@@ -67,7 +67,9 @@ export async function loadEntityContextData(
     db.cRMChangeProposal.findMany({
       where: {
         ...proposalWhere,
-        status: { in: ["pending", "partially_approved", "approved"] },
+        status: {
+          in: ["pending", "applying", "partially_approved", "approved"],
+        },
       },
       include: { items: { orderBy: { confidence: "asc" } } },
       orderBy: { createdAt: "desc" },
@@ -127,9 +129,7 @@ export function EntityContextPanel({
       )}
       <div className="space-y-3">
         <h3 className="text-sm font-medium">Fuentes</h3>
-        <ContextSourcesPanel
-          sources={sourceViews}
-        />
+        <ContextSourcesPanel sources={sourceViews} />
       </div>
     </div>
   );

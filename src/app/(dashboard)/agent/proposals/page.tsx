@@ -64,7 +64,7 @@ export default async function AgentProposalsPage() {
     ? await db.cRMChangeProposal.findMany({
         where: {
           source: "agent",
-          status: "pending",
+          status: { in: ["pending", "applying"] },
           chatThreadId: { in: threadIds },
         },
         orderBy: { createdAt: "desc" },

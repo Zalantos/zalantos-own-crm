@@ -81,7 +81,7 @@ Ambas con RLS `tenant_isolation`. Resolución de vínculo en APIs Telegram usa
 - `EntityType`: company, person, opportunity, activity, note, meeting
 - `Role`: ADMIN, MEMBER
 - `ProcessingStatus`: pending → extracting → transcribing → analyzing → ready | failed
-- `ProposalStatus`: pending, approved, rejected, partially_approved, applied
+- `ProposalStatus`: pending, applying, approved, rejected, partially_approved, applied
 - `CustomFieldType`: text, number, boolean, date, select, multiselect
 
 ## Reglas de negocio por entidad
@@ -114,8 +114,8 @@ Ambas con RLS `tenant_isolation`. Resolución de vínculo en APIs Telegram usa
 
 - `Company`, `Person`, `Opportunity`, `Activity` y `Note` registran
   `createdById` nullable hacia `User`, `createdVia`, `createdAt` y `updatedAt`.
-- Valores esperados de `createdVia`: `manual`, `agent`, `meeting`, `workflow`,
-  `seed`, `legacy`.
+- Valores esperados de `createdVia`: `manual`, `agent`, `meeting`, `enrichment`,
+  `workflow`, `seed`, `legacy`.
 - Para acciones vía agente/propuestas, `createdById` apunta al usuario humano
   que ejecutó o aplicó la acción; el canal queda en `createdVia`.
 - Filas históricas sin autor quedan como `createdVia=legacy` y
@@ -171,10 +171,17 @@ en propuestas anteriores a la migración.
 
 - Lógica en `src/lib/crm/person-dedup.ts` y `src/lib/meeting-intelligence/dedup-items.ts`.
 - `duplicateOfId` en items de tipo `link_contact`.
+- El email se persiste normalizado (`trim` + minúsculas; vacío → `null`) y es
+  único por organización mediante `@@unique([organizationId, email])`.
+- Sin email, el match alternativo es nombre+apellido exactos, sin distinguir
+  mayúsculas, dentro de la misma empresa.
+- `CRMChangeProposal.applyStartedAt` implementa el lease del estado `applying`
+  para evitar aplicaciones concurrentes y permitir reintentos tras un crash.
 
 ## Restricciones críticas
 
 - `@@unique([organizationId, key])` en `PipelineStage`.
+- `@@unique([organizationId, email])` en `Person` (los `NULL` no colisionan).
 - `@@unique([organizationId, dedupeKey])` en `IntegrationDelivery`.
 - `User.email` único global (no por org).
 - ON DELETE: Restrict en org para entidades CRM; Cascade en hijos dependientes.
@@ -193,20 +200,21 @@ Ver `@@index` en `schema.prisma` — la mayoría compuestos con `organizationId`
 
 ## Migraciones relevantes
 
-| Migración                      | Cambio                                                                                                                                                                |
-| ------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `init`                         | Esquema base                                                                                                                                                          |
-| `meeting_intelligence`         | Meetings, evidence, proposals                                                                                                                                         |
-| `agent_chat`                   | Threads y mensajes                                                                                                                                                    |
-| `multi_tenant_foundation`      | Refactor multi-tenant                                                                                                                                                 |
-| `integration_deliveries`       | Gateway                                                                                                                                                               |
-| `enable_row_level_security`    | RLS                                                                                                                                                                   |
-| `add_opportunity_traceability` | Trazabilidad de oportunidades                                                                                                                                         |
-| `entity_context_enrichment`    | Sources + perfil IA + campos proposal enrichment                                                                                                                      |
-| `core_creation_traceability`   | Trazabilidad de creación CRM core                                                                                                                                     |
-| `add_telegram_link`            | `telegram_links` + `telegram_link_codes`                                                                                                                              |
-| `change_item_display_strings`  | `label` / `before` / `after` en `crm_change_items`                                                                                                                    |
-| `activity_task_kanban_fields`  | Tablero Kanban de tareas: `plannedDate`, `completedById`, `blockedReason`, `statusChangedAt` en `activities`; remapea `status` (`pending`→`todo`, `completed`→`done`) |
+| Migración                              | Cambio                                                                                                                                                                |
+| -------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `init`                                 | Esquema base                                                                                                                                                          |
+| `meeting_intelligence`                 | Meetings, evidence, proposals                                                                                                                                         |
+| `agent_chat`                           | Threads y mensajes                                                                                                                                                    |
+| `multi_tenant_foundation`              | Refactor multi-tenant                                                                                                                                                 |
+| `integration_deliveries`               | Gateway                                                                                                                                                               |
+| `enable_row_level_security`            | RLS                                                                                                                                                                   |
+| `add_opportunity_traceability`         | Trazabilidad de oportunidades                                                                                                                                         |
+| `entity_context_enrichment`            | Sources + perfil IA + campos proposal enrichment                                                                                                                      |
+| `core_creation_traceability`           | Trazabilidad de creación CRM core                                                                                                                                     |
+| `add_telegram_link`                    | `telegram_links` + `telegram_link_codes`                                                                                                                              |
+| `change_item_display_strings`          | `label` / `before` / `after` en `crm_change_items`                                                                                                                    |
+| `activity_task_kanban_fields`          | Tablero Kanban de tareas: `plannedDate`, `completedById`, `blockedReason`, `statusChangedAt` en `activities`; remapea `status` (`pending`→`todo`, `completed`→`done`) |
+| `person_dedup_and_proposal_apply_lock` | Normaliza identidad de personas, hace único el email por organización y agrega el lease `applying` a propuestas                                                       |
 
 ## Qué no debe romperse
 

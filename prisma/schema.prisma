@@ -30,6 +30,7 @@ enum ProcessingStatus {
 
 enum ProposalStatus {
   pending
+  applying
   approved
   rejected
   partially_approved
@@ -240,6 +241,7 @@ model Person {
   opportunitiesAsDecisionMaker Opportunity[] @relation("OpportunityDecisionMaker")
   opportunitiesAsSponsor       Opportunity[] @relation("OpportunitySponsor")
 
+  @@unique([organizationId, email])
   @@index([organizationId])
   @@index([companyId])
   @@index([email])
@@ -630,6 +632,7 @@ model CRMChangeProposal {
   rawModelOutput  Json?
   reviewedBy      String?
   reviewedAt      DateTime?
+  applyStartedAt  DateTime?
   createdAt       DateTime       @default(now())
 
   items CRMChangeItem[]

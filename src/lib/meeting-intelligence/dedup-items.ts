@@ -24,7 +24,7 @@ export async function dedupeContactItems(
       firstName: after.firstName == null ? null : String(after.firstName),
       lastName: after.lastName == null ? null : String(after.lastName),
     });
-    if (!match) {
+    if (!match || match.companyId !== companyId) {
       result.push(item);
       continue;
     }
@@ -35,7 +35,8 @@ export async function dedupeContactItems(
       duplicateOfId: match.id,
       // afterValue keeps the proposed fields; apply.ts fills only the empty
       // ones on the existing person and applies the decision-maker/sponsor flags.
-      explanation: `Ya existe ${match.firstName} ${match.lastName}`.trim() +
+      explanation:
+        `Ya existe ${match.firstName} ${match.lastName}`.trim() +
         ` en la empresa; se propone vincularlo/completarlo. ${item.explanation}`.trim(),
     });
   }

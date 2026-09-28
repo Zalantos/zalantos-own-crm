@@ -49,6 +49,15 @@ const TYPE_LABELS: Record<string, string> = {
   update_next_step: "Próximo paso",
 };
 
+const PROPOSAL_STATUS_LABELS: Record<string, string> = {
+  pending: "Pendiente",
+  applying: "Aplicando…",
+  approved: "Aprobada",
+  partially_approved: "Aprobada parcialmente",
+  applied: "Aplicada",
+  rejected: "Rechazada",
+};
+
 // Item types the editor supports; the rest only allow approve/reject.
 const EDITABLE_TYPES = new Set(Object.keys(TYPE_LABELS));
 
@@ -76,8 +85,11 @@ function describeAfter(item: ReviewItem, stages: StageOption[]): string {
     }
     case "add_contact":
     case "link_contact": {
-      const name = `${String(a.firstName ?? "")} ${String(a.lastName ?? "")}`.trim();
-      const extras = [a.roleTitle, a.email, a.phone].filter(Boolean).map(String);
+      const name =
+        `${String(a.firstName ?? "")} ${String(a.lastName ?? "")}`.trim();
+      const extras = [a.roleTitle, a.email, a.phone]
+        .filter(Boolean)
+        .map(String);
       return extras.length ? `${name} (${extras.join(" · ")})` : name;
     }
     case "create_task":
@@ -121,7 +133,10 @@ export function ChangeProposalReview({
   const router = useRouter();
   const [pending, startTransition] = useTransition();
   const [editingId, setEditingId] = useState<string | null>(null);
-  const isFinal = proposal.status === "applied" || proposal.status === "rejected";
+  const isApplying = proposal.status === "applying";
+  const isFinal = ["applied", "partially_approved", "rejected"].includes(
+    proposal.status,
+  );
 
   function run(fn: () => Promise<void>, message: string) {
     startTransition(async () => {
@@ -145,14 +160,16 @@ export function ChangeProposalReview({
           <Badge variant={confidenceVariant(proposal.confidence)}>
             {Math.round(proposal.confidence * 100)}% confianza
           </Badge>
-          <Badge variant="outline">{proposal.status}</Badge>
+          <Badge variant="outline">
+            {PROPOSAL_STATUS_LABELS[proposal.status] ?? proposal.status}
+          </Badge>
         </div>
-        {!isFinal && (
+        {!isFinal && !isApplying && (
           <div className="flex gap-2">
             <Button
               size="sm"
               variant="ghost"
-              disabled={pending}
+              disabled={pending || isApplying}
               onClick={() =>
                 run(
                   () => setAllItemsApproval(proposal.id, meetingId, true),
@@ -201,105 +218,114 @@ export function ChangeProposalReview({
           {[...proposal.items]
             .sort((a, b) => a.confidence - b.confidence)
             .map((item) => {
-            const canEdit =
-              !isFinal &&
-              item.status !== "applied" &&
-              EDITABLE_TYPES.has(item.type);
-            return (
-              <li
-                key={item.id}
-                className="flex items-start gap-3 rounded-md border p-3 text-sm"
-              >
-                <input
-                  type="checkbox"
-                  className="mt-1"
-                  defaultChecked={item.approved}
-                  disabled={pending || isFinal || item.status === "applied"}
-                  onChange={(e) =>
-                    run(
-                      () =>
-                        setItemApproval(item.id, meetingId, e.target.checked),
-                      "Actualizado",
-                    )
-                  }
-                />
-                <div className="flex-1 space-y-1">
-                  <div className="flex items-center gap-2">
-                    <span className="font-medium">
-                      {TYPE_LABELS[item.type] ?? item.type}
-                    </span>
-                    <span className="text-muted-foreground text-xs">
-                      {item.entity}
-                    </span>
-                    <Badge variant={confidenceVariant(item.confidence)}>
-                      {Math.round(item.confidence * 100)}%
-                    </Badge>
-                    {(item.type === "link_contact" || item.duplicateOfId) && (
-                      <Badge variant="outline">Posible duplicado</Badge>
+              const canEdit =
+                !isFinal &&
+                !isApplying &&
+                item.status !== "applied" &&
+                EDITABLE_TYPES.has(item.type);
+              return (
+                <li
+                  key={item.id}
+                  className="flex items-start gap-3 rounded-md border p-3 text-sm"
+                >
+                  <input
+                    type="checkbox"
+                    className="mt-1"
+                    defaultChecked={item.approved}
+                    disabled={
+                      pending ||
+                      isFinal ||
+                      isApplying ||
+                      item.status === "applied"
+                    }
+                    onChange={(e) =>
+                      run(
+                        () =>
+                          setItemApproval(item.id, meetingId, e.target.checked),
+                        "Actualizado",
+                      )
+                    }
+                  />
+                  <div className="flex-1 space-y-1">
+                    <div className="flex items-center gap-2">
+                      <span className="font-medium">
+                        {TYPE_LABELS[item.type] ?? item.type}
+                      </span>
+                      <span className="text-muted-foreground text-xs">
+                        {item.entity}
+                      </span>
+                      <Badge variant={confidenceVariant(item.confidence)}>
+                        {Math.round(item.confidence * 100)}%
+                      </Badge>
+                      {(item.type === "link_contact" || item.duplicateOfId) && (
+                        <Badge variant="outline">Posible duplicado</Badge>
+                      )}
+                      {item.status === "applied" && (
+                        <Badge variant="default">Aplicado</Badge>
+                      )}
+                      {item.status === "reverted" && (
+                        <Badge variant="outline">Deshecho</Badge>
+                      )}
+                      {item.status === "failed" && (
+                        <Badge variant="destructive">Falló</Badge>
+                      )}
+                      {canEdit && (
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          className="ml-auto h-6 px-2 text-xs"
+                          disabled={pending || isApplying}
+                          onClick={() =>
+                            setEditingId(editingId === item.id ? null : item.id)
+                          }
+                        >
+                          {editingId === item.id ? "Cerrar" : "Editar"}
+                        </Button>
+                      )}
+                      {item.status === "applied" && (
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          className="ml-auto h-6 px-2 text-xs"
+                          disabled={pending || isApplying}
+                          onClick={() =>
+                            run(async () => {
+                              const res = await revertItemAction(
+                                item.id,
+                                meetingId,
+                              );
+                              if (res.error) throw new Error(res.error);
+                            }, "Cambio deshecho")
+                          }
+                        >
+                          Deshacer
+                        </Button>
+                      )}
+                    </div>
+                    {editingId === item.id ? (
+                      <ProposalItemEditor
+                        item={item}
+                        meetingId={meetingId}
+                        stages={stages}
+                        onDone={() => setEditingId(null)}
+                      />
+                    ) : (
+                      <p>{describeAfter(item, stages)}</p>
                     )}
-                    {item.status === "applied" && (
-                      <Badge variant="default">Aplicado</Badge>
+                    {item.explanation && (
+                      <p className="text-muted-foreground text-xs">
+                        <LinkifiedText text={item.explanation} />
+                      </p>
                     )}
-                    {item.status === "reverted" && (
-                      <Badge variant="outline">Deshecho</Badge>
-                    )}
-                    {item.status === "failed" && (
-                      <Badge variant="destructive">Falló</Badge>
-                    )}
-                    {canEdit && (
-                      <Button
-                        size="sm"
-                        variant="ghost"
-                        className="ml-auto h-6 px-2 text-xs"
-                        disabled={pending}
-                        onClick={() =>
-                          setEditingId(editingId === item.id ? null : item.id)
-                        }
-                      >
-                        {editingId === item.id ? "Cerrar" : "Editar"}
-                      </Button>
-                    )}
-                    {item.status === "applied" && (
-                      <Button
-                        size="sm"
-                        variant="ghost"
-                        className="ml-auto h-6 px-2 text-xs"
-                        disabled={pending}
-                        onClick={() =>
-                          run(async () => {
-                            const res = await revertItemAction(item.id, meetingId);
-                            if (res.error) throw new Error(res.error);
-                          }, "Cambio deshecho")
-                        }
-                      >
-                        Deshacer
-                      </Button>
+                    {item.evidence && (
+                      <p className="text-muted-foreground border-l-2 pl-2 text-xs italic">
+                        “<LinkifiedText text={item.evidence} />”
+                      </p>
                     )}
                   </div>
-                  {editingId === item.id ? (
-                    <ProposalItemEditor
-                      item={item}
-                      meetingId={meetingId}
-                      stages={stages}
-                      onDone={() => setEditingId(null)}
-                    />
-                  ) : (
-                    <p>{describeAfter(item, stages)}</p>
-                  )}
-                  {item.explanation && (
-                    <p className="text-muted-foreground text-xs">
-                      <LinkifiedText text={item.explanation} />
-                    </p>
-                  )}
-                  {item.evidence && (
-                    <p className="text-muted-foreground border-l-2 pl-2 text-xs italic">
-                      “<LinkifiedText text={item.evidence} />”
-                    </p>
-                  )}
-                </div>
-              </li>
-            );
-          })}
+                </li>
+              );
+            })}
         </ul>
       )}
     </div>

@@ -9,10 +9,66 @@ import {
 } from "@/lib/agent/field-registry";
 import { snapshotCustomFields } from "@/lib/agent/snapshot";
 import { registerProposalChange } from "@/lib/agent/proposals";
-import { findExistingPerson } from "@/lib/crm/person-dedup";
+import {
+  findExistingPerson,
+  normalizeEmail,
+  normalizePersonName,
+} from "@/lib/crm/person-dedup";
 import type { AgentToolContext } from "@/lib/agent/executor";
 
 const entitySchema = z.enum(["company", "opportunity", "person"]);
+
+function asRecord(value: unknown): Record<string, unknown> {
+  return value && typeof value === "object" && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : {};
+}
+
+async function findContactItemInTurnProposal(
+  ctx: AgentToolContext,
+  companyId: string,
+  contact: { firstName: string; lastName: string; email: string | null },
+) {
+  if (!ctx.turnState.proposalId) return null;
+
+  const proposal = await ctx.db.cRMChangeProposal.findUnique({
+    where: { id: ctx.turnState.proposalId },
+    select: {
+      companyId: true,
+      items: {
+        where: {
+          type: { in: ["add_contact", "link_contact"] },
+          status: { notIn: ["applied", "reverted"] },
+        },
+        select: { id: true, afterValue: true },
+      },
+    },
+  });
+  if (!proposal) return null;
+
+  const targetEmail = normalizeEmail(contact.email);
+  const targetFirstName = normalizePersonName(contact.firstName).toLowerCase();
+  const targetLastName = normalizePersonName(contact.lastName).toLowerCase();
+
+  return (
+    proposal.items.find((item) => {
+      const after = asRecord(item.afterValue);
+      const itemEmail = normalizeEmail(
+        after.email == null ? null : String(after.email),
+      );
+      if (targetEmail && itemEmail === targetEmail) return true;
+      if (proposal.companyId !== companyId) return false;
+      return (
+        normalizePersonName(
+          after.firstName == null ? null : String(after.firstName),
+        ).toLowerCase() === targetFirstName &&
+        normalizePersonName(
+          after.lastName == null ? null : String(after.lastName),
+        ).toLowerCase() === targetLastName
+      );
+    }) ?? null
+  );
+}
 
 // Shared input fields the model must supply on every mutation proposal so the
 // reviewer sees a real confidence and a citation, not a blind pre-approval.
@@ -117,10 +173,25 @@ export function buildProposalTools(ctx: AgentToolContext) {
         confidence: confidenceSchema,
         evidence: evidenceSchema,
       }),
-      execute: async ({ entity, entityId, updates, reason, confidence, evidence }) => {
+      execute: async ({
+        entity,
+        entityId,
+        updates,
+        reason,
+        confidence,
+        evidence,
+      }) => {
         const fields = await getWritableFields(ctx.db, entity);
-        const { record, companyId } = await loadTarget(ctx.db, entity, entityId);
-        const customValues = await snapshotCustomFields(ctx.db, entity, entityId);
+        const { record, companyId } = await loadTarget(
+          ctx.db,
+          entity,
+          entityId,
+        );
+        const customValues = await snapshotCustomFields(
+          ctx.db,
+          entity,
+          entityId,
+        );
 
         const items = [];
         for (const update of updates) {
@@ -183,7 +254,13 @@ export function buildProposalTools(ctx: AgentToolContext) {
         confidence: confidenceSchema,
         evidence: evidenceSchema,
       }),
-      execute: async ({ opportunityId, stage, reason, confidence, evidence }) => {
+      execute: async ({
+        opportunityId,
+        stage,
+        reason,
+        confidence,
+        evidence,
+      }) => {
         const opportunity = await ctx.db.opportunity.findUnique({
           where: { id: opportunityId },
           select: {
@@ -243,7 +320,13 @@ export function buildProposalTools(ctx: AgentToolContext) {
         confidence: confidenceSchema,
         evidence: evidenceSchema,
       }),
-      execute: async ({ companyId, reason, confidence, evidence, ...contact }) => {
+      execute: async ({
+        companyId,
+        reason,
+        confidence,
+        evidence,
+        ...contact
+      }) => {
         const company = await ctx.db.company.findUnique({
           where: { id: companyId },
           select: { id: true, name: true },
@@ -252,12 +335,14 @@ export function buildProposalTools(ctx: AgentToolContext) {
           return { error: `Empresa no encontrada: ${companyId}` };
         }
 
-        const fullName =
-          `${contact.firstName} ${contact.lastName ?? ""}`.trim();
+        const firstName = normalizePersonName(contact.firstName);
+        const lastName = normalizePersonName(contact.lastName);
+        const email = normalizeEmail(contact.email);
+        const fullName = `${firstName} ${lastName}`.trim();
         const afterValue = {
-          firstName: contact.firstName,
-          lastName: contact.lastName ?? "",
-          email: contact.email ?? null,
+          firstName,
+          lastName,
+          email,
           phone: contact.phone ?? null,
           roleTitle: contact.roleTitle ?? null,
           linkedinUrl: null,
@@ -270,12 +355,45 @@ export function buildProposalTools(ctx: AgentToolContext) {
         // instead of creating a duplicate.
         const existing = await findExistingPerson(ctx.db, ctx.organizationId, {
           companyId,
-          email: contact.email ?? null,
-          firstName: contact.firstName,
-          lastName: contact.lastName ?? null,
+          email,
+          firstName,
+          lastName,
         });
 
         if (existing) {
+          if (
+            existing.matchedBy === "email" &&
+            existing.companyId !== companyId
+          ) {
+            const location = existing.companyName
+              ? `en ${existing.companyName}`
+              : "sin empresa";
+            return {
+              status: "contact_conflict" as const,
+              personId: existing.id,
+              name: `${existing.firstName} ${existing.lastName}`.trim(),
+              email: existing.email,
+              companyName: existing.companyName,
+              message:
+                `Ese email ya pertenece a ${existing.firstName} ${existing.lastName} ${location}. No se creó ni vinculó otro contacto.`.trim(),
+            };
+          }
+
+          const repeatedItem = await findContactItemInTurnProposal(
+            ctx,
+            companyId,
+            afterValue,
+          );
+          if (repeatedItem) {
+            return {
+              status: "contact_already_in_proposal" as const,
+              proposalId: ctx.turnState.proposalId,
+              itemId: repeatedItem.id,
+              message:
+                "Ese contacto ya está incluido en la propuesta de este turno.",
+            };
+          }
+
           return registerProposalChange(
             ctx,
             { companyId, opportunityId: ctx.pageContext?.opportunityId },
@@ -287,7 +405,8 @@ export function buildProposalTools(ctx: AgentToolContext) {
                 duplicateOfId: existing.id,
                 beforeValue: null,
                 afterValue,
-                explanation: `Ya existe ${existing.firstName} ${existing.lastName}`.trim() +
+                explanation:
+                  `Ya existe ${existing.firstName} ${existing.lastName}`.trim() +
                   ` en la empresa; se propone vincularlo/completarlo. ${reason}`.trim(),
                 confidence,
                 evidence: evidence ?? null,
@@ -297,6 +416,21 @@ export function buildProposalTools(ctx: AgentToolContext) {
               },
             ],
           );
+        }
+
+        const repeatedItem = await findContactItemInTurnProposal(
+          ctx,
+          companyId,
+          afterValue,
+        );
+        if (repeatedItem) {
+          return {
+            status: "contact_already_in_proposal" as const,
+            proposalId: ctx.turnState.proposalId,
+            itemId: repeatedItem.id,
+            message:
+              "Ese contacto ya está incluido en la propuesta de este turno.",
+          };
         }
 
         return registerProposalChange(
@@ -411,13 +545,7 @@ export function buildProposalTools(ctx: AgentToolContext) {
         confidence: confidenceSchema,
         evidence: evidenceSchema,
       }),
-      execute: async ({
-        name,
-        reason,
-        confidence,
-        evidence,
-        ...company
-      }) => {
+      execute: async ({ name, reason, confidence, evidence, ...company }) => {
         // Evita duplicados obvios: si ya hay una empresa con el mismo nombre,
         // se avisa en vez de crear una segunda ficha para la misma cuenta.
         const existing = await ctx.db.company.findFirst({
