@@ -1,13 +1,16 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useChat } from "@ai-sdk/react";
 import { DefaultChatTransport, type UIMessage } from "ai";
 import {
+  CheckIcon,
   FileTextIcon,
   Loader2Icon,
+  MicIcon,
   PaperclipIcon,
   SendIcon,
+  XIcon,
 } from "lucide-react";
 import { toast } from "sonner";
 import { LinkifiedText } from "@/components/shared/linkified-text";
@@ -22,6 +25,7 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
+import { useVoiceDictate } from "@/hooks/use-voice-dictate";
 import { cn } from "@/lib/utils";
 import type { PageContext } from "@/lib/agent/context";
 import { ensureAgentThread } from "@/app/(dashboard)/agent/actions";
@@ -34,6 +38,11 @@ const SUGGESTIONS = [
 ];
 
 const MAX_AGENT_ATTACHMENT_BYTES = 15 * 1024 * 1024;
+
+function formatElapsed(elapsedMs: number): string {
+  const seconds = Math.floor(elapsedMs / 1000);
+  return `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, "0")}`;
+}
 
 type AgentChatProps = {
   threadId: string | null;
@@ -63,6 +72,21 @@ export function AgentChat({
   const scrollRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
+  const appendDictatedText = useCallback((text: string) => {
+    setInput((current) =>
+      current.trim() ? `${current.trimEnd()} ${text}` : text,
+    );
+  }, []);
+  const {
+    recording,
+    transcribing,
+    voiceAvailable,
+    levels,
+    elapsedMs,
+    toggleRecording,
+    cancelRecording,
+  } = useVoiceDictate(appendDictatedText);
+
   const transport = useMemo(
     () => new DefaultChatTransport({ api: "/api/agent/chat" }),
     [],
@@ -74,6 +98,7 @@ export function AgentChat({
   });
 
   const busy = status === "submitted" || status === "streaming";
+  const dictating = recording || transcribing;
 
   useEffect(() => {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight });
@@ -140,7 +165,9 @@ export function AgentChat({
       toast.error("Pegá un texto para adjuntar.");
       return;
     }
-    if (new TextEncoder().encode(text).byteLength > MAX_AGENT_ATTACHMENT_BYTES) {
+    if (
+      new TextEncoder().encode(text).byteLength > MAX_AGENT_ATTACHMENT_BYTES
+    ) {
       toast.error("El texto supera el máximo de 15 MB.");
       return;
     }
@@ -243,7 +270,7 @@ export function AgentChat({
           void submit(input);
         }}
       >
-        {(attachments.length > 0 || uploading) && (
+        {!dictating && (attachments.length > 0 || uploading) && (
           <div className="flex flex-wrap gap-1.5">
             {attachments.map((attachment) => (
               <span
@@ -262,57 +289,116 @@ export function AgentChat({
             )}
           </div>
         )}
-        <div className="flex items-end gap-2">
-          <input
-            ref={fileInputRef}
-            type="file"
-            multiple
-            accept=".pdf,.docx,.doc,.txt,.md,application/pdf,text/plain,text/markdown,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
-            className="hidden"
-            onChange={(event) => void uploadFiles(event.target.files)}
-          />
-          <Button
-            type="button"
-            variant="ghost"
-            size="icon"
-            disabled={uploading || manualSubmitting}
-            onClick={() => fileInputRef.current?.click()}
-            aria-label="Adjuntar documento"
-          >
-            <PaperclipIcon />
-          </Button>
-          <Button
-            type="button"
-            variant="ghost"
-            size="icon"
-            disabled={uploading || manualSubmitting}
-            onClick={() => setManualOpen(true)}
-            aria-label="Pegar contexto"
-          >
-            <FileTextIcon />
-          </Button>
-          <Textarea
-            value={input}
-            onChange={(event) => setInput(event.target.value)}
-            onKeyDown={(event) => {
-              if (event.key === "Enter" && !event.shiftKey) {
-                event.preventDefault();
-                void submit(input);
+        {dictating ? (
+          <div className="bg-muted/50 flex h-12 items-center gap-2 rounded-md border px-2">
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon-sm"
+              disabled={transcribing}
+              onClick={cancelRecording}
+              aria-label="Cancelar dictado"
+            >
+              <XIcon />
+            </Button>
+            <div
+              className="flex min-w-0 flex-1 items-center justify-center gap-px"
+              aria-hidden="true"
+            >
+              {levels.map((level, index) => (
+                <span
+                  key={index}
+                  className="bg-primary/70 w-0.5 rounded-full"
+                  style={{ height: `${Math.max(3, 4 + level * 20)}px` }}
+                />
+              ))}
+            </div>
+            <span className="text-muted-foreground w-24 shrink-0 text-center text-xs tabular-nums">
+              {transcribing ? "Transcribiendo…" : formatElapsed(elapsedMs)}
+            </span>
+            <Button
+              type="button"
+              size="icon-sm"
+              disabled={transcribing}
+              onClick={toggleRecording}
+              aria-label="Confirmar dictado"
+            >
+              {transcribing ? (
+                <Loader2Icon className="animate-spin" />
+              ) : (
+                <CheckIcon />
+              )}
+            </Button>
+          </div>
+        ) : (
+          <div className="flex items-end gap-2">
+            <input
+              ref={fileInputRef}
+              type="file"
+              multiple
+              accept=".pdf,.docx,.doc,.txt,.md,application/pdf,text/plain,text/markdown,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+              className="hidden"
+              onChange={(event) => void uploadFiles(event.target.files)}
+            />
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon"
+              disabled={uploading || manualSubmitting}
+              onClick={() => fileInputRef.current?.click()}
+              aria-label="Adjuntar documento"
+            >
+              <PaperclipIcon />
+            </Button>
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon"
+              disabled={uploading || manualSubmitting}
+              onClick={() => setManualOpen(true)}
+              aria-label="Pegar contexto"
+            >
+              <FileTextIcon />
+            </Button>
+            <Textarea
+              value={input}
+              onChange={(event) => setInput(event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key === "Enter" && !event.shiftKey) {
+                  event.preventDefault();
+                  void submit(input);
+                }
+              }}
+              placeholder="Escribí una orden o pregunta…"
+              rows={2}
+              className="max-h-32 min-h-0 resize-none text-sm"
+            />
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon"
+              disabled={uploading || manualSubmitting}
+              onClick={toggleRecording}
+              aria-label={
+                voiceAvailable
+                  ? "Dictar por micrófono"
+                  : "Dictado no disponible"
               }
-            }}
-            placeholder="Escribí una orden o pregunta…"
-            rows={2}
-            className="max-h-32 min-h-0 resize-none text-sm"
-          />
-          <Button
-            type="submit"
-            size="icon"
-            disabled={busy || uploading || !input.trim()}
-          >
-            <SendIcon />
-            <span className="sr-only">Enviar</span>
-          </Button>
-        </div>
+              aria-disabled={!voiceAvailable}
+              className={!voiceAvailable ? "text-muted-foreground" : undefined}
+            >
+              <MicIcon />
+            </Button>
+            <Button
+              type="submit"
+              size="icon"
+              disabled={busy || uploading || !input.trim()}
+            >
+              <SendIcon />
+              <span className="sr-only">Enviar</span>
+            </Button>
+          </div>
+        )}
       </form>
       <Dialog open={manualOpen} onOpenChange={setManualOpen}>
         <DialogContent className="sm:max-w-lg">

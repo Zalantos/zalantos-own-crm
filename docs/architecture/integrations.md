@@ -44,6 +44,20 @@ Estados de delivery: `pending` → `sent` | `failed`
 
 Prompts en `src/lib/meeting-intelligence/prompts/*.md`.
 
+## IA — Dictado del copiloto web
+
+El panel del copiloto ofrece dictado efímero: el navegador graba con
+`MediaRecorder` y sube el blob autenticado a `POST /api/portal/voice/transcribe`.
+El servidor usa el endpoint OpenAI-compatible de Groq con
+`GROQ_TRANSCRIBE_MODEL` (default `whisper-large-v3-turbo`) y devuelve el texto
+para pegarlo en el composer; nunca envía el mensaje ni persiste el audio o la
+transcripción. `GET /api/portal/voice/status` comunica si `GROQ_API_KEY` está
+configurada. La llamada a Groq vence a los 30 segundos y se aborta si el
+cliente cierra la conexión.
+
+Observability, si está activa, recibe únicamente bytes, proveedor `groq` y el
+resultado de la transcripción; no recibe audio, texto, usuario ni tenant.
+
 ## IA — Agente copiloto
 
 | Config | Env |

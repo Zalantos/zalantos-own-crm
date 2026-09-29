@@ -16,8 +16,9 @@ Nunca incluir secretos reales en este documento. Ver `.env.example`.
 | `ADMIN_EMAIL` | Seed | Dev | No** | `admin@example.com` | Usuario admin seed | `prisma/seed.ts` |
 | `ADMIN_PASSWORD` | Seed | Dev | No** | strong password | Password admin seed | `prisma/seed.ts` |
 | `ALLOW_SEED` | Seed | Prod | No | `true` | Opt-in para seed en entorno desplegado (`RAILWAY_*` / production) | `prisma/seed.ts` |
-| `GROQ_API_KEY` | Groq | Todos | Sí*** | `gsk_...` | Transcripción + LLM | `src/lib/meeting-intelligence/` |
+| `GROQ_API_KEY` | Groq | Todos | Cond.*** | `gsk_...` | Transcripción + LLM; sin ella el dictado queda no disponible | `src/lib/meeting-intelligence/`, `src/lib/voice-dictate.ts` |
 | `GROQ_TRANSCRIPTION_MODEL` | Groq | Todos | No | `whisper-large-v3` | Modelo STT | `src/lib/meeting-intelligence/config.ts` |
+| `GROQ_TRANSCRIBE_MODEL` | Groq | Todos | No | `whisper-large-v3-turbo` | Modelo STT del dictado efímero del copiloto | `src/lib/voice-dictate.ts` |
 | `GROQ_REASONING_MODEL` | Groq | Todos | No | `openai/gpt-oss-120b` | Modelo razonamiento (id Groq; puede traer `/`) | `src/lib/meeting-intelligence/config.ts` |
 | `R2_ACCOUNT_ID` | Cloudflare R2 | Prod | Sí*** | account id | Storage evidencia | `src/lib/meeting-intelligence/storage/r2.ts` |
 | `R2_ACCESS_KEY_ID` | Cloudflare R2 | Prod | Sí*** | key id | Storage evidencia | idem |
