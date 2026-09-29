@@ -14,6 +14,9 @@
 | `api/` | Route handlers (agent, telegram, crons, auth, evidence) |
 | `admin/settings/telegram` | Vinculación de chats Telegram |
 
+Lista y tablero de oportunidades comparten las etapas ocultas en la cookie
+`opportunity-hidden-stages` del navegador.
+
 ### `src/lib/`
 
 | Módulo | Responsabilidad |

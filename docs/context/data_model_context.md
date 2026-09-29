@@ -113,6 +113,9 @@ usuario y organización, las tools operan con `forOrg(organizationId)`.
 
 - Siempre ligada a una `Company` y un `PipelineStage`.
 - `status` string (ej. `open`); `lossReason` al perder.
+- Ocultar etapas en lista y tablero es preferencia del navegador (cookie
+  `opportunity-hidden-stages`), no un campo de la oportunidad. Un filtro
+  explícito de etapa en la lista sigue mostrando esa etapa.
 - `createdById` + `createdVia` registran quién la creó y por qué canal.
 - Índice en `nextStepDueDate` para crons de vencimiento.
 

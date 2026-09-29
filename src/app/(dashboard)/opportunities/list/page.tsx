@@ -12,7 +12,13 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { SavedViewSelector } from "@/components/shared/saved-view-selector";
+import { StageVisibilityMenu } from "@/components/shared/opportunities/stage-visibility-menu";
 import { OpportunityStageBadge } from "@/components/shared/opportunities/status-badge";
+import {
+  knownHiddenStageIds,
+  opportunityStageWhere,
+} from "@/lib/opportunities/hidden-stages";
+import { readHiddenStageIds } from "@/lib/opportunities/read-hidden-stages";
 import { formatCurrencyValue } from "@/lib/format";
 import type { Company, Opportunity, PipelineStage } from "@prisma/client";
 
@@ -33,29 +39,31 @@ export default async function OpportunitiesListPage({
 }) {
   const { stage, urgency, status, overdue } = await searchParams;
   const { org, db } = await requireOrgContext();
-
-  const [opportunities, savedViews, stages] = await Promise.all([
-    db.opportunity.findMany({
-      where: {
-        ...(stage ? { stageId: stage } : {}),
-        ...(urgency ? { urgency } : {}),
-        ...(status ? { status } : {}),
-        ...(overdue === "1"
-          ? { nextStepDueDate: { lt: new Date() }, status: "open" }
-          : {}),
-      },
-      include: {
-        company: true,
-        stage: { select: { label: true, isWon: true, isLost: true } },
-      },
-      orderBy: { createdAt: "desc" },
-    }),
+  const [savedViews, stages, hiddenRaw] = await Promise.all([
     db.savedView.findMany({
       where: { entityType: "opportunity" },
       orderBy: { name: "asc" },
     }),
     getOrgStages(db),
+    readHiddenStageIds(),
   ]);
+  const hiddenStageIds = knownHiddenStageIds(hiddenRaw, stages);
+
+  const opportunities = await db.opportunity.findMany({
+    where: {
+      ...opportunityStageWhere(hiddenStageIds, stage),
+      ...(urgency ? { urgency } : {}),
+      ...(status ? { status } : {}),
+      ...(overdue === "1"
+        ? { nextStepDueDate: { lt: new Date() }, status: "open" }
+        : {}),
+    },
+    include: {
+      company: true,
+      stage: { select: { label: true, isWon: true, isLost: true } },
+    },
+    orderBy: { createdAt: "desc" },
+  });
 
   return (
     <div>
@@ -63,6 +71,10 @@ export default async function OpportunitiesListPage({
         title="Oportunidades"
         actions={
           <>
+            <StageVisibilityMenu
+              stages={stages}
+              hiddenStageIds={hiddenStageIds}
+            />
             <Button variant="secondary" render={<Link href="/opportunities" />}>
               Ver kanban
             </Button>
@@ -82,7 +94,9 @@ export default async function OpportunitiesListPage({
             <SelectItem value="">Todas las etapas</SelectItem>
             {stages.map((s) => (
               <SelectItem key={s.id} value={s.id}>
-                {s.label}
+                {hiddenStageIds.includes(s.id)
+                  ? `${s.label} (oculta)`
+                  : s.label}
               </SelectItem>
             ))}
           </SelectContent>
@@ -147,7 +161,11 @@ export default async function OpportunitiesListPage({
             header: "Valor",
             cell: (row) =>
               row.estimatedValue
-                ? formatCurrencyValue(row.estimatedValue.toString(), org.currency, org.locale)
+                ? formatCurrencyValue(
+                    row.estimatedValue.toString(),
+                    org.currency,
+                    org.locale,
+                  )
                 : "—",
           },
           {
