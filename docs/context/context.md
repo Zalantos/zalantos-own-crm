@@ -24,6 +24,9 @@ personas, oportunidades, actividades, notas y reuniones. Incluye:
 - **Workflows**: automatización por eventos de entidades.
 - **Gateway de integraciones**: despacho de eventos a un webhook externo (email,
   Slack, etc. vía n8n u otro).
+- **Inbound Leads**: bandeja de leads externos (`/leads`, hoy formulario web vía
+  n8n) pendientes de revisión humana antes de convertirse en Company/Person/
+  Opportunity.
 
 ## Para quién
 
@@ -56,6 +59,9 @@ propuestos por IA.
 5. **Workflows**: evento en entidad → evaluar condiciones → ejecutar acciones
    (ej. crear actividad).
 6. **Integraciones**: evento de negocio → `IntegrationDelivery` → webhook externo.
+7. **Inbound Leads**: formulario web → n8n → `POST /api/integrations/inbound-leads`
+   → `InboundLead(status=new)` → revisión en `/leads` → convertir a
+   Company/Person/Opportunity (o descartar).
 
 ## Stack
 

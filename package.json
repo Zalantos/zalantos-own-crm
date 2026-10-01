@@ -14,6 +14,7 @@
     "format:check": "prettier --check .",
     "test:contact-dedup": "tsx --test src/lib/crm/person-dedup.test.ts src/lib/meeting-intelligence/apply-lock.test.ts",
     "test:observability": "tsx --test src/lib/observability/reporter.test.ts",
+    "test:inbound-leads": "tsx --test src/lib/zod/inbound-lead.test.ts src/lib/inbound-leads/ingest.test.ts src/lib/inbound-leads/auth.test.ts src/lib/inbound-leads/convert.test.ts",
     "prisma:generate": "prisma generate",
     "prisma:migrate:dev": "prisma migrate dev",
     "prisma:migrate:deploy": "prisma migrate deploy",

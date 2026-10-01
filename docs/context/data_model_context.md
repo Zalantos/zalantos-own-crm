@@ -24,6 +24,7 @@ Fuente de verdad: `prisma/schema.prisma`.
 | `Opportunity` | `opportunities` | → company, stage, decisionMaker, sponsor                          |
 | `Activity`    | `activities`    | → company/person/opportunity, assignee y completedBy (TeamMember) |
 | `Note`        | `notes`         | → company/person/opportunity                                      |
+| `InboundLead` | `inbound_leads` | Bandeja previa a Company/Person/Opportunity; ver sección propia    |
 
 ### Extensibilidad
 
@@ -124,7 +125,7 @@ usuario y organización, las tools operan con `forOrg(organizationId)`.
 - `Company`, `Person`, `Opportunity`, `Activity` y `Note` registran
   `createdById` nullable hacia `User`, `createdVia`, `createdAt` y `updatedAt`.
 - Valores esperados de `createdVia`: `manual`, `agent`, `meeting`, `enrichment`,
-  `workflow`, `seed`, `legacy`.
+  `workflow`, `inbound_lead`, `seed`, `legacy`.
 - Para acciones vía agente/propuestas, `createdById` apunta al usuario humano
   que ejecutó o aplicó la acción; el canal queda en `createdVia`.
 - Filas históricas sin autor quedan como `createdVia=legacy` y
@@ -190,11 +191,32 @@ en propuestas anteriores a la migración.
 - `CRMChangeProposal.applyStartedAt` implementa el lease del estado `applying`
   para evitar aplicaciones concurrentes y permitir reintentos tras un crash.
 
+### Inbound Leads
+
+- Documentación completa: `docs/integrations/inbound-leads.md`.
+- `InboundLead` es una bandeja de revisión previa: el POST de ingesta
+  (`source` + `externalId`) **nunca** crea `Company`/`Person`/`Opportunity`
+  directamente; eso solo ocurre en la conversión manual desde `/leads`.
+- `status`: `new` → `reviewed` | `converted` | `rejected` (string, mismo
+  criterio que `Opportunity.status`). Abrir el detalle no cambia el estado;
+  requiere una acción explícita.
+- Idempotencia del canal entrante: `@@unique([organizationId, source,
+  externalId])`. El ingest hace `create` directo y resuelve el conflicto
+  (P2002) con un lookup — no un `findFirst` previo, que sería vulnerable a
+  condiciones de carrera con reintentos concurrentes de n8n.
+- La conversión reutiliza `findExistingPerson` (mismo dedup que el resto del
+  CRM) y dos entidades ya existentes pero antes no exportadas: el helper
+  queda en `lib/inbound-leads/convert.ts` para poder testearlo sin DB real
+  (mismo patrón que `meeting-intelligence/apply.ts`).
+- Entidades creadas en la conversión llevan `createdVia: "inbound_lead"`
+  (agregado a los valores esperados de `createdVia`).
+
 ## Restricciones críticas
 
 - `@@unique([organizationId, key])` en `PipelineStage`.
 - `@@unique([organizationId, email])` en `Person` (los `NULL` no colisionan).
 - `@@unique([organizationId, dedupeKey])` en `IntegrationDelivery`.
+- `@@unique([organizationId, source, externalId])` en `InboundLead`.
 - `User.email` único global (no por org).
 - ON DELETE: Restrict en org para entidades CRM; Cascade en hijos dependientes.
 
@@ -228,6 +250,8 @@ Ver `@@index` en `schema.prisma` — la mayoría compuestos con `organizationId`
 | `activity_task_kanban_fields`          | Tablero Kanban de tareas: `plannedDate`, `completedById`, `blockedReason`, `statusChangedAt` en `activities`; remapea `status` (`pending`→`todo`, `completed`→`done`) |
 | `person_dedup_and_proposal_apply_lock` | Normaliza identidad de personas, hace único el email por organización y agrega el lease `applying` a propuestas                                                       |
 | `add_mcp_access_token`                 | Tokens personales MCP con revocación, último uso, thread lazy y RLS                                                                                                   |
+| `inbound_leads`                        | Modelo `InboundLead` (bandeja `/leads`) con idempotencia por `(organizationId, source, externalId)`                                                                  |
+| `inbound_leads_rls`                     | RLS `tenant_isolation` sobre `inbound_leads` (separada porque la migración base de RLS ya está desplegada)                                                           |
 
 ## Qué no debe romperse
 
@@ -237,3 +261,5 @@ Ver `@@index` en `schema.prisma` — la mayoría compuestos con `organizationId`
 - Tokens de invitación/reset solo como hash en DB.
 - Separación system vs tenant en Prisma.
 - Unicidad de `TelegramLink.telegramChatId` y resolución tenant vía vínculo.
+- Unicidad de `(organizationId, source, externalId)` en `InboundLead` y el
+  invariante de que el ingest nunca crea Company/Person/Opportunity directo.

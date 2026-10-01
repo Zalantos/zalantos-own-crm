@@ -11,6 +11,7 @@
 | Cloudflare R2 | Evidencia y adjuntos | `R2_*` |
 | Gateway webhook | Email, Slack, automaciones (saliente) | `INTEGRATION_GATEWAY_*` |
 | Telegram (vía n8n) | Canal entrante al copiloto IA | `INTEGRATION_GATEWAY_SECRET`, `NEXT_PUBLIC_TELEGRAM_BOT_USERNAME` |
+| Inbound Leads (vía n8n) | Bandeja de leads externos (`/leads`) | `INBOUND_LEADS_SECRET`, `INBOUND_LEADS_ORGANIZATION_SLUG` |
 | MCP | Tools CRM para Cursor u otros clientes | Token personal `zcrm_…` (solo hash en BD) |
 | Zalantos Observability | Reporte best-effort de costos/tokens de IA | `OBSERVABILITY_BASE_URL`, `OBSERVABILITY_API_KEY` |
 
@@ -87,6 +88,18 @@ derivar propuestas mayores a la bandeja web.
 
 UI admin: `/admin/settings/mcp` (crear, copiar una vez y revocar tokens propios).
 La URL publicada se construye con `APP_URL`; MCP no agrega variables nuevas.
+
+## Inbound Leads (webhook entrante)
+
+Detalle completo: `docs/integrations/inbound-leads.md`.
+
+n8n reenvía el formulario web de Zalantos a `POST
+/api/integrations/inbound-leads`. Auth: `Authorization: Bearer
+<INBOUND_LEADS_SECRET>` (secreto dedicado, no el del gateway saliente). La
+organización se resuelve por slug fijo (`INBOUND_LEADS_ORGANIZATION_SLUG`),
+nunca la elige el caller. El endpoint solo crea un `InboundLead(status=new)`
+en bandeja (`/leads`) — nunca Company/Person/Opportunity directo; eso requiere
+conversión manual. Idempotente por `(organizationId, source, externalId)`.
 
 ## Telegram ↔ Copiloto (webhooks entrantes)
 
@@ -173,6 +186,7 @@ Pipeline de meeting también: `POST /api/meetings/process`
 Documentados hoy:
 
 - Canal Telegram vía n8n (`/api/telegram/*`) — ver sección arriba.
+- Inbound Leads vía n8n (`/api/integrations/inbound-leads`) — ver sección arriba.
 
 GAP: webhooks de calendario/videollamada (Recall, Google Meet) no implementados.
 El campo `Meeting.sourceType` anticipa orígenes futuros.

@@ -2,7 +2,6 @@
 
 import { useState, useActionState } from "react";
 import { format, isPast } from "date-fns";
-import { Checkbox } from "@/components/ui/checkbox";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -11,21 +10,25 @@ import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { SubmitButton } from "@/components/shared/submit-button";
 import {
   assignActivity,
-  completeActivity,
-  reopenActivity,
   deleteActivity,
   updateActivity,
+  updateActivityStatus,
   type ActivityFormState,
 } from "@/app/(dashboard)/activities/actions";
 import { actorLabel, createdViaLabel } from "@/lib/traceability";
 import { initials } from "@/lib/format";
 import { TeamMemberSelect } from "@/components/shared/activities/team-member-select";
+import { TaskStatusSelect } from "@/components/shared/activities/task-status-select";
+import { isActivityStatus } from "@/lib/activity-status";
+import {
+  ACTIVITY_TYPES,
+  activityTypeLabel,
+  isActivityType,
+} from "@/lib/activity-types";
 import type { Activity } from "@prisma/client";
 import type { AssignableTeamMember } from "@/lib/team";
 
-const ACTIVITY_TYPES = ["call", "email", "meeting", "task", "follow_up"];
-
-type ActivityWithAssignee = Activity & {
+export type ActivityWithAssignee = Activity & {
   assignee?: { id: string; name: string } | null;
   createdBy?: { name: string | null; email: string | null } | null;
 };
@@ -72,9 +75,12 @@ export function ActivityRow({
           defaultValue={activity.type}
           className="bg-background h-9 w-full rounded-md border px-3 text-sm"
         >
-          {ACTIVITY_TYPES.map((type) => (
+          {(isActivityType(activity.type)
+            ? ACTIVITY_TYPES
+            : [activity.type, ...ACTIVITY_TYPES]
+          ).map((type) => (
             <option key={type} value={type}>
-              {type}
+              {activityTypeLabel(type)}
             </option>
           ))}
         </select>
@@ -109,50 +115,45 @@ export function ActivityRow({
 
   return (
     <div className="flex flex-wrap items-center justify-between gap-3 rounded-md border p-3">
-      <div className="flex items-center gap-3">
-        <Checkbox
-          checked={isCompleted}
-          onCheckedChange={() => {
-            const action = isCompleted ? reopenActivity : completeActivity;
-            void action(activity.id);
-          }}
-        />
-        <div>
-          <p
-            className={
-              isCompleted
-                ? "text-muted-foreground text-sm line-through"
-                : "text-sm font-medium"
-            }
-          >
-            {activity.title}
-          </p>
-          <div className="text-muted-foreground flex items-center gap-2 text-xs">
-            <span>{activity.type}</span>
-            <span>
-              creada por {actorLabel(activity.createdBy)} vía{" "}
-              {createdViaLabel(activity.createdVia)}
+      <div>
+        <p
+          className={
+            isCompleted
+              ? "text-muted-foreground text-sm line-through"
+              : "text-sm font-medium"
+          }
+        >
+          {activity.title}
+        </p>
+        <div className="text-muted-foreground flex items-center gap-2 text-xs">
+          <span>{activityTypeLabel(activity.type)}</span>
+          <span>
+            creada por {actorLabel(activity.createdBy)} vía{" "}
+            {createdViaLabel(activity.createdVia)}
+          </span>
+          {activity.dueDate && (
+            <span className={isOverdue ? "text-destructive" : ""}>
+              vence {format(activity.dueDate, "dd/MM/yyyy")}
             </span>
-            {activity.dueDate && (
-              <span className={isOverdue ? "text-destructive" : ""}>
-                vence {format(activity.dueDate, "dd/MM/yyyy")}
-              </span>
-            )}
-            {activity.assignee && (
-              <span className="flex items-center gap-1">
-                <Avatar size="sm">
-                  <AvatarFallback>
-                    {initials(activity.assignee.name)}
-                  </AvatarFallback>
-                </Avatar>
-                {activity.assignee.name}
-              </span>
-            )}
-          </div>
+          )}
+          {activity.assignee && (
+            <span className="flex items-center gap-1">
+              <Avatar size="sm">
+                <AvatarFallback>
+                  {initials(activity.assignee.name)}
+                </AvatarFallback>
+              </Avatar>
+              {activity.assignee.name}
+            </span>
+          )}
         </div>
       </div>
       <div className="flex items-center gap-2">
         {isOverdue && <Badge variant="destructive">Vencida</Badge>}
+        <TaskStatusSelect
+          status={isActivityStatus(activity.status) ? activity.status : "todo"}
+          onChange={(next) => void updateActivityStatus(activity.id, next)}
+        />
         <TeamMemberSelect
           teamMembers={teamMembers}
           currentId={activity.assigneeId}

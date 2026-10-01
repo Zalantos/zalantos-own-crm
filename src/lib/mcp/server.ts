@@ -26,6 +26,7 @@ const READ_TOOL_NAMES = [
   "list_pending_proposals",
   "read_attachment",
   "read_context_source",
+  "web_search",
 ] as const;
 
 const DIRECT_WRITE_TOOL_NAMES = ["create_note", "create_task"] as const;

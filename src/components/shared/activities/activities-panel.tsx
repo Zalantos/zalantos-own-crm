@@ -1,7 +1,6 @@
 import { requireOrgContext } from "@/lib/tenant";
 import { getActiveTeamMembers } from "@/lib/team";
-import { ActivityCreateForm } from "@/components/shared/activities/activity-create-form";
-import { ActivityRow } from "@/components/shared/activities/activity-row";
+import { ActivitiesList } from "@/components/shared/activities/activities-list";
 import { ACTIVITY_STATUS_RANK, isActivityStatus } from "@/lib/activity-status";
 
 export async function ActivitiesPanel({
@@ -41,28 +40,12 @@ export async function ActivitiesPanel({
   });
 
   return (
-    <div className="space-y-4">
-      <ActivityCreateForm
-        companyId={companyId}
-        personId={personId}
-        opportunityId={opportunityId}
-        teamMembers={teamMembers}
-      />
-      <div className="space-y-2">
-        {activities.length === 0 ? (
-          <p className="text-muted-foreground text-sm">
-            Todavía no hay actividades.
-          </p>
-        ) : (
-          activities.map((activity) => (
-            <ActivityRow
-              key={activity.id}
-              activity={activity}
-              teamMembers={teamMembers}
-            />
-          ))
-        )}
-      </div>
-    </div>
+    <ActivitiesList
+      activities={activities}
+      teamMembers={teamMembers}
+      companyId={companyId}
+      personId={personId}
+      opportunityId={opportunityId}
+    />
   );
 }

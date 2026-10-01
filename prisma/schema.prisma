@@ -91,6 +91,7 @@ model Organization {
   workflows              Workflow[]
   workflowLogs           WorkflowLog[]
   integrationDeliveries  IntegrationDelivery[]
+  inboundLeads           InboundLead[]
   teamMembers            TeamMember[]
   meetings               Meeting[]
   evidence               Evidence[]
@@ -203,12 +204,13 @@ model Company {
   createdAt       DateTime     @default(now())
   updatedAt       DateTime     @updatedAt
 
-  people         Person[]
-  opportunities  Opportunity[]
-  activities     Activity[]
-  notes          Note[]
-  meetings       Meeting[]
-  timelineEvents TimelineEvent[]
+  people                Person[]
+  opportunities         Opportunity[]
+  activities            Activity[]
+  notes                 Note[]
+  meetings              Meeting[]
+  timelineEvents        TimelineEvent[]
+  convertedInboundLeads InboundLead[]   @relation("InboundLeadConvertedCompany")
 
   @@index([organizationId, name])
   @@index([organizationId, status])
@@ -241,6 +243,7 @@ model Person {
   notesRel                     Note[]
   opportunitiesAsDecisionMaker Opportunity[] @relation("OpportunityDecisionMaker")
   opportunitiesAsSponsor       Opportunity[] @relation("OpportunitySponsor")
+  convertedInboundLeads        InboundLead[] @relation("InboundLeadConvertedPerson")
 
   @@unique([organizationId, email])
   @@index([organizationId])
@@ -279,9 +282,10 @@ model Opportunity {
   createdAt         DateTime      @default(now())
   updatedAt         DateTime      @updatedAt
 
-  activities Activity[]
-  notes      Note[]
-  meetings   Meeting[]
+  activities            Activity[]
+  notes                 Note[]
+  meetings              Meeting[]
+  convertedInboundLeads InboundLead[] @relation("InboundLeadConvertedOpportunity")
 
   @@index([organizationId, stageId])
   @@index([organizationId, status])
@@ -356,6 +360,53 @@ model Note {
   @@index([opportunityId])
   @@index([createdById])
   @@map("notes")
+}
+
+// Bandeja de entrada para leads externos (ver docs/integrations/inbound-leads.md).
+// NO crea Company/Person/Opportunity automáticamente: queda pending para
+// revisión humana; la conversión explícita vive en /leads.
+model InboundLead {
+  id             String       @id @default(cuid())
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+
+  // Canal de origen, extensible (website_contact, referral, linkedin, campaign,
+  // partner, manual, ...). String libre, mismo criterio que Opportunity.status.
+  source String
+
+  // Id del lead en el sistema de origen (ej. row id de la DB de la landing).
+  // Junto con source+organizationId hace el POST de n8n idempotente a nivel DB.
+  externalId String
+
+  firstName String?
+  lastName  String?
+  email     String?
+  company   String?
+  message   String? @db.Text
+  page      String?
+
+  // new | reviewed | converted | rejected
+  status String @default("new")
+
+  reviewedAt   DateTime?
+  reviewedById String?
+  reviewedBy   User?     @relation("InboundLeadReviewedBy", fields: [reviewedById], references: [id], onDelete: SetNull)
+
+  convertedAt            DateTime?
+  convertedCompanyId     String?
+  convertedCompany       Company?     @relation("InboundLeadConvertedCompany", fields: [convertedCompanyId], references: [id], onDelete: SetNull)
+  convertedPersonId      String?
+  convertedPerson        Person?      @relation("InboundLeadConvertedPerson", fields: [convertedPersonId], references: [id], onDelete: SetNull)
+  convertedOpportunityId String?
+  convertedOpportunity   Opportunity? @relation("InboundLeadConvertedOpportunity", fields: [convertedOpportunityId], references: [id], onDelete: SetNull)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([organizationId, source, externalId])
+  @@index([organizationId, status])
+  @@index([organizationId, createdAt])
+  @@map("inbound_leads")
 }
 
 // ---------- Views / persistence ----------
@@ -521,6 +572,7 @@ model User {
   createdNotes         Note[]
   createdSavedViews    SavedView[]
   passwordResetTokens  PasswordResetToken[]
+  reviewedInboundLeads InboundLead[]        @relation("InboundLeadReviewedBy")
 
   @@index([organizationId])
   @@map("users")

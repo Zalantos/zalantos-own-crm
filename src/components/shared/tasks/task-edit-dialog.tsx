@@ -13,21 +13,20 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { SubmitButton } from "@/components/shared/submit-button";
 import { TeamMemberSelect } from "@/components/shared/activities/team-member-select";
+import { TaskStatusSelect } from "@/components/shared/activities/task-status-select";
 import {
   updateActivity,
   updateActivityStatus,
   type ActivityFormState,
 } from "@/app/(dashboard)/activities/actions";
+import { isActivityStatus, type ActivityStatus } from "@/lib/activity-status";
 import {
-  ACTIVITY_STATUSES,
-  ACTIVITY_STATUS_LABELS,
-  isActivityStatus,
-  type ActivityStatus,
-} from "@/lib/activity-status";
+  ACTIVITY_TYPES,
+  activityTypeLabel,
+  isActivityType,
+} from "@/lib/activity-types";
 import type { TaskActivity } from "@/components/shared/tasks/task-kanban-card";
 import type { AssignableTeamMember } from "@/lib/team";
-
-const ACTIVITY_TYPES = ["call", "email", "meeting", "task", "follow_up"];
 
 function formatDateForInput(date: Date | null) {
   return date ? new Date(date).toISOString().slice(0, 10) : "";
@@ -87,9 +86,12 @@ export function TaskEditDialog({
             defaultValue={task.type}
             className="bg-background h-9 w-full rounded-md border px-3 text-sm"
           >
-            {ACTIVITY_TYPES.map((type) => (
+            {(isActivityType(task.type)
+              ? ACTIVITY_TYPES
+              : [task.type, ...ACTIVITY_TYPES]
+            ).map((type) => (
               <option key={type} value={type}>
-                {type}
+                {activityTypeLabel(type)}
               </option>
             ))}
           </select>
@@ -122,19 +124,9 @@ export function TaskEditDialog({
 
           <div className="space-y-1">
             <label className="text-muted-foreground text-xs">Estado</label>
-            <select
-              value={status}
-              onChange={(event) =>
-                handleStatusChange(event.target.value as ActivityStatus)
-              }
-              className="bg-background h-9 w-full rounded-md border px-3 text-sm"
-            >
-              {ACTIVITY_STATUSES.map((s) => (
-                <option key={s} value={s}>
-                  {ACTIVITY_STATUS_LABELS[s]}
-                </option>
-              ))}
-            </select>
+            <div>
+              <TaskStatusSelect status={status} onChange={handleStatusChange} />
+            </div>
           </div>
 
           {status === "blocked" && (

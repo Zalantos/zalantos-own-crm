@@ -27,6 +27,7 @@ Leer documentos adicionales solo cuando la tarea lo requiera:
 | `docs/architecture/decisions.md` | Cambios de arquitectura, dependencias, infra, auth, colas |
 | `docs/architecture/integrations.md` | APIs, webhooks, email, IA, R2, gateway, Telegram |
 | `docs/integrations/telegram-copiloto.md` | Contrato n8n ↔ `/api/telegram/*` |
+| `docs/integrations/inbound-leads.md` | Contrato n8n ↔ `/api/integrations/inbound-leads`, bandeja `/leads` |
 | `docs/engineering/security-checklist.md` | Auth, permisos, datos personales, producción |
 | `docs/engineering/testing-strategy.md` | Lógica de negocio, integraciones, permisos |
 | `docs/operations/deployment.md` | Deploy, Railway, migraciones, env vars |

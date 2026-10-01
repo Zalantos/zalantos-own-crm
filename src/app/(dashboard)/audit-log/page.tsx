@@ -65,7 +65,7 @@ export default async function ActivityPage({
   return (
     <div>
       <PageHeader
-        title="Actividad"
+        title="Historial de Actividades"
         description="Registro de reuniones, evidencias y revisiones hechas por el equipo"
       />
 

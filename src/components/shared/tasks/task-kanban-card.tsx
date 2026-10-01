@@ -8,6 +8,9 @@ import { Badge } from "@/components/ui/badge";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { initials } from "@/lib/format";
 import { TaskEditDialog } from "@/components/shared/tasks/task-edit-dialog";
+import { TaskStatusSelect } from "@/components/shared/activities/task-status-select";
+import { updateActivityStatus } from "@/app/(dashboard)/activities/actions";
+import { isActivityStatus } from "@/lib/activity-status";
 import type { Activity, Company, Person, Opportunity } from "@prisma/client";
 import type { AssignableTeamMember } from "@/lib/team";
 
@@ -68,6 +71,15 @@ export function TaskKanbanCard({
         )}
 
         <div className="flex flex-wrap items-center gap-1.5">
+          <span
+            onPointerDown={(event) => event.stopPropagation()}
+            onClick={(event) => event.stopPropagation()}
+          >
+            <TaskStatusSelect
+              status={isActivityStatus(task.status) ? task.status : "todo"}
+              onChange={(next) => void updateActivityStatus(task.id, next)}
+            />
+          </span>
           {isOverdue && <Badge variant="destructive">Vencida</Badge>}
           {task.plannedDate && (
             <Badge variant="outline">

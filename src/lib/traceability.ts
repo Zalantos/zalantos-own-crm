@@ -4,6 +4,7 @@ export const CREATED_VIA_LABELS: Record<string, string> = {
   meeting: "Meeting Intelligence",
   enrichment: "Enriquecimiento de contexto",
   workflow: "Workflow",
+  inbound_lead: "Lead entrante",
   seed: "Datos demo",
   legacy: "Registro previo",
 };

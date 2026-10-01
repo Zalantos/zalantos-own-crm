@@ -1,5 +1,6 @@
 "use client";
 
+import { cn } from "@/lib/utils";
 import type { AssignableTeamMember } from "@/lib/team";
 
 // El miembro actualmente seleccionado puede estar desactivado (fuera de
@@ -12,6 +13,7 @@ export function TeamMemberSelect({
   name,
   placeholder = "Sin responsable",
   onChange,
+  className,
 }: {
   teamMembers: AssignableTeamMember[];
   currentId?: string | null;
@@ -19,6 +21,7 @@ export function TeamMemberSelect({
   name?: string;
   placeholder?: string;
   onChange?: (memberId: string | null) => void;
+  className?: string;
 }) {
   const currentIsListed =
     !currentId || teamMembers.some((member) => member.id === currentId);
@@ -30,7 +33,10 @@ export function TeamMemberSelect({
       onChange={
         onChange ? (event) => onChange(event.target.value || null) : undefined
       }
-      className="bg-background h-8 rounded-md border px-2 text-xs"
+      className={cn(
+        "bg-background h-8 rounded-md border px-2 text-xs",
+        className,
+      )}
     >
       <option value="">{placeholder}</option>
       {!currentIsListed && currentId && (

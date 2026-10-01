@@ -9,6 +9,7 @@ import { StatRow } from "@/components/shared/dashboard/stat-row";
 import { PipelineChart } from "@/components/shared/dashboard/pipeline-chart";
 import { RecentActivityFeed } from "@/components/shared/dashboard/recent-activity-feed";
 import { ActivityRow } from "@/components/shared/activities/activity-row";
+import { InboundLeadsWidget } from "@/components/shared/dashboard/inbound-leads-widget";
 import { ACTIVITY_OPEN_STATUSES } from "@/lib/activity-status";
 
 const MY_TASKS_LIMIT = 6;
@@ -29,6 +30,8 @@ export default async function DashboardPage() {
     myTasks,
     myTaskCount,
     teamMembers,
+    newLeadCount,
+    recentNewLeads,
   ] = await Promise.all([
     db.company.count(),
     db.opportunity.aggregate({
@@ -69,6 +72,13 @@ export default async function DashboardPage() {
       },
     }),
     getActiveTeamMembers(db),
+    db.inboundLead.count({ where: { status: "new" } }),
+    db.inboundLead.findMany({
+      where: { status: "new" },
+      orderBy: { createdAt: "desc" },
+      take: 3,
+      select: { id: true, firstName: true, lastName: true, company: true, createdAt: true },
+    }),
   ]);
 
   const countByStageId = new Map(
@@ -121,6 +131,10 @@ export default async function DashboardPage() {
           currency={org.currency}
           locale={org.locale}
         />
+      </div>
+
+      <div className="mb-4">
+        <InboundLeadsWidget newCount={newLeadCount} recentLeads={recentNewLeads} />
       </div>
 
       {myTasks.length > 0 && (

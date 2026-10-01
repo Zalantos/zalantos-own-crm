@@ -12,6 +12,7 @@ import { buildProposalTools } from "./tools/write-proposal";
 import { buildConfirmProposalTools } from "./tools/confirm-proposal";
 import { buildAttachmentTools } from "./tools/attachments";
 import { buildContextSourceTools } from "./tools/context-sources";
+import { buildWebSearchTools } from "./tools/web-search";
 
 // Nota/tarea ya escrita al instante en este turno porque era el primer (y por
 // ahora único) cambio. Si aparece un segundo cambio, se revierte esta fila y
@@ -68,6 +69,7 @@ export function buildAgentToolDefinitions(ctx: AgentToolContext) {
     ...buildConfirmProposalTools(ctx),
     ...buildAttachmentTools(ctx),
     ...buildContextSourceTools(ctx),
+    ...buildWebSearchTools(ctx),
   };
 }
 

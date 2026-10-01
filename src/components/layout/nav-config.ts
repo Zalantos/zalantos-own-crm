@@ -4,6 +4,7 @@ import {
   CheckSquareIcon,
   ClipboardListIcon,
   HistoryIcon,
+  InboxIcon,
   KanbanSquareIcon,
   LayoutDashboardIcon,
   ListOrderedIcon,
@@ -43,13 +44,14 @@ export const CRM_SECTION: NavSection = {
     { href: "/people", label: "Personas", icon: UsersIcon },
     { href: "/opportunities", label: "Oportunidades", icon: KanbanSquareIcon },
     { href: "/activities", label: "Actividades", icon: CheckSquareIcon },
+    { href: "/leads", label: "Leads entrantes", icon: InboxIcon },
     { href: "/meetings", label: "Meeting Intelligence", icon: VideoIcon },
     {
       href: "/agent/proposals",
       label: "Propuestas del agente",
       icon: ClipboardListIcon,
     },
-    { href: "/audit-log", label: "Actividad", icon: HistoryIcon },
+    { href: "/audit-log", label: "Historial de Actividades", icon: HistoryIcon },
   ],
 };
 
