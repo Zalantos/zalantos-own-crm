@@ -3,6 +3,12 @@ import { z } from "zod";
 const emptyToUndefined = (val: unknown) =>
   typeof val === "string" && val.trim() === "" ? undefined : val;
 
+// Igual que emptyToUndefined, pero además recorta espacios sobrantes antes de
+// validar el formato: n8n/formularios externos suelen mandar el email con
+// espacios al borde, que harían fallar z.email() aunque el email sea válido.
+const emptyToUndefinedTrimmed = (val: unknown) =>
+  typeof val === "string" && val.trim() === "" ? undefined : typeof val === "string" ? val.trim() : val;
+
 const optionalString = z.preprocess(emptyToUndefined, z.string().optional());
 
 // Payload de n8n -> POST /api/integrations/inbound-leads. snake_case porque
@@ -12,7 +18,7 @@ export const inboundLeadPayloadSchema = z.object({
   external_id: z.string().min(1, "external_id es obligatorio").max(200),
   first_name: optionalString,
   last_name: optionalString,
-  email: z.preprocess(emptyToUndefined, z.email().optional()),
+  email: z.preprocess(emptyToUndefinedTrimmed, z.email().optional()),
   company: optionalString,
   message: optionalString,
   page: optionalString,

@@ -47,6 +47,15 @@ describe("inboundLeadPayloadSchema", () => {
       }),
     );
   });
+
+  it("trims surrounding whitespace before validating the email", () => {
+    const parsed = inboundLeadPayloadSchema.parse({
+      source: "website_contact",
+      external_id: "row-123",
+      email: "  prueba@gmail.com  ",
+    });
+    assert.equal(parsed.email, "prueba@gmail.com");
+  });
 });
 
 describe("convertInboundLeadSchema", () => {
