@@ -23,6 +23,7 @@ Fuente de verdad: `prisma/schema.prisma`.
 | `Person`      | `people`        | → company (opcional); roles en opportunities                      |
 | `Opportunity` | `opportunities` | → company, stage, decisionMaker, sponsor                          |
 | `Activity`    | `activities`    | → company/person/opportunity, assignee y completedBy (TeamMember) |
+| `ActivityPerson` | `activity_people` | Personas que participaron de una actividad registrada (N:M)    |
 | `Note`        | `notes`         | → company/person/opportunity                                      |
 | `InboundLead` | `inbound_leads` | Bandeja previa a Company/Person/Opportunity; ver sección propia    |
 
@@ -179,6 +180,27 @@ en propuestas anteriores a la migración.
   `updateActivityStatus` en `activities/actions.ts`), que además dispara un
   evento de timeline (`task_status_changed`) y `evaluateWorkflows` con
   `entityType: "activity", eventName: "status_changed"`.
+- `priority` (`low` | `medium` | `high`, nullable; constante en
+  `src/lib/activity-priority.ts`) aplica a tareas.
+- **Actividades registradas** (`occurredAt` no nulo): algo que ya ocurrió
+  (llamada, email, visita, reunión breve) cargado con la tool `create_activity`.
+  Nacen con `status="done"` y `completedAt=occurredAt`, así que no aparecen en
+  tareas abiertas, agenda ni recordatorios; sí en el tablero, en la columna
+  "Hecha". Guardan `durationMinutes`, `channel`, `outcomes` y `description`
+  (resumen). `personId` es la persona principal; todas las personas van en
+  `ActivityPerson`. Al crearse, adelantan `Company.lastContactAt` si la fecha
+  es más nueva y no futura, y escriben un evento `activity_logged` en el
+  timeline con `occurredAt` igual a la fecha de la actividad. `list_tasks` y
+  `update_task` las excluyen (`occurredAt: null`). Lógica compartida en
+  `src/lib/crm/activity-records.ts`.
+
+### Meeting manual
+
+- Una reunión sin grabación (tool `create_meeting`) se guarda con
+  `sourceType="manual"`, `processingStatus="ready"`, sin `rawTranscript`, y con
+  `aiSummary` en el mismo formato que produce el pipeline (`headline`,
+  `keyPoints`, `decisions`, `risks`) más `nextSteps` y `source: "manual"`.
+  `participants` admite `{ name, email?, company?, role?, internal? }`.
 
 ### Person dedup
 
@@ -252,6 +274,7 @@ Ver `@@index` en `schema.prisma` — la mayoría compuestos con `organizationId`
 | `add_mcp_access_token`                 | Tokens personales MCP con revocación, último uso, thread lazy y RLS                                                                                                   |
 | `inbound_leads`                        | Modelo `InboundLead` (bandeja `/leads`) con idempotencia por `(organizationId, source, externalId)`                                                                  |
 | `inbound_leads_rls`                     | RLS `tenant_isolation` sobre `inbound_leads` (separada porque la migración base de RLS ya está desplegada)                                                           |
+| `logged_activities_and_task_priority`  | Aditiva: `priority`, `occurredAt`, `durationMinutes`, `channel`, `outcomes` en `activities`; tabla `activity_people` con RLS                                          |
 
 ## Qué no debe romperse
 

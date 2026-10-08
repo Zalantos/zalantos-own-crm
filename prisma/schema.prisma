@@ -84,6 +84,7 @@ model Organization {
   people                 Person[]
   opportunities          Opportunity[]
   activities             Activity[]
+  activityPeople         ActivityPerson[]
   notes                  Note[]
   savedViews             SavedView[]
   customFieldDefinitions CustomFieldDefinition[]
@@ -240,10 +241,11 @@ model Person {
   updatedAt       DateTime     @updatedAt
 
   activities                   Activity[]
+  activityParticipations       ActivityPerson[]
   notesRel                     Note[]
-  opportunitiesAsDecisionMaker Opportunity[] @relation("OpportunityDecisionMaker")
-  opportunitiesAsSponsor       Opportunity[] @relation("OpportunitySponsor")
-  convertedInboundLeads        InboundLead[] @relation("InboundLeadConvertedPerson")
+  opportunitiesAsDecisionMaker Opportunity[]    @relation("OpportunityDecisionMaker")
+  opportunitiesAsSponsor       Opportunity[]    @relation("OpportunitySponsor")
+  convertedInboundLeads        InboundLead[]    @relation("InboundLeadConvertedPerson")
 
   @@unique([organizationId, email])
   @@index([organizationId])
@@ -318,11 +320,23 @@ model Activity {
   status          String       @default("todo")
   statusChangedAt DateTime?
   blockedReason   String?      @db.Text
+  // low | medium | high. Solo tiene sentido en tareas; null = sin prioridad.
+  priority        String?
+  // Set = actividad ya ocurrida que se registró (llamada, email, visita...),
+  // no una tarea pendiente. Es la fecha en que ocurrió.
+  occurredAt      DateTime?
+  durationMinutes Int?
+  // Medio por el que ocurrió: teams, zoom, presencial, teléfono...
+  channel         String?
+  outcomes        String?      @db.Text
   createdById     String?
   createdBy       User?        @relation(fields: [createdById], references: [id], onDelete: SetNull)
   createdVia      String       @default("manual")
   createdAt       DateTime     @default(now())
   updatedAt       DateTime     @updatedAt
+
+  // Todas las personas que participaron; personId queda como la principal.
+  participants ActivityPerson[]
 
   @@index([organizationId, status])
   @@index([organizationId, dueDate])
@@ -333,7 +347,24 @@ model Activity {
   @@index([assigneeId])
   @@index([completedById])
   @@index([createdById])
+  @@index([organizationId, occurredAt])
   @@map("activities")
+}
+
+model ActivityPerson {
+  id             String       @id @default(cuid())
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  activityId     String
+  activity       Activity     @relation(fields: [activityId], references: [id], onDelete: Cascade)
+  personId       String
+  person         Person       @relation(fields: [personId], references: [id], onDelete: Cascade)
+  createdAt      DateTime     @default(now())
+
+  @@unique([activityId, personId])
+  @@index([organizationId])
+  @@index([personId])
+  @@map("activity_people")
 }
 
 model Note {

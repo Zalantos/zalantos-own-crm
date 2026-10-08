@@ -1,5 +1,6 @@
 // Risk classification per tool. "auto" ejecuta al instante — excepto
-// create_note/create_task, que solo escriben directo si son el único cambio
+// create_note/create_task/create_activity/create_meeting/update_task/
+// complete_task, que solo escriben directo si son el único cambio
 // del turno; a partir del segundo cambio, caen en la misma CRMChangeProposal
 // que las "proposal" (ver registerProposalChange en proposals.ts). "proposal"
 // tools can only create a reviewable CRMChangeProposal (enforced by
@@ -23,8 +24,13 @@ export const TOOL_RISK: Record<string, ToolRisk> = {
   list_pending_proposals: "auto",
   read_attachment: "auto",
   read_context_source: "auto",
+  list_tasks: "auto",
   create_note: "auto",
   create_task: "auto",
+  create_activity: "auto",
+  create_meeting: "auto",
+  update_task: "auto",
+  complete_task: "auto",
   update_record_fields: "proposal",
   change_stage: "proposal",
   create_contact: "proposal",

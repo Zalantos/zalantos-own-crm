@@ -16,6 +16,8 @@ export const TYPE_LABELS: Record<string, string> = {
   stage_changed: "Cambio de etapa",
   task_created: "Tarea",
   task_assigned: "Tarea asignada",
+  task_updated: "Tarea actualizada",
+  activity_logged: "Actividad registrada",
   next_step_updated: "Próximo paso actualizado",
   field_updated: "Campo actualizado",
   contact_added: "Contacto agregado",
@@ -42,6 +44,9 @@ type TimelineInput = {
   refId?: string | null;
   actorId?: string | null;
   metadata?: Prisma.InputJsonValue;
+  // Cuándo ocurrió el hecho; default now(). Se pasa al registrar algo que
+  // pasó antes (una llamada de ayer) para que quede ordenado en su fecha.
+  occurredAt?: Date;
 };
 
 // Append-only event log. Accepts a transaction client so it can be written
@@ -52,8 +57,8 @@ export async function appendTimelineEvent(
   input: TimelineInput,
 ) {
   // Sin empresa no hay dónde anclar el evento: se omite en silencio.
-  if (!input.companyId) return;
-  await client.timelineEvent.create({
+  if (!input.companyId) return null;
+  return client.timelineEvent.create({
     data: {
       organizationId: input.organizationId,
       companyId: input.companyId,
@@ -65,7 +70,9 @@ export async function appendTimelineEvent(
       refId: input.refId ?? null,
       actorId: input.actorId ?? null,
       metadata: input.metadata,
+      ...(input.occurredAt ? { occurredAt: input.occurredAt } : {}),
     },
+    select: { id: true },
   });
 }
 

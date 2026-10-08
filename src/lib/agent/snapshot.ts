@@ -136,6 +136,16 @@ export async function buildCompanySnapshot(
       type: a.type,
       title: a.title,
       status: a.status,
+      // Solo las actividades registradas (ya ocurridas) traen estos datos;
+      // las tareas mantienen el shape de siempre.
+      ...(a.occurredAt
+        ? {
+            occurredAt: a.occurredAt.toISOString(),
+            channel: a.channel,
+            summary: a.description,
+            outcomes: a.outcomes,
+          }
+        : {}),
     })),
     priorMeetings: priorMeetings.map((m) => ({
       title: m.title,

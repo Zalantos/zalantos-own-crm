@@ -13,8 +13,12 @@ export type AgentProposalItemInput = {
     | "add_opportunity"
     | "add_company"
     | "add_note"
-    | "create_task";
-  entity: "company" | "opportunity" | "person" | "note" | "activity";
+    | "create_task"
+    | "log_activity"
+    | "create_meeting"
+    | "update_task";
+  entity:
+    "company" | "opportunity" | "person" | "note" | "activity" | "meeting";
   entityId: string | null;
   beforeValue: Prisma.InputJsonValue | null;
   afterValue: Prisma.InputJsonValue;
@@ -168,7 +172,9 @@ async function revertPendingInstant(
   pending: PendingInstantChange,
 ) {
   await withOrgTransaction(ctx.organizationId, async (tx) => {
-    if (pending.kind === "note") {
+    if (pending.undo) {
+      await pending.undo(tx);
+    } else if (pending.kind === "note") {
       await tx.note.delete({
         where: { id: pending.entityId, organizationId: ctx.organizationId },
       });

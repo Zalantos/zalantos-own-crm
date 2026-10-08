@@ -1,4 +1,5 @@
 import type { Tool, ToolSet } from "ai";
+import type { Prisma } from "@prisma/client";
 import type { TenantClient } from "@/lib/tenant";
 import type { ResolvedPageContext } from "./context";
 import type { AgentProposalItemInput } from "./proposals";
@@ -8,6 +9,8 @@ import { buildTimelineTools } from "./tools/timeline";
 import { buildAgendaTools } from "./tools/agenda";
 import { buildMeetingTools } from "./tools/meetings";
 import { buildWriteSafeTools } from "./tools/write-safe";
+import { buildActivityWriteTools } from "./tools/write-activity";
+import { buildTaskTools } from "./tools/tasks";
 import { buildProposalTools } from "./tools/write-proposal";
 import { buildConfirmProposalTools } from "./tools/confirm-proposal";
 import { buildAttachmentTools } from "./tools/attachments";
@@ -18,11 +21,15 @@ import { buildWebSearchTools } from "./tools/web-search";
 // ahora único) cambio. Si aparece un segundo cambio, se revierte esta fila y
 // `item` se reinserta como CRMChangeItem (ver registerProposalChange).
 export type PendingInstantChange = {
-  kind: "note" | "task";
+  kind: "note" | "task" | "activity" | "meeting" | "task_update";
   entityId: string;
   companyId: string;
   opportunityId: string | null;
   item: AgentProposalItemInput;
+  // Cómo deshacer la escritura cuando no alcanza con borrar la fila
+  // (actividades registradas, reuniones, ediciones de tareas). Sin undo,
+  // note/task se borran por entityId.
+  undo?: (tx: Prisma.TransactionClient) => Promise<void>;
 };
 
 // Estado mutable compartido por todas las tools de UN turno (mismo
@@ -65,6 +72,8 @@ export function buildAgentToolDefinitions(ctx: AgentToolContext) {
     ...buildAgendaTools(ctx),
     ...buildMeetingTools(ctx),
     ...buildWriteSafeTools(ctx),
+    ...buildActivityWriteTools(ctx),
+    ...buildTaskTools(ctx),
     ...buildProposalTools(ctx),
     ...buildConfirmProposalTools(ctx),
     ...buildAttachmentTools(ctx),

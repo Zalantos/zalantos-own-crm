@@ -4,6 +4,8 @@ export const ACTIVITY_TYPES = [
   "meeting",
   "task",
   "follow_up",
+  "visit",
+  "other",
 ] as const;
 
 export type ActivityType = (typeof ACTIVITY_TYPES)[number];
@@ -14,6 +16,8 @@ export const ACTIVITY_TYPE_LABELS: Record<ActivityType, string> = {
   meeting: "Reunión",
   task: "Tarea",
   follow_up: "Seguimiento",
+  visit: "Visita",
+  other: "Otra",
 };
 
 export function isActivityType(value: string): value is ActivityType {

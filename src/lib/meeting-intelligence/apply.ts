@@ -19,6 +19,21 @@ import {
   type AgentEntity,
 } from "@/lib/agent/field-registry";
 import { upsertCustomFieldValue } from "@/lib/custom-fields/merge";
+import {
+  applyTaskUpdate,
+  insertLoggedActivity,
+  insertManualMeeting,
+  loggedActivityFromJson,
+  manualMeetingFromJson,
+  revertLoggedActivity,
+  revertManualMeeting,
+  revertTaskUpdate,
+  taskUpdateFromJson,
+  type LoggedActivityRevert,
+  type ManualMeetingRevert,
+  type TaskUpdateRevert,
+  type WriteBase,
+} from "@/lib/crm/activity-records";
 
 type ApplyContext = {
   db: TenantClient;
@@ -199,6 +214,13 @@ type RevertData = {
   // For link_contact: the fields this item filled on the existing person, so
   // revert only clears what it actually set.
   filledFields?: string[];
+  // log_activity / create_meeting / update_task (ver crm/activity-records).
+  loggedActivity?: LoggedActivityRevert;
+  manualMeeting?: ManualMeetingRevert;
+  taskUpdate?: TaskUpdateRevert;
+  // Cambio de estado aplicado por update_task, para disparar workflows
+  // después de commitear.
+  taskStatusChange?: { from: string; to: string };
 };
 
 type NormalizedContact = {
@@ -630,6 +652,8 @@ async function applyItem(
           companyId: ctx.companyId,
           opportunityId: ctx.defaultOpportunityId,
           personId: after.personId ? String(after.personId) : null,
+          assigneeId: after.assigneeId ? String(after.assigneeId) : null,
+          priority: after.priority ? String(after.priority) : null,
           type: "task",
           title: String(after.title ?? "Tarea"),
           description: after.description ? String(after.description) : null,
@@ -678,9 +702,58 @@ async function applyItem(
       return { createdEntityId: note.id };
     }
 
+    // Los ítems del agente guardan companyId/opportunityId propios en
+    // afterValue; la propuesta solo aporta el fallback.
+    case "log_activity": {
+      const revert = await insertLoggedActivity(
+        tx,
+        recordsBase(ctx, createdVia),
+        loggedActivityFromJson(after, ctx.companyId),
+      );
+      return { createdEntityId: revert.activityId, loggedActivity: revert };
+    }
+
+    case "create_meeting": {
+      const revert = await insertManualMeeting(
+        tx,
+        recordsBase(ctx, createdVia),
+        manualMeetingFromJson(after, ctx.companyId),
+      );
+      return { createdEntityId: revert.meetingId, manualMeeting: revert };
+    }
+
+    case "update_task": {
+      const { taskId, input } = taskUpdateFromJson(after);
+      const result = await applyTaskUpdate(
+        tx,
+        recordsBase(ctx, createdVia),
+        taskId,
+        input,
+      );
+      return {
+        taskUpdate: {
+          taskId: result.taskId,
+          before: result.before,
+          timelineEventIds: result.timelineEventIds,
+        },
+        ...(result.statusChange
+          ? { taskStatusChange: result.statusChange }
+          : {}),
+      };
+    }
+
     default:
       throw new Error(`Tipo de cambio desconocido: ${item.type}`);
   }
+}
+
+function recordsBase(ctx: ApplyContext, createdVia: string): WriteBase {
+  return {
+    organizationId: ctx.organizationId,
+    actorId: ctx.actorId,
+    createdVia,
+    metadata: { proposalId: ctx.proposalId, originLabel: ctx.originLabel },
+  };
 }
 
 function stageChangeOf(
@@ -855,24 +928,39 @@ export async function applyProposal(
   let failed = 0;
   const stageChanges: { opportunityId: string; from: unknown; to: unknown }[] =
     [];
+  const taskStatusChanges: {
+    taskId: string;
+    from: string;
+    to: string;
+  }[] = [];
 
   for (const item of proposal.items) {
     if (!item.approved || item.status === "applied") continue;
     try {
-      await withOrgTransaction(organizationId, async (tx) => {
-        const revertData = await applyItem(tx, item, ctx);
-        await tx.cRMChangeItem.update({
-          where: { id: item.id, organizationId },
-          data: {
-            status: "applied",
-            appliedAt: new Date(),
-            revertData: (revertData ?? undefined) as Prisma.InputJsonValue,
-          },
-        });
-      });
+      const revertData = await withOrgTransaction(
+        organizationId,
+        async (tx) => {
+          const revertData = await applyItem(tx, item, ctx);
+          await tx.cRMChangeItem.update({
+            where: { id: item.id, organizationId },
+            data: {
+              status: "applied",
+              appliedAt: new Date(),
+              revertData: (revertData ?? undefined) as Prisma.InputJsonValue,
+            },
+          });
+          return revertData;
+        },
+      );
       applied += 1;
       const stageChange = stageChangeOf(item);
       if (stageChange) stageChanges.push(stageChange);
+      if (revertData?.taskUpdate && revertData.taskStatusChange) {
+        taskStatusChanges.push({
+          taskId: revertData.taskUpdate.taskId,
+          ...revertData.taskStatusChange,
+        });
+      }
     } catch (error) {
       failed += 1;
       await db.cRMChangeItem.update({
@@ -926,6 +1014,18 @@ export async function applyProposal(
       actorId,
       before: { stage: change.from },
       after: { stage: change.to },
+    });
+  }
+
+  // Mismo evento que dispara la UI al mover una tarea de estado.
+  for (const change of taskStatusChanges) {
+    await evaluateWorkflows(db, organizationId, {
+      entityType: "activity",
+      entityId: change.taskId,
+      eventName: "status_changed",
+      actorId,
+      before: { status: change.from },
+      after: { status: change.to },
     });
   }
 
@@ -1113,6 +1213,24 @@ export async function revertItem(
           await tx.note.delete({
             where: { id: revert.createdEntityId, organizationId },
           });
+        }
+        break;
+      }
+      case "log_activity": {
+        if (revert.loggedActivity) {
+          await revertLoggedActivity(tx, organizationId, revert.loggedActivity);
+        }
+        break;
+      }
+      case "create_meeting": {
+        if (revert.manualMeeting) {
+          await revertManualMeeting(tx, organizationId, revert.manualMeeting);
+        }
+        break;
+      }
+      case "update_task": {
+        if (revert.taskUpdate) {
+          await revertTaskUpdate(tx, organizationId, revert.taskUpdate);
         }
         break;
       }

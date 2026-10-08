@@ -22,6 +22,7 @@ const READ_TOOL_NAMES = [
   "get_my_agenda",
   "list_meetings",
   "get_meeting",
+  "list_tasks",
   "read_meeting_transcript",
   "list_pending_proposals",
   "read_attachment",
@@ -29,7 +30,14 @@ const READ_TOOL_NAMES = [
   "web_search",
 ] as const;
 
-const DIRECT_WRITE_TOOL_NAMES = ["create_note", "create_task"] as const;
+const DIRECT_WRITE_TOOL_NAMES = [
+  "create_note",
+  "create_task",
+  "create_activity",
+  "create_meeting",
+  "update_task",
+  "complete_task",
+] as const;
 
 const PROPOSAL_TOOL_NAMES = [
   "update_record_fields",
@@ -74,15 +82,17 @@ function createToolContext(
 }
 
 function mcpDescription(name: string, base: string): string {
-  const idRule =
-    "Resolvé ids con search_crm cuando corresponda; nunca inventes un id.";
+  // Las tools nuevas ya traen la regla de ids en su descripción.
+  const idRule = base.includes("nunca inventes un id")
+    ? ""
+    : "Resolvé ids con search_crm cuando corresponda; nunca inventes un id.";
   if (DIRECT_WRITE_TOOLS.has(name)) {
-    return `${base} En MCP esta acción queda escrita al instante. ${idRule}`;
+    return `${base} En MCP esta acción queda escrita al instante. ${idRule}`.trim();
   }
   if (PROPOSAL_TOOLS.has(name)) {
     return `${base} En MCP nunca aplica el cambio: devuelve una propuesta pendiente con proposalId. Solo llamá confirm_proposal si el usuario pidió explícitamente confirmar ese id; si devuelve too_large, compartí reviewUrl y no reintentes. ${idRule}`;
   }
-  return `${base} ${idRule}`;
+  return `${base} ${idRule}`.trim();
 }
 
 function resultContent(value: unknown) {
