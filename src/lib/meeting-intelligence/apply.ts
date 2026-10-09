@@ -239,6 +239,23 @@ function optionalString(value: unknown): string | null {
   return value == null || value === "" ? null : String(value);
 }
 
+function optionalNumber(value: unknown): number | null {
+  if (value == null || value === "") return null;
+  const parsed = Number(value);
+  if (Number.isNaN(parsed))
+    throw new Error(`Número inválido: ${String(value)}`);
+  return parsed;
+}
+
+function optionalDate(value: unknown): Date | null {
+  if (value == null || value === "") return null;
+  const parsed = new Date(String(value));
+  if (Number.isNaN(parsed.getTime())) {
+    throw new Error(`Fecha inválida: ${String(value)}`);
+  }
+  return parsed;
+}
+
 function normalizeContact(after: Record<string, unknown>): NormalizedContact {
   return {
     firstName: normalizePersonName(
@@ -560,6 +577,23 @@ async function applyItem(
           city: after.city ? String(after.city) : null,
           linkedinUrl: after.linkedinUrl ? String(after.linkedinUrl) : null,
           description: after.description ? String(after.description) : null,
+          icpScore: optionalNumber(after.icpScore),
+          fitScore: optionalNumber(after.fitScore),
+          painScore: optionalNumber(after.painScore),
+          status: optionalString(after.status) ?? "active",
+          source: optionalString(after.source),
+          priority: optionalString(after.priority),
+          mainPain: optionalString(after.mainPain),
+          productInterest: optionalString(after.productInterest),
+          potentialValue:
+            after.potentialValue == null ? null : String(after.potentialValue),
+          buyingTiming: optionalString(after.buyingTiming),
+          urgency: optionalString(after.urgency),
+          competitor: optionalString(after.competitor),
+          currentProvider: optionalString(after.currentProvider),
+          nextStep: optionalString(after.nextStep),
+          nextStepDueDate: optionalDate(after.nextStepDueDate),
+          lastContactAt: optionalDate(after.lastContactAt),
           createdById: ctx.actorId,
           createdVia,
         },
@@ -576,6 +610,11 @@ async function applyItem(
     case "add_opportunity": {
       if (!ctx.companyId) throw new Error("Falta empresa destino");
       const stage = resolveStage(ctx, after.stage);
+      const decisionMakerId = optionalString(after.decisionMakerId);
+      const sponsorId = optionalString(after.sponsorId);
+      if (decisionMakerId)
+        await assertPersonInCompany(tx, ctx, decisionMakerId);
+      if (sponsorId) await assertPersonInCompany(tx, ctx, sponsorId);
       const opportunity = await tx.opportunity.create({
         data: {
           organizationId: ctx.organizationId,
@@ -584,8 +623,17 @@ async function applyItem(
           stageId: stage.id,
           estimatedValue:
             after.estimatedValue == null ? null : String(after.estimatedValue),
-          source: after.source ? String(after.source) : null,
-          mainPain: after.mainPain ? String(after.mainPain) : null,
+          probability: optionalNumber(after.probability),
+          source: optionalString(after.source),
+          mainPain: optionalString(after.mainPain),
+          urgency: optionalString(after.urgency),
+          decisionMakerId,
+          sponsorId,
+          nextStep: optionalString(after.nextStep),
+          nextStepDueDate: optionalDate(after.nextStepDueDate),
+          expectedCloseDate: optionalDate(after.expectedCloseDate),
+          status: optionalString(after.status) ?? "open",
+          lossReason: optionalString(after.lossReason),
           createdById: ctx.actorId,
           createdVia,
         },
@@ -646,24 +694,40 @@ async function applyItem(
         after.dueInDays == null ? null : Number(after.dueInDays);
       const dueDate =
         after.dueDate != null ? new Date(String(after.dueDate)) : null;
+      const plannedDate = optionalDate(after.plannedDate);
+      const status = optionalString(after.status) ?? "todo";
+      const assigneeId = optionalString(after.assigneeId);
+      const completedById = optionalString(after.completedById);
+      const blockedReason = optionalString(after.blockedReason);
+      if (blockedReason && status !== "blocked") {
+        throw new Error(
+          "blockedReason solo se puede guardar con status blocked",
+        );
+      }
       const task = await tx.activity.create({
         data: {
           organizationId: ctx.organizationId,
           companyId: ctx.companyId,
           opportunityId: ctx.defaultOpportunityId,
           personId: after.personId ? String(after.personId) : null,
-          assigneeId: after.assigneeId ? String(after.assigneeId) : null,
+          assigneeId,
+          completedById:
+            completedById ?? (status === "done" ? assigneeId : null),
           priority: after.priority ? String(after.priority) : null,
-          type: "task",
+          type: optionalString(after.activityType) ?? "task",
           title: String(after.title ?? "Tarea"),
           description: after.description ? String(after.description) : null,
+          plannedDate,
           dueDate:
             dueDate && !Number.isNaN(dueDate.getTime())
               ? dueDate
               : dueInDays == null
                 ? null
                 : new Date(Date.now() + dueInDays * 86_400_000),
-          status: "todo",
+          status,
+          statusChangedAt: after.status != null ? new Date() : null,
+          completedAt: status === "done" ? new Date() : null,
+          blockedReason: status === "blocked" ? blockedReason : null,
           createdById: ctx.actorId,
           createdVia,
         },

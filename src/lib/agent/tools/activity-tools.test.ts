@@ -513,6 +513,27 @@ describe("update_task / complete_task", () => {
     assert.equal(task.dueDate, null);
   });
 
+  it("edita los campos operativos completos de una tarea", async () => {
+    const { activityTools, rows } = setup({ activity: [seededTask()] });
+    await activityTools.update_task.execute({
+      taskId: "task-1",
+      type: "follow_up",
+      status: "blocked",
+      plannedDate: "2026-10-18",
+      blockedReason: "Esperando aprobación",
+      completedByEmail: "carla@zalantos.com",
+    });
+    const [task] = rows("activity");
+    assert.equal(task.type, "follow_up");
+    assert.equal(task.status, "blocked");
+    assert.equal(task.blockedReason, "Esperando aprobación");
+    assert.equal(task.completedById, "tm-2");
+    assert.equal(
+      (task.plannedDate as Date).toISOString().slice(0, 10),
+      "2026-10-18",
+    );
+  });
+
   it("completar una tarea ya hecha no es un cambio", async () => {
     const { activityTools, ctx, rows } = setup({
       activity: [seededTask({ status: "done" })],

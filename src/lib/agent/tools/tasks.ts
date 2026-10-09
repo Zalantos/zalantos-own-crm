@@ -120,8 +120,11 @@ export function buildTaskTools(ctx: AgentToolContext) {
             description: true,
             status: true,
             priority: true,
+            plannedDate: true,
             dueDate: true,
+            blockedReason: true,
             completedAt: true,
+            completedBy: { select: { id: true, name: true, email: true } },
             company: { select: { id: true, name: true } },
             opportunity: { select: { id: true, name: true } },
             person: { select: { id: true, firstName: true, lastName: true } },
@@ -139,12 +142,15 @@ export function buildTaskTools(ctx: AgentToolContext) {
             // "todo" se expone como "pending", igual que lo acepta update_task.
             status: task.status === "todo" ? "pending" : task.status,
             priority: task.priority,
+            plannedDate: task.plannedDate?.toISOString() ?? null,
             dueDate: task.dueDate?.toISOString() ?? null,
+            blockedReason: task.blockedReason,
             overdue:
               task.dueDate !== null &&
               task.dueDate < now &&
               isOpenStatus(task.status),
             completedAt: task.completedAt?.toISOString() ?? null,
+            completedBy: task.completedBy,
             company: task.company,
             opportunity: task.opportunity,
             person: task.person

@@ -5,7 +5,7 @@ import {
   registerProposalChange,
   type AgentProposalItemInput,
 } from "@/lib/agent/proposals";
-import { activityTypeLabel } from "@/lib/activity-types";
+import { ACTIVITY_TYPES, activityTypeLabel } from "@/lib/activity-types";
 import {
   ACTIVITY_STATUS_LABELS,
   isActivityStatus,
@@ -132,6 +132,7 @@ export const createMeetingInputSchema = z.object({
 
 export const updateTaskInputSchema = z.object({
   taskId: z.string().min(1).describe("Id de la tarea (de list_tasks)"),
+  type: z.enum(ACTIVITY_TYPES).optional(),
   status: z
     .enum(TASK_STATUS_INPUTS)
     .optional()
@@ -142,6 +143,10 @@ export const updateTaskInputSchema = z.object({
     .nullable()
     .optional()
     .describe("Nuevo vencimiento en ISO (YYYY-MM-DD); null para quitarlo"),
+  plannedDate: isoDateString("Nueva fecha planificada en ISO (YYYY-MM-DD)")
+    .nullable()
+    .optional()
+    .describe("Nueva fecha planificada; null para quitarla"),
   assigneeId: z
     .string()
     .nullable()
@@ -155,12 +160,26 @@ export const updateTaskInputSchema = z.object({
     .describe(
       "Email del miembro del equipo responsable (alternativa a assigneeId)",
     ),
+  completedById: z
+    .string()
+    .nullable()
+    .optional()
+    .describe("Id del miembro que completó la tarea; null para limpiarlo"),
+  completedByEmail: z
+    .string()
+    .optional()
+    .describe("Email del miembro que completó la tarea"),
   title: z.string().min(1).optional(),
   description: z
     .string()
     .nullable()
     .optional()
     .describe("Nueva descripción; null para vaciarla"),
+  blockedReason: z
+    .string()
+    .nullable()
+    .optional()
+    .describe("Motivo del bloqueo; solo cuando el estado es blocked"),
   priority: z.enum(ACTIVITY_PRIORITIES).nullable().optional(),
 });
 
@@ -189,11 +208,15 @@ export function buildActivityWriteTools(
         companyId: true,
         opportunityId: true,
         occurredAt: true,
+        type: true,
         status: true,
+        plannedDate: true,
         dueDate: true,
         assigneeId: true,
+        completedById: true,
         title: true,
         description: true,
+        blockedReason: true,
         priority: true,
       },
     });
@@ -203,7 +226,12 @@ export function buildActivityWriteTools(
     }
 
     const input: TaskUpdateInput = {};
+    if (args.type !== undefined) input.type = args.type;
     if (args.status) input.status = toActivityStatus(args.status);
+    if (args.plannedDate !== undefined) {
+      input.plannedDate =
+        args.plannedDate === null ? null : new Date(args.plannedDate);
+    }
     if (args.dueDate !== undefined) {
       input.dueDate = args.dueDate === null ? null : new Date(args.dueDate);
     }
@@ -216,15 +244,27 @@ export function buildActivityWriteTools(
       });
       input.assigneeId = assignee?.id ?? null;
     }
+    if (args.completedById === null) {
+      input.completedById = null;
+    } else if (args.completedById || args.completedByEmail) {
+      const completedBy = await resolveAssignee(ctx.db, {
+        assigneeId: args.completedById ?? undefined,
+        assigneeEmail: args.completedByEmail,
+      });
+      input.completedById = completedBy?.id ?? null;
+    }
     if (args.title !== undefined) input.title = args.title;
     if (args.description !== undefined) {
       input.description = emptyToNull(args.description);
+    }
+    if (args.blockedReason !== undefined) {
+      input.blockedReason = emptyToNull(args.blockedReason);
     }
     if (args.priority !== undefined) input.priority = args.priority;
 
     if (Object.keys(input).length === 0) {
       throw new Error(
-        "Indicá al menos un campo para cambiar: status, dueDate, assigneeId/assigneeEmail, title, description o priority.",
+        "Indicá al menos un campo para cambiar: type, status, plannedDate, dueDate, assignee, completedBy, title, description, blockedReason o priority.",
       );
     }
 
@@ -248,9 +288,21 @@ export function buildActivityWriteTools(
           : "sin vencimiento",
       );
     }
+    if (changes.plannedDate !== undefined) {
+      summaryParts.push(
+        changes.plannedDate
+          ? `planificada ${changes.plannedDate.toISOString().slice(0, 10)}`
+          : "sin fecha planificada",
+      );
+    }
     if (changes.assigneeId !== undefined) {
       summaryParts.push(
         changes.assigneeId ? "nuevo responsable" : "sin responsable",
+      );
+    }
+    if (changes.completedById !== undefined) {
+      summaryParts.push(
+        changes.completedById ? "quién la completó" : "sin autor de cierre",
       );
     }
     if (changes.priority !== undefined) {
@@ -259,17 +311,24 @@ export function buildActivityWriteTools(
     if (changes.title !== undefined)
       summaryParts.push(`título "${changes.title}"`);
     if (changes.description !== undefined) summaryParts.push("descripción");
+    if (changes.blockedReason !== undefined)
+      summaryParts.push("motivo de bloqueo");
+    if (changes.type !== undefined) summaryParts.push(`tipo ${changes.type}`);
 
     const item: AgentProposalItemInput = {
       type: "update_task",
       entity: "activity",
       entityId: task.id,
       beforeValue: {
+        type: task.type,
         status: task.status,
+        plannedDate: task.plannedDate?.toISOString() ?? null,
         dueDate: task.dueDate?.toISOString() ?? null,
         assigneeId: task.assigneeId,
+        completedById: task.completedById,
         title: task.title,
         description: task.description,
+        blockedReason: task.blockedReason,
         priority: task.priority,
       },
       afterValue: taskUpdateToJson(task.id, changes),
@@ -477,7 +536,7 @@ export function buildActivityWriteTools(
     }),
 
     update_task: defineAgentTool({
-      description: `Modifica una tarea existente por taskId: estado (pending, in_progress, blocked, done), vencimiento, responsable, título, descripción o prioridad. Solo se cambian los campos enviados. No existe el estado "cancelled". El responsable es un miembro del equipo interno: pasá assigneeEmail o el assigneeId que devuelve list_tasks. ${INSTANT_RULE} Resolvé taskId con list_tasks y el resto de ids con search_crm; nunca inventes un id.`,
+      description: `Modifica una tarea existente por taskId: tipo, estado (pending, in_progress, blocked, done), fecha planificada, vencimiento, responsable, quién la completó, título, descripción, motivo de bloqueo o prioridad. Solo se cambian los campos enviados. No existe el estado "cancelled". Los responsables son miembros del equipo interno. ${INSTANT_RULE} Resolvé taskId con list_tasks y el resto de ids con search_crm; nunca inventes un id.`,
       inputSchema: updateTaskInputSchema,
       execute: runTaskUpdate,
     }),

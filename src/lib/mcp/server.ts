@@ -9,6 +9,7 @@ import {
 import { forOrg } from "@/lib/tenant";
 import type { McpPrincipal } from "./auth";
 import { buildMcpConfirmProposalTool } from "./confirm-proposal";
+import { buildMcpRecordTools } from "./record-tools";
 import { ensureMcpThread } from "./thread";
 
 const READ_TOOL_NAMES = [
@@ -23,6 +24,11 @@ const READ_TOOL_NAMES = [
   "list_meetings",
   "get_meeting",
   "list_tasks",
+  "list_companies",
+  "list_people",
+  "list_team_members",
+  "list_notes",
+  "list_activities",
   "read_meeting_transcript",
   "list_pending_proposals",
   "read_attachment",
@@ -37,6 +43,9 @@ const DIRECT_WRITE_TOOL_NAMES = [
   "create_meeting",
   "update_task",
   "complete_task",
+  "update_note",
+  "update_activity",
+  "update_meeting",
 ] as const;
 
 const PROPOSAL_TOOL_NAMES = [
@@ -78,6 +87,13 @@ function createToolContext(
     proposalModel: "mcp",
     pageContext: null,
     turnState: { changeCount: 0, pendingInstant: null, proposalId: null },
+  };
+}
+
+function buildMcpToolDefinitions(ctx: AgentToolContext) {
+  return {
+    ...buildAgentToolDefinitions(ctx),
+    ...buildMcpRecordTools(ctx),
   };
 }
 
@@ -131,7 +147,7 @@ export async function handleMcpRequest(
     principal,
     principal.agentThreadId ?? "",
   );
-  const schemaDefinitions = buildAgentToolDefinitions(schemaContext);
+  const schemaDefinitions = buildMcpToolDefinitions(schemaContext);
 
   const server = new McpServer({ name: "zalantos-crm", version: "1.0.0" });
 
@@ -147,7 +163,7 @@ export async function handleMcpRequest(
         const threadId = THREAD_TOOLS.has(name)
           ? await ensureMcpThread(db, principal)
           : (principal.agentThreadId ?? "");
-        const callDefinitions = buildAgentToolDefinitions(
+        const callDefinitions = buildMcpToolDefinitions(
           createToolContext(principal, threadId),
         );
         return executeTool(

@@ -80,17 +80,31 @@ servicio, worker ni modelo de IA adicional. Usa Streamable HTTP stateless y
 exige `Authorization: Bearer <token personal>` en cada request.
 
 El lookup inicial del hash usa `prismaSystem`; después de resolver al usuario y
-su organización activa, todas las tools usan `forOrg(organizationId)`. Las
-lecturas y las escrituras "seguras" son directas: `create_note`, `create_task`
-(con responsable `assigneeId`/`assigneeEmail` y `priority`), `create_activity`
-(actividad ya ocurrida), `create_meeting` (reunión sin transcripción),
-`update_task` y `complete_task`; `list_tasks` lista tareas con filtros. Cada
-llamada MCP es su propio turno, así que estas escrituras siempre se aplican al
-instante; en el chat del copiloto, a partir del segundo cambio de un turno
-caen en la propuesta del turno (ítems `log_activity`, `create_meeting`,
-`update_task`, aplicables y reversibles en `apply.ts`). Cambios de
-campos/etapa y altas crean propuestas `source=agent`, `model=mcp`, visibles
-en `/agent/proposals`.
+su organización activa, todas las tools usan `forOrg(organizationId)`.
+
+| Entidad            | Crear                | Leer/localizar                                    | Editar                                 |
+| ------------------ | -------------------- | ------------------------------------------------- | -------------------------------------- |
+| Empresa            | `create_company`     | `list_companies`, `search_crm`, `get_record`      | `update_record_fields`                 |
+| Contacto           | `create_contact`     | `list_people`, `search_crm`, `get_record`         | `update_record_fields`                 |
+| Oportunidad        | `create_opportunity` | `search_crm`, `get_record`, `query_opportunities` | `update_record_fields`, `change_stage` |
+| Nota               | `create_note`        | `list_notes`                                      | `update_note`                          |
+| Tarea              | `create_task`        | `list_tasks`                                      | `update_task`, `complete_task`         |
+| Actividad ocurrida | `create_activity`    | `list_activities`                                 | `update_activity`                      |
+| Reunión            | `create_meeting`     | `list_meetings`, `get_meeting`                    | `update_meeting`                       |
+
+`create_task`/`update_task` cubren tipo, estado, fecha planificada, vencimiento,
+responsable, quién la completó, motivo de bloqueo y prioridad. `create_company`,
+`create_contact` y `create_opportunity` aceptan todos sus campos estándar; los
+campos custom se consultan con `list_writable_fields` y se escriben después con
+`update_record_fields`. `list_team_members` permite resolver responsables sin
+depender de la UI.
+
+Cada llamada MCP es su propio turno, así que las escrituras operativas directas
+se aplican al instante; en el chat del copiloto, a partir del segundo cambio de
+un turno caen en la propuesta del turno (ítems `log_activity`,
+`create_meeting`, `update_task`, aplicables y reversibles en `apply.ts`).
+Cambios de campos/etapa y altas de empresa/contacto/oportunidad crean propuestas
+`source=agent`, `model=mcp`, visibles en `/agent/proposals`.
 `confirm_proposal` opera por id: puede aplicar una propuesta de un ítem o
 derivar propuestas mayores a la bandeja web.
 

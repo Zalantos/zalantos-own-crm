@@ -86,6 +86,13 @@ const evidenceSchema = z
     "Cita textual del mensaje del usuario o documento que justifica el cambio (vacío si no hay una frase concreta).",
   );
 
+const optionalIsoDateSchema = z
+  .string()
+  .refine((value) => !Number.isNaN(Date.parse(value)), {
+    message: "Fecha inválida: usar formato ISO 8601",
+  })
+  .optional();
+
 function formatValue(value: unknown): string {
   if (value == null || value === "") return "—";
   if (value instanceof Date) return value.toISOString().slice(0, 10);
@@ -314,6 +321,8 @@ export function buildProposalTools(ctx: AgentToolContext) {
         email: z.string().optional(),
         phone: z.string().optional(),
         roleTitle: z.string().optional(),
+        linkedinUrl: z.url().optional(),
+        notes: z.string().optional(),
         isDecisionMaker: z.boolean().optional(),
         isSponsor: z.boolean().optional(),
         reason: z.string().min(1),
@@ -345,8 +354,8 @@ export function buildProposalTools(ctx: AgentToolContext) {
           email,
           phone: contact.phone ?? null,
           roleTitle: contact.roleTitle ?? null,
-          linkedinUrl: null,
-          notes: null,
+          linkedinUrl: contact.linkedinUrl ?? null,
+          notes: contact.notes ?? null,
           isDecisionMaker: contact.isDecisionMaker ?? false,
           isSponsor: contact.isSponsor ?? false,
         };
@@ -468,8 +477,17 @@ export function buildProposalTools(ctx: AgentToolContext) {
             "Key de la etapa inicial según list_writable_fields (opportunity). Si no se especifica, se usa la primera etapa del pipeline.",
           ),
         estimatedValue: z.number().optional(),
+        probability: z.number().int().min(0).max(100).optional(),
         source: z.string().optional(),
         mainPain: z.string().optional(),
+        urgency: z.string().optional(),
+        decisionMakerId: z.string().optional(),
+        sponsorId: z.string().optional(),
+        nextStep: z.string().optional(),
+        nextStepDueDate: optionalIsoDateSchema,
+        expectedCloseDate: optionalIsoDateSchema,
+        status: z.string().optional(),
+        lossReason: z.string().optional(),
         reason: z.string().min(1),
         confidence: confidenceSchema,
         evidence: evidenceSchema,
@@ -479,8 +497,17 @@ export function buildProposalTools(ctx: AgentToolContext) {
         name,
         stage,
         estimatedValue,
+        probability,
         source,
         mainPain,
+        urgency,
+        decisionMakerId,
+        sponsorId,
+        nextStep,
+        nextStepDueDate,
+        expectedCloseDate,
+        status,
+        lossReason,
         reason,
         confidence,
         evidence,
@@ -503,12 +530,38 @@ export function buildProposalTools(ctx: AgentToolContext) {
           };
         }
 
+        const personRefs = [decisionMakerId, sponsorId].filter(
+          (id): id is string => Boolean(id),
+        );
+        if (personRefs.length) {
+          const people = await ctx.db.person.findMany({
+            where: { id: { in: personRefs }, companyId },
+            select: { id: true },
+          });
+          const found = new Set(people.map(({ id }) => id));
+          const missing = personRefs.filter((id) => !found.has(id));
+          if (missing.length) {
+            return {
+              error: `Los contactos ${missing.join(", ")} no existen o no pertenecen a la empresa ${companyId}.`,
+            };
+          }
+        }
+
         const afterValue = {
           name,
           stage: target.key,
           estimatedValue: estimatedValue ?? null,
+          probability: probability ?? null,
           source: source ?? null,
           mainPain: mainPain ?? null,
+          urgency: urgency ?? null,
+          decisionMakerId: decisionMakerId ?? null,
+          sponsorId: sponsorId ?? null,
+          nextStep: nextStep ?? null,
+          nextStepDueDate: nextStepDueDate ?? null,
+          expectedCloseDate: expectedCloseDate ?? null,
+          status: status ?? "open",
+          lossReason: lossReason ?? null,
         };
 
         return registerProposalChange(ctx, { companyId }, [
@@ -541,6 +594,22 @@ export function buildProposalTools(ctx: AgentToolContext) {
         city: z.string().optional(),
         linkedinUrl: z.string().optional(),
         description: z.string().optional(),
+        icpScore: z.number().int().min(0).max(100).optional(),
+        fitScore: z.number().int().min(0).max(100).optional(),
+        painScore: z.number().int().min(0).max(100).optional(),
+        status: z.string().optional(),
+        source: z.string().optional(),
+        priority: z.string().optional(),
+        mainPain: z.string().optional(),
+        productInterest: z.string().optional(),
+        potentialValue: z.number().nonnegative().optional(),
+        buyingTiming: z.string().optional(),
+        urgency: z.string().optional(),
+        competitor: z.string().optional(),
+        currentProvider: z.string().optional(),
+        nextStep: z.string().optional(),
+        nextStepDueDate: optionalIsoDateSchema,
+        lastContactAt: optionalIsoDateSchema,
         reason: z.string().min(1),
         confidence: confidenceSchema,
         evidence: evidenceSchema,
@@ -567,6 +636,22 @@ export function buildProposalTools(ctx: AgentToolContext) {
           city: company.city ?? null,
           linkedinUrl: company.linkedinUrl ?? null,
           description: company.description ?? null,
+          icpScore: company.icpScore ?? null,
+          fitScore: company.fitScore ?? null,
+          painScore: company.painScore ?? null,
+          status: company.status ?? "active",
+          source: company.source ?? null,
+          priority: company.priority ?? null,
+          mainPain: company.mainPain ?? null,
+          productInterest: company.productInterest ?? null,
+          potentialValue: company.potentialValue ?? null,
+          buyingTiming: company.buyingTiming ?? null,
+          urgency: company.urgency ?? null,
+          competitor: company.competitor ?? null,
+          currentProvider: company.currentProvider ?? null,
+          nextStep: company.nextStep ?? null,
+          nextStepDueDate: company.nextStepDueDate ?? null,
+          lastContactAt: company.lastContactAt ?? null,
         };
 
         return registerProposalChange(ctx, { companyId: null }, [

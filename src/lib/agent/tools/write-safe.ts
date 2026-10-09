@@ -7,6 +7,8 @@ import {
   type AgentProposalItemInput,
 } from "@/lib/agent/proposals";
 import { ACTIVITY_PRIORITIES } from "@/lib/activity-priority";
+import { ACTIVITY_STATUSES } from "@/lib/activity-status";
+import { ACTIVITY_TYPES } from "@/lib/activity-types";
 import {
   defaultWriteToolDeps,
   resolveAssignee,
@@ -121,13 +123,15 @@ export function buildWriteSafeTools(
 
     create_task: defineAgentTool({
       description:
-        "Crea una tarea pendiente asociada a una empresa (y opcionalmente a una oportunidad o persona). Opcionalmente asigna un responsable del equipo interno (assigneeEmail, o el assigneeId que devuelve list_tasks) y una prioridad (low, medium, high). Se aplica al instante SI es el único cambio del turno; si hay otro cambio en el mismo turno, queda junto a él en una propuesta para revisar.",
+        "Crea una tarea asociada a una empresa (y opcionalmente a una oportunidad o persona) con tipo, estado, fechas planificada/límite, responsable, autor de cierre, bloqueo y prioridad. Se aplica al instante SI es el único cambio del turno; si hay otro cambio en el mismo turno, queda junto a él en una propuesta para revisar.",
       inputSchema: z.object({
         companyId: z.string().min(1),
         opportunityId: z.string().optional(),
         personId: z.string().optional(),
+        type: z.enum(ACTIVITY_TYPES).optional(),
         title: z.string().min(1),
         description: z.string().optional(),
+        plannedDate: z.string().optional(),
         dueDate: z
           .string()
           .optional()
@@ -142,19 +146,35 @@ export function buildWriteSafeTools(
           .describe(
             "Email del miembro del equipo responsable (alternativa a assigneeId)",
           ),
+        completedById: z.string().optional(),
+        completedByEmail: z.string().optional(),
+        status: z.enum(ACTIVITY_STATUSES).optional(),
+        blockedReason: z.string().optional(),
         priority: z.enum(ACTIVITY_PRIORITIES).optional(),
       }),
       execute: async ({
         companyId,
         opportunityId,
         personId,
+        type,
         title,
         description,
+        plannedDate,
         dueDate,
         assigneeId,
         assigneeEmail,
+        completedById,
+        completedByEmail,
+        status,
+        blockedReason,
         priority,
       }) => {
+        const planned = plannedDate ? new Date(plannedDate) : null;
+        if (planned && Number.isNaN(planned.getTime())) {
+          return {
+            error: `plannedDate inválida: ${plannedDate}. Usar formato ISO.`,
+          };
+        }
         const due = dueDate ? new Date(dueDate) : null;
         if (due && Number.isNaN(due.getTime())) {
           return { error: `dueDate inválida: ${dueDate}. Usar formato ISO.` };
@@ -164,6 +184,16 @@ export function buildWriteSafeTools(
           assigneeId,
           assigneeEmail,
         });
+        const completedBy = await resolveAssignee(ctx.db, {
+          assigneeId: completedById,
+          assigneeEmail: completedByEmail,
+        });
+        const taskStatus = status ?? "todo";
+        if (blockedReason && taskStatus !== "blocked") {
+          return {
+            error: "blockedReason solo se puede guardar con status blocked.",
+          };
+        }
         const opportunityIdOrNull = emptyToNull(opportunityId);
         const personIdOrNull = emptyToNull(personId);
         const descriptionOrNull = emptyToNull(description);
@@ -174,12 +204,17 @@ export function buildWriteSafeTools(
           entityId: null,
           beforeValue: null,
           afterValue: {
+            activityType: type ?? "task",
             title,
             description: descriptionOrNull,
+            plannedDate: plannedDate ?? null,
             dueDate: dueDate ?? null,
             personId: personIdOrNull,
+            status: taskStatus,
+            blockedReason: emptyToNull(blockedReason),
             // Solo cuando vienen, para no cambiar el ítem de siempre.
             ...(assignee ? { assigneeId: assignee.id } : {}),
+            ...(completedBy ? { completedById: completedBy.id } : {}),
             ...(priority ? { priority } : {}),
           },
           explanation: "Tarea creada por el copiloto desde el chat.",
@@ -207,13 +242,23 @@ export function buildWriteSafeTools(
                   companyId,
                   opportunityId: opportunityIdOrNull,
                   personId: personIdOrNull,
-                  type: "task",
+                  type: type ?? "task",
                   title,
                   description: descriptionOrNull,
+                  plannedDate: planned,
                   dueDate: due,
                   assigneeId: assignee?.id ?? null,
+                  completedById:
+                    completedBy?.id ??
+                    (taskStatus === "done" ? (assignee?.id ?? null) : null),
+                  completedAt: taskStatus === "done" ? new Date() : null,
+                  statusChangedAt: status ? new Date() : null,
+                  blockedReason:
+                    taskStatus === "blocked"
+                      ? emptyToNull(blockedReason)
+                      : null,
                   priority: priority ?? null,
-                  status: "todo",
+                  status: taskStatus,
                   createdById: ctx.userId,
                   createdVia: "agent",
                 },

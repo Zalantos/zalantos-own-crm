@@ -62,6 +62,14 @@ const NEW_TOOLS: Record<string, string[]> = {
   update_task: ["taskId"],
   complete_task: ["taskId"],
   list_tasks: [],
+  list_companies: [],
+  list_people: [],
+  list_team_members: [],
+  list_notes: [],
+  update_note: ["noteId"],
+  list_activities: [],
+  update_activity: ["activityId"],
+  update_meeting: ["meetingId"],
 };
 
 describe("MCP: herramientas nuevas", () => {
@@ -84,6 +92,9 @@ describe("MCP: herramientas nuevas", () => {
       "create_meeting",
       "update_task",
       "complete_task",
+      "update_note",
+      "update_activity",
+      "update_meeting",
     ]) {
       assert.match(
         byName.get(name)!.description,
@@ -93,6 +104,28 @@ describe("MCP: herramientas nuevas", () => {
     const createTask = byName.get("create_task")!;
     assert.ok(createTask.inputSchema.properties?.assigneeEmail);
     assert.ok(createTask.inputSchema.properties?.priority);
+    assert.ok(createTask.inputSchema.properties?.plannedDate);
+    assert.ok(createTask.inputSchema.properties?.blockedReason);
+    assert.ok(createTask.inputSchema.properties?.completedById);
+
+    const updateTask = byName.get("update_task")!;
+    assert.ok(updateTask.inputSchema.properties?.plannedDate);
+    assert.ok(updateTask.inputSchema.properties?.blockedReason);
+    assert.ok(updateTask.inputSchema.properties?.completedById);
+
+    const createCompany = byName.get("create_company")!;
+    assert.ok(createCompany.inputSchema.properties?.potentialValue);
+    assert.ok(createCompany.inputSchema.properties?.nextStepDueDate);
+    assert.ok(createCompany.inputSchema.properties?.lastContactAt);
+
+    const createContact = byName.get("create_contact")!;
+    assert.ok(createContact.inputSchema.properties?.linkedinUrl);
+    assert.ok(createContact.inputSchema.properties?.notes);
+
+    const createOpportunity = byName.get("create_opportunity")!;
+    assert.ok(createOpportunity.inputSchema.properties?.probability);
+    assert.ok(createOpportunity.inputSchema.properties?.decisionMakerId);
+    assert.ok(createOpportunity.inputSchema.properties?.expectedCloseDate);
   });
 
   it("mantiene las tools existentes y su regla de ids", async () => {
@@ -118,6 +151,9 @@ describe("MCP: herramientas nuevas", () => {
       ["create_meeting", { companyId: "co-1", title: "Reunión" }],
       ["update_task", { status: "done" }],
       ["complete_task", {}],
+      ["update_note", {}],
+      ["update_activity", {}],
+      ["update_meeting", {}],
       ["list_tasks", { status: ["cancelled"] }],
     ];
     for (const [name, args] of cases) {

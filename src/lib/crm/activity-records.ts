@@ -1,6 +1,10 @@
 import type { Prisma } from "@prisma/client";
 import { appendTimelineEvent } from "@/lib/timeline";
-import { activityTypeLabel } from "@/lib/activity-types";
+import {
+  ACTIVITY_TYPES,
+  activityTypeLabel,
+  type ActivityType,
+} from "@/lib/activity-types";
 import {
   ACTIVITY_STATUS_LABELS,
   isActivityStatus,
@@ -308,17 +312,25 @@ export async function revertManualMeeting(
 
 // undefined = no tocar; null = vaciar.
 export type TaskUpdateInput = {
+  type?: ActivityType;
   status?: ActivityStatus;
+  plannedDate?: Date | null;
   dueDate?: Date | null;
   assigneeId?: string | null;
+  completedById?: string | null;
   title?: string;
   description?: string | null;
+  blockedReason?: string | null;
   priority?: ActivityPriority | null;
 };
 
 // Lo que hay que restaurar al deshacer, serializable a JSON (revertData).
 export type TaskSnapshot = {
+  // Opcionales para poder revertir propuestas creadas antes de que estos
+  // campos se incorporaran al snapshot persistido en revertData.
+  type?: string;
   status: string;
+  plannedDate?: string | null;
   dueDate: string | null;
   assigneeId: string | null;
   title: string;
@@ -347,7 +359,9 @@ const TASK_SNAPSHOT_SELECT = {
   companyId: true,
   opportunityId: true,
   occurredAt: true,
+  type: true,
   status: true,
+  plannedDate: true,
   dueDate: true,
   assigneeId: true,
   title: true,
@@ -382,11 +396,15 @@ export async function findTaskForUpdate(
 }
 
 type TaskComparable = {
+  type: string;
   status: string;
+  plannedDate: Date | null;
   dueDate: Date | null;
   assigneeId: string | null;
+  completedById: string | null;
   title: string;
   description: string | null;
+  blockedReason: string | null;
   priority: string | null;
 };
 
@@ -397,14 +415,29 @@ export function diffTaskUpdate(
   input: TaskUpdateInput,
 ): TaskUpdateInput {
   const changes: TaskUpdateInput = {};
+  if (input.type !== undefined && input.type !== task.type) {
+    changes.type = input.type;
+  }
   if (input.status !== undefined && input.status !== task.status) {
     changes.status = input.status;
+  }
+  if (
+    input.plannedDate !== undefined &&
+    iso(input.plannedDate) !== iso(task.plannedDate)
+  ) {
+    changes.plannedDate = input.plannedDate;
   }
   if (input.dueDate !== undefined && iso(input.dueDate) !== iso(task.dueDate)) {
     changes.dueDate = input.dueDate;
   }
   if (input.assigneeId !== undefined && input.assigneeId !== task.assigneeId) {
     changes.assigneeId = input.assigneeId;
+  }
+  if (
+    input.completedById !== undefined &&
+    input.completedById !== task.completedById
+  ) {
+    changes.completedById = input.completedById;
   }
   if (input.title !== undefined && input.title !== task.title) {
     changes.title = input.title;
@@ -414,6 +447,12 @@ export function diffTaskUpdate(
     input.description !== task.description
   ) {
     changes.description = input.description;
+  }
+  if (
+    input.blockedReason !== undefined &&
+    input.blockedReason !== task.blockedReason
+  ) {
+    changes.blockedReason = input.blockedReason;
   }
   if (input.priority !== undefined && input.priority !== task.priority) {
     changes.priority = input.priority;
@@ -431,7 +470,9 @@ export async function applyTaskUpdate(
   if (!task) throw new Error(`Tarea no encontrada: ${taskId}`);
 
   const before: TaskSnapshot = {
+    type: task.type,
     status: task.status,
+    plannedDate: iso(task.plannedDate),
     dueDate: iso(task.dueDate),
     assigneeId: task.assigneeId,
     title: task.title,
@@ -446,12 +487,26 @@ export async function applyTaskUpdate(
   const changes = diffTaskUpdate(task, input);
   const changedFields = Object.keys(changes);
   const data: Prisma.ActivityUncheckedUpdateInput = {};
+  if (changes.type !== undefined) data.type = changes.type;
   if (changes.title !== undefined) data.title = changes.title;
   if (changes.description !== undefined) data.description = changes.description;
   if (changes.priority !== undefined) data.priority = changes.priority;
+  if (changes.plannedDate !== undefined) data.plannedDate = changes.plannedDate;
   if (changes.dueDate !== undefined) data.dueDate = changes.dueDate;
   const assigneeChanged = changes.assigneeId !== undefined;
   if (assigneeChanged) data.assigneeId = changes.assigneeId;
+  if (changes.completedById !== undefined) {
+    data.completedById = changes.completedById;
+  }
+  if (changes.blockedReason !== undefined) {
+    const resultingStatus = changes.status ?? task.status;
+    if (resultingStatus !== "blocked" && changes.blockedReason) {
+      throw new Error(
+        "blockedReason solo se puede guardar cuando la tarea está bloqueada",
+      );
+    }
+    data.blockedReason = changes.blockedReason;
+  }
 
   // Misma semántica que updateActivityStatus (activities/actions.ts).
   if (changes.status) {
@@ -459,9 +514,11 @@ export async function applyTaskUpdate(
     data.statusChangedAt = new Date();
     if (changes.status === "done") {
       // Como en la UI, la completa el responsable (el nuevo, si cambia).
-      data.completedById = assigneeChanged
-        ? (changes.assigneeId ?? null)
-        : task.assigneeId;
+      if (changes.completedById === undefined) {
+        data.completedById = assigneeChanged
+          ? (changes.assigneeId ?? null)
+          : task.assigneeId;
+      }
       data.completedAt = new Date();
     } else if (task.status === "done") {
       data.completedAt = null;
@@ -539,6 +596,9 @@ export async function applyTaskUpdate(
           : "Sin vencimiento",
       );
     }
+    if (otherChanges.includes("plannedDate")) {
+      parts.push("Fecha planificada editada");
+    }
     if (otherChanges.includes("priority")) {
       parts.push(
         updated.priority
@@ -548,6 +608,13 @@ export async function applyTaskUpdate(
     }
     if (otherChanges.includes("title")) parts.push("Título editado");
     if (otherChanges.includes("description")) parts.push("Descripción editada");
+    if (otherChanges.includes("type")) parts.push("Tipo editado");
+    if (otherChanges.includes("blockedReason")) {
+      parts.push("Motivo de bloqueo editado");
+    }
+    if (otherChanges.includes("completedById")) {
+      parts.push("Quién completó la tarea editado");
+    }
     pushEvent(
       await appendTimelineEvent(tx, {
         ...timelineBase,
@@ -578,7 +645,15 @@ export async function revertTaskUpdate(
   await tx.activity.updateMany({
     where: { id: revert.taskId, organizationId },
     data: {
+      ...(before.type !== undefined ? { type: before.type } : {}),
       status: before.status,
+      ...(before.plannedDate !== undefined
+        ? {
+            plannedDate: before.plannedDate
+              ? new Date(before.plannedDate)
+              : null,
+          }
+        : {}),
       dueDate: before.dueDate ? new Date(before.dueDate) : null,
       assigneeId: before.assigneeId,
       title: before.title,
@@ -733,12 +808,22 @@ export function taskUpdateToJson(
 ): Prisma.InputJsonObject {
   return {
     taskId,
+    ...(input.type !== undefined ? { activityType: input.type } : {}),
     ...(input.status !== undefined ? { status: input.status } : {}),
+    ...(input.plannedDate !== undefined
+      ? { plannedDate: iso(input.plannedDate) }
+      : {}),
     ...(input.dueDate !== undefined ? { dueDate: iso(input.dueDate) } : {}),
     ...(input.assigneeId !== undefined ? { assigneeId: input.assigneeId } : {}),
+    ...(input.completedById !== undefined
+      ? { completedById: input.completedById }
+      : {}),
     ...(input.title !== undefined ? { title: input.title } : {}),
     ...(input.description !== undefined
       ? { description: input.description }
+      : {}),
+    ...(input.blockedReason !== undefined
+      ? { blockedReason: input.blockedReason }
       : {}),
     ...(input.priority !== undefined ? { priority: input.priority } : {}),
   };
@@ -751,6 +836,15 @@ export function taskUpdateFromJson(after: Record<string, unknown>): {
   const taskId = str(after.taskId);
   if (!taskId) throw new Error("Cambio de tarea sin taskId");
   const input: TaskUpdateInput = {};
+  if ("activityType" in after) {
+    if (
+      typeof after.activityType !== "string" ||
+      !(ACTIVITY_TYPES as readonly string[]).includes(after.activityType)
+    ) {
+      throw new Error(`Tipo de tarea inválido: ${String(after.activityType)}`);
+    }
+    input.type = after.activityType as ActivityType;
+  }
   if ("status" in after) {
     if (typeof after.status !== "string" || !isActivityStatus(after.status)) {
       throw new Error(`Estado de tarea inválido: ${String(after.status)}`);
@@ -761,9 +855,21 @@ export function taskUpdateFromJson(after: Record<string, unknown>): {
     input.dueDate =
       after.dueDate == null ? null : requiredDate(after.dueDate, "dueDate");
   }
+  if ("plannedDate" in after) {
+    input.plannedDate =
+      after.plannedDate == null
+        ? null
+        : requiredDate(after.plannedDate, "plannedDate");
+  }
   if ("assigneeId" in after) input.assigneeId = str(after.assigneeId);
+  if ("completedById" in after) {
+    input.completedById = str(after.completedById);
+  }
   if ("title" in after && str(after.title)) input.title = str(after.title)!;
   if ("description" in after) input.description = str(after.description);
+  if ("blockedReason" in after) {
+    input.blockedReason = str(after.blockedReason);
+  }
   if ("priority" in after) {
     const priority = str(after.priority);
     input.priority =
