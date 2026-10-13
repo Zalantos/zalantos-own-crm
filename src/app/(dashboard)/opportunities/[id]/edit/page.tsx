@@ -17,7 +17,15 @@ export default async function EditOpportunityPage({
   const [opportunity, companies, people, stages] = await Promise.all([
     db.opportunity.findUnique({ where: { id } }),
     db.company.findMany({ orderBy: { name: "asc" } }),
-    db.person.findMany({ orderBy: { firstName: "asc" } }),
+    db.person.findMany({
+      include: {
+        companyRelationships: {
+          where: { endedAt: null },
+          select: { companyId: true },
+        },
+      },
+      orderBy: { firstName: "asc" },
+    }),
     getOrgStages(db),
   ]);
   if (!opportunity) notFound();

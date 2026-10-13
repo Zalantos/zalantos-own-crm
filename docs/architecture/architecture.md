@@ -93,6 +93,25 @@ GAP: archivos de configuración Railway/Vercel no presentes en el repo.
 6. `/agent/proposals` muestra Actividad de IA org-wide y permite deshacer de
    forma segura durante 90 días; eliminaciones/fusiones requieren aprobación.
 7. Tab Contexto en fichas: upload → perfil IA + cambios de campos inmediatos.
+8. Oferta comercial: Server Actions validadas → cálculo compartido de vigencia
+   y economía → transacción tenant que persiste versión, partidas, documentos y
+   reparto. Los montos económicos no usan el `update_field` genérico del agente.
+
+## Backfill de ofertas comerciales
+
+`scripts/backfill-commercial-offers.ts` usa explícitamente
+`--organization-id` y separa lectura de escritura:
+
+1. `--dry-run --output manifest.json` recorre todas las oportunidades, prioriza
+   fuentes de contexto/notas/reuniones y emite evidencia, confianza y estado.
+2. Una persona revisa el manifiesto y marca `reviewed: true` solo en los casos
+   aprobados.
+3. `--apply --input manifest-reviewed.json` aplica cada oportunidad en una
+   transacción independiente. `sourceFingerprint` vuelve idempotente la
+   reejecución y se escribe un evento de timeline.
+
+El parser nunca infiere costo o utilidad interna. La mención “Presenta” es un
+presentador; un partner requiere evidencia explícita y confirmación manual.
 
 ## Riesgos arquitectónicos
 

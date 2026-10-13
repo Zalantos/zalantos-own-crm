@@ -44,7 +44,10 @@ export async function convertLeadTx(
   lead: ConvertibleLead,
   input: ConvertLeadInput,
 ): Promise<ConvertLeadResult> {
-  const timelineBase = { organizationId: ctx.organizationId, actorId: ctx.actorId };
+  const timelineBase = {
+    organizationId: ctx.organizationId,
+    actorId: ctx.actorId,
+  };
 
   // ---- Company
   let company: { id: string; name: string };
@@ -88,10 +91,23 @@ export async function convertLeadTx(
       lastName: lead.lastName,
     });
     if (match) {
-      if (match.companyId && match.companyId !== company.id) {
-        throw new Error(
-          `${match.firstName} ${match.lastName} ya existe en otra empresa (${match.companyName ?? "sin empresa"}); vinculalo manualmente desde su ficha.`,
-        );
+      const existingRelationship =
+        await tx.personCompanyRelationship.findUnique({
+          where: {
+            personId_companyId: { personId: match.id, companyId: company.id },
+          },
+          select: { id: true },
+        });
+      if (!existingRelationship) {
+        await tx.personCompanyRelationship.create({
+          data: {
+            organizationId: ctx.organizationId,
+            personId: match.id,
+            companyId: company.id,
+            roles: ["contact"],
+            isPrimary: !match.companyId,
+          },
+        });
       }
       if (!match.companyId) {
         await tx.person.update({
@@ -104,7 +120,8 @@ export async function convertLeadTx(
         ...timelineBase,
         companyId: company.id,
         type: "contact_linked",
-        title: `Contacto vinculado: ${match.firstName} ${match.lastName}`.trim(),
+        title:
+          `Contacto vinculado: ${match.firstName} ${match.lastName}`.trim(),
         refType: "inbound_lead",
         refId: lead.id,
       });
@@ -121,12 +138,22 @@ export async function convertLeadTx(
         },
         select: { id: true, firstName: true, lastName: true },
       });
+      await tx.personCompanyRelationship.create({
+        data: {
+          organizationId: ctx.organizationId,
+          personId: person.id,
+          companyId: company.id,
+          roles: ["contact"],
+          isPrimary: true,
+        },
+      });
       personId = person.id;
       await appendTimelineEvent(tx, {
         ...timelineBase,
         companyId: company.id,
         type: "contact_added",
-        title: `Contacto agregado: ${person.firstName} ${person.lastName}`.trim(),
+        title:
+          `Contacto agregado: ${person.firstName} ${person.lastName}`.trim(),
         refType: "inbound_lead",
         refId: lead.id,
       });
@@ -187,7 +214,8 @@ export async function convertLeadTx(
       opportunityId: opportunity.id,
       type: "note_added",
       title: "Nota: Mensaje original del lead",
-      summary: note.body.length > 200 ? `${note.body.slice(0, 200)}…` : note.body,
+      summary:
+        note.body.length > 200 ? `${note.body.slice(0, 200)}…` : note.body,
       refType: "inbound_lead",
       refId: lead.id,
     });

@@ -16,6 +16,8 @@
     "test:observability": "tsx --test src/lib/observability/reporter.test.ts",
     "test:mcp-tools": "tsx --test src/lib/agent/tools/activity-tools.test.ts src/lib/mcp/server.test.ts",
     "test:inbound-leads": "tsx --test src/lib/zod/inbound-lead.test.ts src/lib/inbound-leads/ingest.test.ts src/lib/inbound-leads/auth.test.ts src/lib/inbound-leads/convert.test.ts",
+    "test:commercial": "tsx --test src/lib/commercial/commercial.test.ts",
+    "backfill:commercial": "tsx scripts/backfill-commercial-offers.ts",
     "prisma:generate": "prisma generate",
     "prisma:migrate:dev": "prisma migrate dev",
     "prisma:migrate:deploy": "prisma migrate deploy",

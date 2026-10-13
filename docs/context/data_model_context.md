@@ -17,15 +17,29 @@ Fuente de verdad: `prisma/schema.prisma`.
 
 ### CRM core
 
-| Modelo           | Tabla             | Relaciones clave                                                  |
-| ---------------- | ----------------- | ----------------------------------------------------------------- |
-| `Company`        | `companies`       | → opportunities, people, meetings, activities                     |
-| `Person`         | `people`          | → company (opcional); roles en opportunities                      |
-| `Opportunity`    | `opportunities`   | → company, stage, decisionMaker, sponsor                          |
-| `Activity`       | `activities`      | → company/person/opportunity, assignee y completedBy (TeamMember) |
-| `ActivityPerson` | `activity_people` | Personas que participaron de una actividad registrada (N:M)       |
-| `Note`           | `notes`           | → company/person/opportunity                                      |
-| `InboundLead`    | `inbound_leads`   | Bandeja previa a Company/Person/Opportunity; ver sección propia   |
+| Modelo                      | Tabla                          | Relaciones clave                                                  |
+| --------------------------- | ------------------------------ | ----------------------------------------------------------------- |
+| `Company`                   | `companies`                    | → opportunities, relaciones de personas, partners, reuniones      |
+| `Person`                    | `people`                       | → empresas N:M; roles en opportunities                            |
+| `Opportunity`               | `opportunities`                | → company, stage, decisionMaker, sponsor                          |
+| `PersonCompanyRelationship` | `person_company_relationships` | N:M persona–empresa con roles, cargo y principal                  |
+| `Activity`                  | `activities`                   | → company/person/opportunity, assignee y completedBy (TeamMember) |
+| `ActivityPerson`            | `activity_people`              | Personas que participaron de una actividad registrada (N:M)       |
+| `Note`                      | `notes`                        | → company/person/opportunity                                      |
+| `InboundLead`               | `inbound_leads`                | Bandeja previa a Company/Person/Opportunity; ver sección propia   |
+
+### Partners y ofertas comerciales
+
+| Modelo                         | Tabla                             | Notas                                      |
+| ------------------------------ | --------------------------------- | ------------------------------------------ |
+| `CommercialPartner`            | `commercial_partners`             | Catálogo tenant; empresa/persona/externo   |
+| `CompanyCommercialPartner`     | `company_commercial_partners`     | Acuerdo habitual y porcentaje por defecto  |
+| `OpportunityCommercialPartner` | `opportunity_commercial_partners` | Snapshot del partner para un negocio       |
+| `CommercialOffer`              | `commercial_offers`               | Oferta versionada y economía proyectada    |
+| `CommercialOfferLineItem`      | `commercial_offer_line_items`     | Implementación, hitos, mensualidad u otros |
+| `CommercialOfferDocument`      | `commercial_offer_documents`      | URL o fuente de contexto asociada          |
+| `CommercialOfferProfitShare`   | `commercial_offer_profit_shares`  | Reparto de la utilidad, no del costo       |
+| `BusinessHoliday`              | `business_holidays`               | Feriados excluidos de la vigencia hábil    |
 
 ### Extensibilidad
 
@@ -121,6 +135,39 @@ usuario y organización, las tools operan con `forOrg(organizationId)`.
   explícito de etapa en la lista sigue mostrando esa etapa.
 - `createdById` + `createdVia` registran quién la creó y por qué canal.
 - Índice en `nextStepDueDate` para crons de vencimiento.
+- `estimatedValue` sigue alimentando el embudo existente; la oferta comercial
+  no lo reemplaza automáticamente.
+
+### Personas multiempresa
+
+- `PersonCompanyRelationship` es la fuente nueva para empresas, roles y cargo
+  por relación. Solo puede existir una relación principal activa por persona.
+- `Person.companyId` y `Person.roleTitle` se mantienen temporalmente como espejo
+  de la relación principal para compatibilidad. Las escrituras manuales,
+  inbound y de Meeting Intelligence crean/sincronizan las relaciones.
+- El email sigue siendo único por organización. El match alternativo por nombre
+  se evalúa contra cualquiera de las empresas activas relacionadas.
+- La migración es expansiva: crea la relación principal desde los campos legacy
+  y relaciones secundarias cuando decisor/sponsor ya participa en una
+  oportunidad de otra empresa. Retirar los campos legacy queda para otra HU.
+
+### Partners, ofertas y economía
+
+- El porcentaje configurado en empresa se copia al asignar el partner a una
+  oportunidad; cambios posteriores no alteran el negocio histórico.
+- Cada versión de `CommercialOffer` conserva sus partidas, documentos y
+  snapshots de reparto. Una oferta emitida no se edita: se clona una nueva
+  versión y la anterior pasa a `superseded` cuando corresponde.
+- Los montos económicos son netos y usan la unidad de la oferta. Invariante:
+  `economicBaseNetAmount = projectCostAmount + distributableProfitAmount`.
+- El reparto se calcula exclusivamente sobre `distributableProfitAmount`, debe
+  tener una fila de organización y porcentajes que sumen exactamente 100%.
+- Las ofertas sin costo histórico conocido pueden conservar el precio neto con
+  costo/utilidad nulos. No representan facturas, cobros ni pagos reales.
+- Reportes muestran la unidad original; no suman UF, CLP y USD entre sí. El
+  tipo de cambio a CLP es un snapshot opcional de la versión.
+- La vigencia hábil excluye sábados, domingos y `BusinessHoliday`. El caso
+  06-10-2026 + 15 días hábiles con feriado 12-10-2026 vence 28-10-2026.
 
 ### Trazabilidad de creación CRM core
 
@@ -294,6 +341,7 @@ Ver `@@index` en `schema.prisma` — la mayoría compuestos con `organizationId`
 | `inbound_leads_rls`                    | RLS `tenant_isolation` sobre `inbound_leads` (separada porque la migración base de RLS ya está desplegada)                                                            |
 | `logged_activities_and_task_priority`  | Aditiva: `priority`, `occurredAt`, `durationMinutes`, `channel`, `outcomes` en `activities`; tabla `activity_people` con RLS                                          |
 | `ai_change_traceability`               | Canal/iniciador/fin de lote, snapshots, errores, expiración de reversión y relación de efectos internos; estados parciales/fallidos/revertidos                        |
+| `commercial_data_partners`             | Relaciones persona–empresa N:M, catálogo/asignación de partners, ofertas versionadas, reparto de utilidad, feriados, backfill legacy y RLS                            |
 
 ## Qué no debe romperse
 
@@ -305,3 +353,5 @@ Ver `@@index` en `schema.prisma` — la mayoría compuestos con `organizationId`
 - Unicidad de `TelegramLink.telegramChatId` y resolución tenant vía vínculo.
 - Unicidad de `(organizationId, source, externalId)` en `InboundLead` y el
   invariante de que el ingest nunca crea Company/Person/Opportunity directo.
+- Una sola relación principal activa por persona; versiones de oferta únicas
+  por oportunidad y fingerprint de backfill único por organización.

@@ -35,13 +35,21 @@ export async function resolveContextEntity(
   if (entityType === "person") {
     const person = await db.person.findUnique({
       where: { id: entityId },
-      select: { id: true, companyId: true },
+      select: {
+        id: true,
+        companyId: true,
+        companyRelationships: {
+          where: { isPrimary: true, endedAt: null },
+          take: 1,
+          select: { companyId: true },
+        },
+      },
     });
     if (!person) return null;
     return {
       entityType,
       entityId,
-      companyId: person.companyId,
+      companyId: person.companyRelationships[0]?.companyId ?? person.companyId,
       opportunityId: null,
       personId: person.id,
       revalidatePath: `/people/${person.id}`,

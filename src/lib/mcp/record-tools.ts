@@ -151,31 +151,44 @@ export function buildMcpRecordTools(ctx: AgentToolContext) {
       execute: async ({ query, companyId, limit }) => ({
         people: await ctx.db.person.findMany({
           where: {
-            ...(companyId ? { companyId } : {}),
-            ...(query
-              ? {
-                  OR: [
+            AND: [
+              ...(companyId
+                ? [
                     {
-                      firstName: {
-                        contains: query,
-                        mode: "insensitive" as const,
-                      },
+                      OR: [
+                        { companyId },
+                        { companyRelationships: { some: { companyId } } },
+                      ],
                     },
+                  ]
+                : []),
+              ...(query
+                ? [
                     {
-                      lastName: {
-                        contains: query,
-                        mode: "insensitive" as const,
-                      },
+                      OR: [
+                        {
+                          firstName: {
+                            contains: query,
+                            mode: "insensitive" as const,
+                          },
+                        },
+                        {
+                          lastName: {
+                            contains: query,
+                            mode: "insensitive" as const,
+                          },
+                        },
+                        {
+                          email: {
+                            contains: query,
+                            mode: "insensitive" as const,
+                          },
+                        },
+                      ],
                     },
-                    {
-                      email: {
-                        contains: query,
-                        mode: "insensitive" as const,
-                      },
-                    },
-                  ],
-                }
-              : {}),
+                  ]
+                : []),
+            ],
           },
           orderBy: { updatedAt: "desc" },
           take: limit ?? 20,
@@ -187,10 +200,102 @@ export function buildMcpRecordTools(ctx: AgentToolContext) {
             phone: true,
             roleTitle: true,
             company: { select: { id: true, name: true } },
+            companyRelationships: {
+              select: {
+                company: { select: { id: true, name: true } },
+                roles: true,
+                roleTitle: true,
+                isPrimary: true,
+              },
+              orderBy: [{ isPrimary: "desc" }, { createdAt: "asc" }],
+            },
             updatedAt: true,
           },
         }),
       }),
+    }),
+
+    list_commercial_partners: defineAgentTool({
+      description:
+        "Lista los partners comerciales y sus asignaciones a empresas. Es de solo lectura.",
+      inputSchema: z.object({
+        companyId: z.string().optional(),
+        activeOnly: z.boolean().optional(),
+        limit: z.number().int().min(1).max(50).optional(),
+      }),
+      execute: async ({ companyId, activeOnly, limit }) => ({
+        partners: (
+          await ctx.db.commercialPartner.findMany({
+            where: {
+              ...(activeOnly === false ? {} : { isActive: true }),
+              ...(companyId
+                ? { companyAssignments: { some: { companyId } } }
+                : {}),
+            },
+            orderBy: { displayName: "asc" },
+            take: limit ?? 20,
+            include: {
+              companyAssignments: {
+                ...(companyId ? { where: { companyId } } : {}),
+                select: {
+                  companyId: true,
+                  role: true,
+                  defaultProfitSharePercentage: true,
+                  isActive: true,
+                },
+              },
+            },
+          })
+        ).map((partner) => ({
+          ...partner,
+          companyAssignments: partner.companyAssignments.map((assignment) => ({
+            ...assignment,
+            defaultProfitSharePercentage:
+              assignment.defaultProfitSharePercentage?.toString() ?? null,
+          })),
+        })),
+      }),
+    }),
+
+    get_opportunity_offers: defineAgentTool({
+      description:
+        "Lee las versiones de oferta, economía proyectada y reparto de utilidad de una oportunidad. Es de solo lectura.",
+      inputSchema: z.object({ opportunityId: z.string().min(1) }),
+      execute: async ({ opportunityId }) => {
+        const opportunity = await ctx.db.opportunity.findUnique({
+          where: { id: opportunityId },
+          select: { id: true },
+        });
+        if (!opportunity) {
+          throw new Error(`Oportunidad no encontrada: ${opportunityId}`);
+        }
+        const offers = await ctx.db.commercialOffer.findMany({
+          where: { opportunityId },
+          orderBy: { versionNumber: "desc" },
+          include: { lineItems: true, documents: true, profitShares: true },
+        });
+        return {
+          offers: offers.map((offer) => ({
+            ...offer,
+            exchangeRateToClp: offer.exchangeRateToClp?.toString() ?? null,
+            economicBaseNetAmount:
+              offer.economicBaseNetAmount?.toString() ?? null,
+            projectCostAmount: offer.projectCostAmount?.toString() ?? null,
+            distributableProfitAmount:
+              offer.distributableProfitAmount?.toString() ?? null,
+            lineItems: offer.lineItems.map((item) => ({
+              ...item,
+              quantity: item.quantity?.toString() ?? null,
+              amount: item.amount.toString(),
+            })),
+            profitShares: offer.profitShares.map((share) => ({
+              ...share,
+              percentage: share.percentage.toString(),
+              amount: share.amount.toString(),
+            })),
+          })),
+        };
+      },
     }),
 
     list_notes: defineAgentTool({

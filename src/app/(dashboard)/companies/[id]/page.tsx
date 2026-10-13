@@ -13,12 +13,18 @@ import {
   loadEntityContextData,
 } from "@/components/shared/entity-context/entity-context-panel";
 import { StatCard } from "@/components/shared/stat-card";
-import { LinkifiedText, toExternalHref } from "@/components/shared/linkified-text";
+import {
+  LinkifiedText,
+  toExternalHref,
+} from "@/components/shared/linkified-text";
 import { CompanyStatusBadge } from "@/components/shared/companies/status-badge";
 import { OpportunityStageBadge } from "@/components/shared/opportunities/status-badge";
 import { createFormatters } from "@/lib/format";
 import { actorLabel, createdViaLabel } from "@/lib/traceability";
 import { deleteCompany } from "../actions";
+import { CompanyCommercialPartnersPanel } from "@/components/shared/commercial/company-commercial-partners-panel";
+import { Input } from "@/components/ui/input";
+import { linkPersonToCompany } from "../../people/actions";
 
 export default async function CompanyDetailPage({
   params,
@@ -32,17 +38,43 @@ export default async function CompanyDetailPage({
     where: { id },
     include: {
       createdBy: { select: { name: true, email: true } },
-      people: { orderBy: { createdAt: "desc" } },
+      personRelationships: {
+        where: { endedAt: null },
+        orderBy: [{ isPrimary: "desc" }, { createdAt: "desc" }],
+        include: { person: true },
+      },
       opportunities: {
         orderBy: { createdAt: "desc" },
-        include: { stage: { select: { label: true, isWon: true, isLost: true } } },
+        include: {
+          stage: { select: { label: true, isWon: true, isLost: true } },
+        },
+      },
+      commercialPartnerAssignments: {
+        where: { isActive: true },
+        include: { commercialPartner: true },
+        orderBy: { createdAt: "asc" },
       },
     },
   });
   if (!company) notFound();
   const canDelete = user.role === "ADMIN" || company.createdById === user.id;
   const formatters = createFormatters(org);
-  const contextData = await loadEntityContextData(db, "company", company.id);
+  const [contextData, partnerCatalog, companyOptions, personOptions] =
+    await Promise.all([
+      loadEntityContextData(db, "company", company.id),
+      db.commercialPartner.findMany({
+        where: { isActive: true },
+        orderBy: { displayName: "asc" },
+      }),
+      db.company.findMany({
+        orderBy: { name: "asc" },
+        select: { id: true, name: true },
+      }),
+      db.person.findMany({
+        orderBy: { firstName: "asc" },
+        select: { id: true, firstName: true, lastName: true },
+      }),
+    ]);
   const potentialValue =
     company.potentialValue != null
       ? formatters.currency(company.potentialValue.toString())
@@ -83,7 +115,9 @@ export default async function CompanyDetailPage({
           label="Sitio web"
           value={company.website ?? "—"}
           href={
-            company.website ? (toExternalHref(company.website) ?? undefined) : undefined
+            company.website
+              ? (toExternalHref(company.website) ?? undefined)
+              : undefined
           }
           variant="compact"
         />
@@ -176,7 +210,9 @@ export default async function CompanyDetailPage({
         </div>
         {company.mainPain && (
           <div className="rounded-md border p-4">
-            <p className="text-muted-foreground mb-1 text-xs">Dolor principal</p>
+            <p className="text-muted-foreground mb-1 text-xs">
+              Dolor principal
+            </p>
             <p className="text-sm whitespace-pre-wrap">
               <LinkifiedText text={company.mainPain} />
             </p>
@@ -197,10 +233,13 @@ export default async function CompanyDetailPage({
       <Tabs defaultValue="people">
         <TabsList>
           <TabsTrigger value="people">
-            Personas ({company.people.length})
+            Personas ({company.personRelationships.length})
           </TabsTrigger>
           <TabsTrigger value="opportunities">
             Oportunidades ({company.opportunities.length})
+          </TabsTrigger>
+          <TabsTrigger value="partners">
+            Partners ({company.commercialPartnerAssignments.length})
           </TabsTrigger>
           <TabsTrigger value="context">Contexto</TabsTrigger>
           <TabsTrigger value="activities">Actividades</TabsTrigger>
@@ -208,41 +247,70 @@ export default async function CompanyDetailPage({
         </TabsList>
 
         <TabsContent value="people" className="space-y-3 pt-4">
-          <Button
-            size="sm"
-            variant="secondary"
-            render={<Link href={`/people/new?companyId=${company.id}`} />}
+          <div className="flex flex-wrap gap-2">
+            <Button
+              size="sm"
+              variant="secondary"
+              render={<Link href={`/people/new?companyId=${company.id}`} />}
+            >
+              Nueva persona
+            </Button>
+          </div>
+          <form
+            action={linkPersonToCompany}
+            className="grid gap-2 rounded-md border p-3 sm:grid-cols-4"
           >
-            Nueva persona
-          </Button>
-          {company.people.length === 0 ? (
+            <input type="hidden" name="companyId" value={company.id} />
+            <select
+              name="personId"
+              required
+              defaultValue=""
+              className="bg-background h-9 rounded-md border px-3 text-sm"
+            >
+              <option value="" disabled>
+                Vincular persona existente
+              </option>
+              {personOptions.map((person) => (
+                <option key={person.id} value={person.id}>
+                  {person.firstName} {person.lastName}
+                </option>
+              ))}
+            </select>
+            <Input name="roles" defaultValue="contact" placeholder="Roles" />
+            <Input name="roleTitle" placeholder="Cargo en esta empresa" />
+            <Button type="submit" size="sm">
+              Vincular
+            </Button>
+          </form>
+          {company.personRelationships.length === 0 ? (
             <p className="text-muted-foreground text-sm">
               Sin personas registradas.
             </p>
           ) : (
             <div className="space-y-2">
-              {company.people.map((person) => (
+              {company.personRelationships.map((relationship) => (
                 <Link
-                  key={person.id}
-                  href={`/people/${person.id}`}
+                  key={relationship.id}
+                  href={`/people/${relationship.person.id}`}
                   className="hover:bg-muted/50 flex items-center justify-between rounded-md border p-3 text-sm"
                 >
                   <span>
-                    {person.firstName} {person.lastName}
-                    {person.roleTitle && (
+                    {relationship.person.firstName}{" "}
+                    {relationship.person.lastName}
+                    {relationship.roleTitle && (
                       <span className="text-muted-foreground">
                         {" "}
-                        · {person.roleTitle}
+                        · {relationship.roleTitle}
                       </span>
                     )}
                   </span>
-                  <span className="flex gap-1">
-                    {person.isDecisionMaker && (
-                      <Badge variant="outline">Decisor</Badge>
-                    )}
-                    {person.isSponsor && (
-                      <Badge variant="outline">Sponsor</Badge>
-                    )}
+                  <span className="flex flex-wrap gap-1">
+                    {relationship.isPrimary && <Badge>Principal</Badge>}
+                    {relationship.roles.map((role) => (
+                      <Badge key={role} variant="outline">
+                        {role}
+                      </Badge>
+                    ))}
                   </span>
                 </Link>
               ))}
@@ -278,6 +346,16 @@ export default async function CompanyDetailPage({
               ))}
             </div>
           )}
+        </TabsContent>
+
+        <TabsContent value="partners" className="pt-4">
+          <CompanyCommercialPartnersPanel
+            companyId={company.id}
+            assignments={company.commercialPartnerAssignments}
+            catalog={partnerCatalog}
+            companies={companyOptions}
+            people={personOptions}
+          />
         </TabsContent>
 
         <TabsContent value="context" className="pt-4">

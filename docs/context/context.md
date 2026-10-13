@@ -27,6 +27,10 @@ personas, oportunidades, actividades, notas y reuniones. Incluye:
 - **Inbound Leads**: bandeja de leads externos (`/leads`, hoy formulario web vía
   n8n) pendientes de revisión humana antes de convertirse en Company/Person/
   Opportunity.
+- **Datos comerciales estructurados**: una persona puede estar vinculada a
+  varias empresas; empresas y oportunidades admiten partners comerciales, y
+  cada oportunidad puede guardar versiones de oferta con precio, costo,
+  utilidad proyectada y su reparto.
 
 ## Para quién
 
@@ -62,6 +66,9 @@ ejecutados por IA.
 7. **Inbound Leads**: formulario web → n8n → `POST /api/integrations/inbound-leads`
    → `InboundLead(status=new)` → revisión en `/leads` → convertir a
    Company/Person/Opportunity (o descartar).
+8. **Oferta comercial**: oportunidad → partners del negocio → versión de oferta
+   → partidas y vigencia → costo + utilidad = precio neto → reparto de la
+   utilidad entre Zalantos y partners.
 
 ## Stack
 

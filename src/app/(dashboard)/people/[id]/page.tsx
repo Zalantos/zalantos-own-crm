@@ -32,7 +32,11 @@ export default async function PersonDetailPage({
   const person = await db.person.findUnique({
     where: { id },
     include: {
-      company: true,
+      companyRelationships: {
+        where: { endedAt: null },
+        include: { company: true },
+        orderBy: { isPrimary: "desc" },
+      },
       createdBy: { select: { name: true, email: true } },
       opportunitiesAsDecisionMaker: { include: stageInclude },
       opportunitiesAsSponsor: { include: stageInclude },
@@ -57,7 +61,14 @@ export default async function PersonDetailPage({
     <div>
       <PageHeader
         title={`${person.firstName} ${person.lastName}`}
-        description={[person.roleTitle, person.company?.name]
+        description={[
+          person.companyRelationships.find(
+            (relationship) => relationship.isPrimary,
+          )?.roleTitle,
+          person.companyRelationships.find(
+            (relationship) => relationship.isPrimary,
+          )?.company.name,
+        ]
           .filter(Boolean)
           .join(" · ")}
         actions={
@@ -78,9 +89,19 @@ export default async function PersonDetailPage({
         <StatCard label="Email" value={person.email} variant="compact" />
         <StatCard label="Teléfono" value={person.phone} variant="compact" />
         <StatCard
-          label="Empresa"
-          value={person.company?.name}
-          href={person.companyId ? `/companies/${person.companyId}` : undefined}
+          label="Empresas"
+          value={
+            person.companyRelationships.length > 0
+              ? person.companyRelationships
+                  .map((relationship) => relationship.company.name)
+                  .join(", ")
+              : "—"
+          }
+          href={
+            person.companyRelationships[0]
+              ? `/companies/${person.companyRelationships[0].companyId}`
+              : undefined
+          }
           variant="compact"
         />
       </div>
@@ -107,6 +128,32 @@ export default async function PersonDetailPage({
         <p className="text-muted-foreground mb-6 max-w-3xl text-sm">
           <LinkifiedText text={person.notes} />
         </p>
+      )}
+
+      {person.companyRelationships.length > 0 && (
+        <section className="mb-6 space-y-2">
+          <h2 className="text-sm font-medium">Relaciones con empresas</h2>
+          {person.companyRelationships.map((relationship) => (
+            <Link
+              key={relationship.id}
+              href={`/companies/${relationship.companyId}`}
+              className="hover:bg-muted/50 flex items-center justify-between rounded-md border p-3 text-sm"
+            >
+              <span>
+                {relationship.company.name}
+                {relationship.roleTitle ? ` · ${relationship.roleTitle}` : ""}
+              </span>
+              <span className="flex flex-wrap gap-1">
+                {relationship.isPrimary && <Badge>Principal</Badge>}
+                {relationship.roles.map((role) => (
+                  <Badge key={role} variant="outline">
+                    {role}
+                  </Badge>
+                ))}
+              </span>
+            </Link>
+          ))}
+        </section>
       )}
 
       <div className="mb-6">

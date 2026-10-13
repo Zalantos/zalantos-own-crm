@@ -39,6 +39,25 @@ async function resolveStageId(
   return stage.id;
 }
 
+async function validateOpportunityPeople(
+  db: TenantClient,
+  companyId: string,
+  personIds: Array<string | undefined>,
+): Promise<boolean> {
+  const ids = [...new Set(personIds.filter((id): id is string => Boolean(id)))];
+  if (ids.length === 0) return true;
+  const linked = await db.person.count({
+    where: {
+      id: { in: ids },
+      OR: [
+        { companyId },
+        { companyRelationships: { some: { companyId, endedAt: null } } },
+      ],
+    },
+  });
+  return linked === ids.length;
+}
+
 export async function createOpportunity(
   _prevState: FormState,
   formData: FormData,
@@ -63,6 +82,16 @@ export async function createOpportunity(
   if (!company) {
     return { error: "La empresa seleccionada no existe." };
   }
+  if (
+    !(await validateOpportunityPeople(db, parsed.data.companyId, [
+      parsed.data.decisionMakerId,
+      parsed.data.sponsorId,
+    ]))
+  ) {
+    return {
+      error: "El decisor y el sponsor deben estar vinculados a la empresa.",
+    };
+  }
 
   const { stageId, ...data } = parsed.data;
   const opportunity = await db.opportunity.create({
@@ -74,7 +103,13 @@ export async function createOpportunity(
       createdVia: "manual",
     },
   });
-  await upsertCustomFieldValues(db, org.id, "opportunity", opportunity.id, formData);
+  await upsertCustomFieldValues(
+    db,
+    org.id,
+    "opportunity",
+    opportunity.id,
+    formData,
+  );
   await appendTimelineEvent(db, {
     organizationId: org.id,
     companyId: opportunity.companyId,
@@ -110,6 +145,22 @@ export async function updateOpportunity(
     include: { stage: { select: { id: true, label: true } } },
   });
   if (!before) redirect("/opportunities");
+  const targetCompanyId = data.companyId ?? before.companyId;
+  const company = await db.company.findUnique({
+    where: { id: targetCompanyId },
+    select: { id: true },
+  });
+  if (!company) return { error: "La empresa seleccionada no existe." };
+  if (
+    !(await validateOpportunityPeople(db, targetCompanyId, [
+      data.decisionMakerId ?? before.decisionMakerId ?? undefined,
+      data.sponsorId ?? before.sponsorId ?? undefined,
+    ]))
+  ) {
+    return {
+      error: "El decisor y el sponsor deben estar vinculados a la empresa.",
+    };
+  }
 
   let opportunity;
   try {
@@ -148,7 +199,8 @@ export async function updateOpportunity(
   if (
     "nextStep" in data &&
     (data.nextStep !== before.nextStep ||
-      opportunity.nextStepDueDate?.getTime() !== before.nextStepDueDate?.getTime())
+      opportunity.nextStepDueDate?.getTime() !==
+        before.nextStepDueDate?.getTime())
   ) {
     await appendTimelineEvent(db, {
       organizationId: org.id,

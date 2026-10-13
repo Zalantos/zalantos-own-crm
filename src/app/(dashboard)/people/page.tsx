@@ -5,9 +5,15 @@ import { DataTable } from "@/components/shared/data-table";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
-import type { Person, Company } from "@prisma/client";
+import type {
+  Person,
+  Company,
+  PersonCompanyRelationship,
+} from "@prisma/client";
 
-type PersonRow = Person & { company: Company | null };
+type PersonRow = Person & {
+  companyRelationships: Array<PersonCompanyRelationship & { company: Company }>;
+};
 
 export default async function PeoplePage({
   searchParams,
@@ -27,7 +33,13 @@ export default async function PeoplePage({
           ],
         }
       : undefined,
-    include: { company: true },
+    include: {
+      companyRelationships: {
+        where: { endedAt: null },
+        include: { company: true },
+        orderBy: { isPrimary: "desc" },
+      },
+    },
     orderBy: { createdAt: "desc" },
   });
 
@@ -63,8 +75,26 @@ export default async function PeoplePage({
             header: "Nombre",
             cell: (row) => `${row.firstName} ${row.lastName}`,
           },
-          { header: "Empresa", cell: (row) => row.company?.name ?? "—" },
-          { header: "Cargo", cell: (row) => row.roleTitle ?? "—" },
+          {
+            header: "Empresas",
+            cell: (row) => {
+              const primary = row.companyRelationships.find(
+                (relationship) => relationship.isPrimary,
+              );
+              const additional =
+                row.companyRelationships.length - (primary ? 1 : 0);
+              return primary
+                ? `${primary.company.name}${additional > 0 ? ` +${additional}` : ""}`
+                : "—";
+            },
+          },
+          {
+            header: "Cargo",
+            cell: (row) =>
+              row.companyRelationships.find(
+                (relationship) => relationship.isPrimary,
+              )?.roleTitle ?? "—",
+          },
           {
             header: "Rol",
             cell: (row) => (

@@ -103,11 +103,19 @@ async function assertPersonInCompany(
   ctx: ApplyContext,
   personId: string,
 ): Promise<void> {
+  if (!ctx.companyId) throw new Error("Falta empresa destino");
   const person = await tx.person.findFirst({
     where: {
       id: personId,
-      companyId: ctx.companyId,
       organizationId: ctx.organizationId,
+      OR: [
+        { companyId: ctx.companyId },
+        {
+          companyRelationships: {
+            some: { companyId: ctx.companyId, endedAt: null },
+          },
+        },
+      ],
     },
     select: { id: true },
   });
@@ -207,6 +215,7 @@ async function applyFieldUpdate(
 // items revert from their stored beforeValue, so they return null.
 type RevertData = {
   createdEntityId?: string;
+  createdRelationshipId?: string;
   personId?: string;
   opportunityId?: string | null;
   prevDecisionMakerId?: string | null;
@@ -241,6 +250,39 @@ type NormalizedContact = {
   isDecisionMaker: boolean;
   isSponsor: boolean;
 };
+
+async function ensurePersonCompanyRelationship(
+  tx: Prisma.TransactionClient,
+  ctx: ApplyContext,
+  person: { id: string; companyId: string | null; roleTitle: string | null },
+) {
+  if (!ctx.companyId) throw new Error("Falta empresa destino");
+  const existing = await tx.personCompanyRelationship.findUnique({
+    where: {
+      personId_companyId: { personId: person.id, companyId: ctx.companyId },
+    },
+    select: { id: true },
+  });
+  if (existing) return null;
+  const relationship = await tx.personCompanyRelationship.create({
+    data: {
+      organizationId: ctx.organizationId,
+      personId: person.id,
+      companyId: ctx.companyId,
+      roles: ["contact"],
+      roleTitle: person.companyId ? null : person.roleTitle,
+      isPrimary: !person.companyId,
+    },
+    select: { id: true },
+  });
+  if (!person.companyId) {
+    await tx.person.update({
+      where: { id: person.id, organizationId: ctx.organizationId },
+      data: { companyId: ctx.companyId },
+    });
+  }
+  return relationship.id;
+}
 
 function optionalString(value: unknown): string | null {
   return value == null || value === "" ? null : String(value);
@@ -492,6 +534,7 @@ async function applyItem(
     }
 
     case "add_contact": {
+      if (!ctx.companyId) throw new Error("Falta empresa destino");
       const contact = normalizeContact(after);
       const match = await findExistingPerson(tx, ctx.organizationId, {
         companyId: ctx.companyId,
@@ -501,28 +544,20 @@ async function applyItem(
       });
 
       if (match) {
-        if (
-          !ctx.companyId ||
-          !match.companyId ||
-          match.companyId !== ctx.companyId
-        ) {
-          const location = match.companyName
-            ? `en ${match.companyName}`
-            : "sin empresa";
-          throw new Error(
-            `Ya existe ${match.firstName} ${match.lastName} (${match.email ?? "sin email"}) ${location}; no se creó otro contacto.`.trim(),
-          );
-        }
-
         const existing = await tx.person.findFirst({
           where: {
             id: match.id,
-            companyId: ctx.companyId,
             organizationId: ctx.organizationId,
           },
         });
         if (!existing)
           throw new Error("El contacto existente ya no está disponible");
+
+        const createdRelationshipId = await ensurePersonCompanyRelationship(
+          tx,
+          ctx,
+          existing,
+        );
 
         const filled = await fillEmptyPersonFields(
           tx,
@@ -546,6 +581,7 @@ async function applyItem(
         });
         return {
           personId: existing.id,
+          ...(createdRelationshipId ? { createdRelationshipId } : {}),
           filledFields: filled.filledFields,
           ...revert,
         };
@@ -559,6 +595,16 @@ async function applyItem(
           firstName: contact.firstName || "Sin nombre",
           createdById: ctx.actorId,
           createdVia,
+        },
+      });
+      await tx.personCompanyRelationship.create({
+        data: {
+          organizationId: ctx.organizationId,
+          personId: person.id,
+          companyId: ctx.companyId,
+          roles: ["contact"],
+          roleTitle: person.roleTitle,
+          isPrimary: true,
         },
       });
       const revert = await linkFlaggedContactToOpportunity(tx, ctx, person);
@@ -657,19 +703,22 @@ async function applyItem(
 
     case "link_contact": {
       if (!item.entityId) throw new Error("Falta contacto destino");
+      if (!ctx.companyId) throw new Error("Falta empresa destino");
       const contact = normalizeContact(after);
       const person = await tx.person.findFirst({
         where: {
           id: item.entityId,
-          companyId: ctx.companyId,
           organizationId: ctx.organizationId,
         },
       });
       if (!person) {
-        throw new Error(
-          `El contacto ${item.entityId} no existe o no pertenece a la empresa`,
-        );
+        throw new Error(`El contacto ${item.entityId} no existe`);
       }
+      const createdRelationshipId = await ensurePersonCompanyRelationship(
+        tx,
+        ctx,
+        person,
+      );
       const filled = await fillEmptyPersonFields(
         tx,
         ctx.organizationId,
@@ -690,7 +739,11 @@ async function applyItem(
           ? `Campos completados: ${filled.filledFields.join(", ")}`
           : "Sin cambios (ya estaba completo)",
       });
-      return { filledFields: filled.filledFields, ...revert };
+      return {
+        filledFields: filled.filledFields,
+        ...(createdRelationshipId ? { createdRelationshipId } : {}),
+        ...revert,
+      };
     }
 
     case "create_task": {
@@ -2094,6 +2147,11 @@ export async function revertItem(
             revert.filledFields,
           );
         }
+        if (revert.createdRelationshipId) {
+          await tx.personCompanyRelationship.delete({
+            where: { id: revert.createdRelationshipId, organizationId },
+          });
+        }
         break;
       }
       case "add_opportunity": {
@@ -2121,6 +2179,11 @@ export async function revertItem(
             item.entityId,
             revert.filledFields,
           );
+        }
+        if (revert.createdRelationshipId) {
+          await tx.personCompanyRelationship.delete({
+            where: { id: revert.createdRelationshipId, organizationId },
+          });
         }
         break;
       }

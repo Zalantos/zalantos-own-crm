@@ -534,7 +534,17 @@ export function buildProposalTools(ctx: AgentToolContext) {
         );
         if (personRefs.length) {
           const people = await ctx.db.person.findMany({
-            where: { id: { in: personRefs }, companyId },
+            where: {
+              id: { in: personRefs },
+              OR: [
+                { companyId },
+                {
+                  companyRelationships: {
+                    some: { companyId, endedAt: null },
+                  },
+                },
+              ],
+            },
             select: { id: true },
           });
           const found = new Set(people.map(({ id }) => id));

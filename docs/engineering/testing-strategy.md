@@ -11,6 +11,8 @@ Hay tests puntuales con el runner nativo de Node:
   `npm run test:contact-dedup`
 - `src/lib/mcp/server.test.ts` y tests de tools del agente →
   `npm run test:mcp-tools`
+- `src/lib/commercial/commercial.test.ts` → `npm run test:commercial`
+- Ingesta y conversión de leads → `npm run test:inbound-leads`
 
 **GAP:** No hay suite amplia ni configuración Jest/Vitest/Playwright para el
 resto del dominio (tenant, propuestas, agent, Telegram).
@@ -56,6 +58,8 @@ GAP: definir framework (recomendado: Vitest para unit, Playwright para E2E).
 | `npm run test:contact-dedup`            | Normalización de contactos y candado de propuestas   |
 | `npm run test:mcp-tools`                | Contratos de tools agente/MCP y validación de inputs |
 | `npm run test:observability`            | Test del payload Observability                       |
+| `npm run test:commercial`               | Vigencia, economía, reparto y parser de backfill     |
+| `npm run test:inbound-leads`            | Ingesta, dedupe y conversión persona–empresa         |
 | `npm run seed:check`                    | Verificar datos de seed                              |
 | `npx tsx scripts/check-rls-coverage.ts` | Verificar cobertura RLS                              |
 
@@ -70,6 +74,9 @@ GAP: definir framework (recomendado: Vitest para unit, Playwright para E2E).
 7. `dedupeKey` evita deliveries duplicados al gateway.
 8. Cron sin secret retorna 401.
 9. ADMIN requerido en rutas `/admin/*`.
+10. `costo + utilidad = precio neto`; reparto suma 100% y solo usa utilidad.
+11. Vigencia comercial respeta fines de semana y feriados del tenant.
+12. Backfill genera un resultado por oportunidad y su fingerprint es estable.
 
 ## Criterios mínimos antes de merge
 

@@ -28,6 +28,7 @@ export const TYPE_LABELS: Record<string, string> = {
   company_created: "Empresa creada",
   change_reverted: "Cambio deshecho",
   context_enriched: "Contexto enriquecido",
+  commercial_offer_backfilled: "Oferta recuperada",
 };
 
 const ACTIVITY_PAGE_SIZE = 25;
@@ -60,7 +61,9 @@ export async function appendTimelineEvent(
 ) {
   // Sin empresa no hay dónde anclar el evento: se omite en silencio.
   if (!input.companyId) return null;
-  return client.timelineEvent.create({
+  const timelineEvent =
+    client.timelineEvent as Prisma.TransactionClient["timelineEvent"];
+  return timelineEvent.create({
     data: {
       organizationId: input.organizationId,
       companyId: input.companyId,
@@ -99,11 +102,14 @@ export async function getOpportunityTimeline(
   return attachActors(db, events);
 }
 
-async function attachActors<
-  T extends { actorId: string | null },
->(db: TenantClient, events: T[]) {
+async function attachActors<T extends { actorId: string | null }>(
+  db: TenantClient,
+  events: T[],
+) {
   const actorIds = [
-    ...new Set(events.map((event) => event.actorId).filter((id) => id !== null)),
+    ...new Set(
+      events.map((event) => event.actorId).filter((id) => id !== null),
+    ),
   ];
   const actors = actorIds.length
     ? await db.user.findMany({
@@ -164,7 +170,9 @@ export async function getActivityFeed(
   ]);
 
   const actorIds = [
-    ...new Set(events.map((event) => event.actorId).filter((id) => id !== null)),
+    ...new Set(
+      events.map((event) => event.actorId).filter((id) => id !== null),
+    ),
   ];
   const actors = actorIds.length
     ? await db.user.findMany({

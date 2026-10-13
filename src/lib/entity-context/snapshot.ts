@@ -62,6 +62,19 @@ export async function buildEntityContextSnapshot(
         company: {
           select: { id: true, name: true, industry: true, description: true },
         },
+        companyRelationships: {
+          include: {
+            company: {
+              select: {
+                id: true,
+                name: true,
+                industry: true,
+                description: true,
+              },
+            },
+          },
+          orderBy: [{ isPrimary: "desc" }, { createdAt: "asc" }],
+        },
       },
     });
     if (!person) throw new Error(`Persona no encontrada: ${entityId}`);
@@ -88,6 +101,16 @@ export async function buildEntityContextSnapshot(
         notes: person.notes,
         companyId: person.companyId,
         company: person.company,
+        companies: person.companyRelationships.map((relationship) => ({
+          ...relationship.company,
+          roles: relationship.roles,
+          roleTitle: relationship.roleTitle,
+          isPrimary: relationship.isPrimary,
+        })),
+        primaryCompany:
+          person.companyRelationships.find(
+            (relationship) => relationship.isPrimary,
+          )?.company ?? person.company,
         customFields,
       },
       recentNotes: notes,
@@ -108,6 +131,16 @@ export async function buildEntityContextSnapshot(
       },
       sponsor: {
         select: { id: true, firstName: true, lastName: true, roleTitle: true },
+      },
+      commercialPartners: {
+        include: {
+          commercialPartner: { select: { id: true, displayName: true } },
+        },
+      },
+      commercialOffers: {
+        orderBy: { versionNumber: "desc" },
+        take: 1,
+        include: { lineItems: true, documents: true, profitShares: true },
       },
     },
   });
@@ -140,6 +173,44 @@ export async function buildEntityContextSnapshot(
       company: opportunity.company,
       decisionMaker: opportunity.decisionMaker,
       sponsor: opportunity.sponsor,
+      commercialPartners: opportunity.commercialPartners.map((assignment) => ({
+        id: assignment.commercialPartner.id,
+        name: assignment.commercialPartner.displayName,
+        role: assignment.role,
+        profitSharePercentage:
+          assignment.profitSharePercentage?.toString() ?? null,
+      })),
+      currentOffer: opportunity.commercialOffers[0]
+        ? {
+            ...opportunity.commercialOffers[0],
+            economicBaseNetAmount:
+              opportunity.commercialOffers[0].economicBaseNetAmount?.toString() ??
+              null,
+            projectCostAmount:
+              opportunity.commercialOffers[0].projectCostAmount?.toString() ??
+              null,
+            distributableProfitAmount:
+              opportunity.commercialOffers[0].distributableProfitAmount?.toString() ??
+              null,
+            exchangeRateToClp:
+              opportunity.commercialOffers[0].exchangeRateToClp?.toString() ??
+              null,
+            lineItems: opportunity.commercialOffers[0].lineItems.map(
+              (item) => ({
+                ...item,
+                quantity: item.quantity?.toString() ?? null,
+                amount: item.amount.toString(),
+              }),
+            ),
+            profitShares: opportunity.commercialOffers[0].profitShares.map(
+              (share) => ({
+                ...share,
+                percentage: share.percentage.toString(),
+                amount: share.amount.toString(),
+              }),
+            ),
+          }
+        : null,
       customFields,
     },
     recentNotes: notes,

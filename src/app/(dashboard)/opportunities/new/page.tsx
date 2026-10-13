@@ -13,7 +13,15 @@ export default async function NewOpportunityPage({
   const { db } = await requireOrgContext();
   const [companies, people, stages] = await Promise.all([
     db.company.findMany({ orderBy: { name: "asc" } }),
-    db.person.findMany({ orderBy: { firstName: "asc" } }),
+    db.person.findMany({
+      include: {
+        companyRelationships: {
+          where: { endedAt: null },
+          select: { companyId: true },
+        },
+      },
+      orderBy: { firstName: "asc" },
+    }),
     getOrgStages(db),
   ]);
 

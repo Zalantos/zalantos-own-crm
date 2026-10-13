@@ -70,6 +70,16 @@ export function buildReadTools(ctx: AgentToolContext) {
                   email: true,
                   companyId: true,
                   company: { select: { name: true } },
+                  companyRelationships: {
+                    select: {
+                      companyId: true,
+                      roleTitle: true,
+                      roles: true,
+                      isPrimary: true,
+                      company: { select: { name: true } },
+                    },
+                    orderBy: [{ isPrimary: "desc" }, { createdAt: "asc" }],
+                  },
                 },
                 take,
               })
@@ -95,8 +105,23 @@ export function buildReadTools(ctx: AgentToolContext) {
             id: p.id,
             name: `${p.firstName} ${p.lastName}`.trim(),
             email: p.email,
-            companyId: p.companyId,
-            companyName: p.company?.name ?? null,
+            companyId:
+              p.companyRelationships.find(
+                (relationship) => relationship.isPrimary,
+              )?.companyId ?? p.companyId,
+            companyName:
+              p.companyRelationships.find(
+                (relationship) => relationship.isPrimary,
+              )?.company.name ??
+              p.company?.name ??
+              null,
+            companies: p.companyRelationships.map((relationship) => ({
+              id: relationship.companyId,
+              name: relationship.company.name,
+              roles: relationship.roles,
+              roleTitle: relationship.roleTitle,
+              isPrimary: relationship.isPrimary,
+            })),
           })),
           opportunities: opportunities.map((o) => ({
             id: o.id,
@@ -123,12 +148,18 @@ export function buildReadTools(ctx: AgentToolContext) {
             const company = await db.company.findUnique({
               where: { id },
               include: {
-                people: {
+                personRelationships: {
                   select: {
-                    id: true,
-                    firstName: true,
-                    lastName: true,
+                    person: {
+                      select: {
+                        id: true,
+                        firstName: true,
+                        lastName: true,
+                      },
+                    },
+                    roles: true,
                     roleTitle: true,
+                    isPrimary: true,
                   },
                 },
                 opportunities: {
@@ -163,11 +194,7 @@ export function buildReadTools(ctx: AgentToolContext) {
             });
             if (!opportunity)
               return { error: `Oportunidad no encontrada: ${id}` };
-            const context = await snapshotEntityContext(
-              db,
-              "opportunity",
-              id,
-            );
+            const context = await snapshotEntityContext(db, "opportunity", id);
             return {
               ...opportunity,
               estimatedValue: opportunity.estimatedValue?.toString() ?? null,
@@ -178,7 +205,13 @@ export function buildReadTools(ctx: AgentToolContext) {
           case "person": {
             const person = await db.person.findUnique({
               where: { id },
-              include: { company: { select: { id: true, name: true } } },
+              include: {
+                company: { select: { id: true, name: true } },
+                companyRelationships: {
+                  include: { company: { select: { id: true, name: true } } },
+                  orderBy: [{ isPrimary: "desc" }, { createdAt: "asc" }],
+                },
+              },
             });
             if (!person) return { error: `Persona no encontrada: ${id}` };
             const context = await snapshotEntityContext(db, "person", id);

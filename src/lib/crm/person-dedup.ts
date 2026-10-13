@@ -101,7 +101,10 @@ export async function findExistingPerson(
     const byName = await findFirst({
       where: {
         organizationId,
-        companyId,
+        OR: [
+          { companyId },
+          { companyRelationships: { some: { companyId, endedAt: null } } },
+        ],
         firstName: { equals: first, mode: "insensitive" },
         // Match empty last names too when the proposal omits one.
         lastName: { equals: last ?? "", mode: "insensitive" },

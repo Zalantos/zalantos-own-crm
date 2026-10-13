@@ -14,7 +14,10 @@ export default async function EditPersonPage({
   const { id } = await params;
   const { db } = await requireOrgContext();
   const [person, companies] = await Promise.all([
-    db.person.findUnique({ where: { id } }),
+    db.person.findUnique({
+      where: { id },
+      include: { companyRelationships: { orderBy: { isPrimary: "desc" } } },
+    }),
     db.company.findMany({ orderBy: { name: "asc" } }),
   ]);
   if (!person) notFound();

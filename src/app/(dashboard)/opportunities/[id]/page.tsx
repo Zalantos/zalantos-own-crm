@@ -20,6 +20,8 @@ import { StatCard } from "@/components/shared/stat-card";
 import { LinkifiedText } from "@/components/shared/linkified-text";
 import { createFormatters, formatCurrencyValue } from "@/lib/format";
 import { actorLabel, createdViaLabel } from "@/lib/traceability";
+import { OpportunityCommercialPartnersPanel } from "@/components/shared/commercial/opportunity-commercial-partners-panel";
+import { cloneCommercialOffer } from "@/app/(dashboard)/commercial/actions";
 
 export default async function OpportunityDetailPage({
   params,
@@ -37,11 +39,25 @@ export default async function OpportunityDetailPage({
         decisionMaker: true,
         sponsor: true,
         createdBy: { select: { name: true, email: true } },
+        commercialPartners: {
+          include: { commercialPartner: true },
+          orderBy: { createdAt: "asc" },
+        },
+        commercialOffers: {
+          orderBy: { versionNumber: "desc" },
+          include: { profitShares: { orderBy: { createdAt: "asc" } } },
+        },
       },
     }),
     getOrgStages(db),
   ]);
   if (!opportunity) notFound();
+
+  const partnerCatalog = await db.commercialPartner.findMany({
+    where: { isActive: true },
+    orderBy: { displayName: "asc" },
+    select: { id: true, displayName: true },
+  });
 
   const formatters = createFormatters(org);
   const contextData = await loadEntityContextData(
@@ -118,7 +134,11 @@ export default async function OpportunityDetailPage({
           label="Valor estimado"
           value={
             opportunity.estimatedValue
-              ? formatCurrencyValue(opportunity.estimatedValue.toString(), org.currency, org.locale)
+              ? formatCurrencyValue(
+                  opportunity.estimatedValue.toString(),
+                  org.currency,
+                  org.locale,
+                )
               : "—"
           }
         />
@@ -212,6 +232,12 @@ export default async function OpportunityDetailPage({
           <TabsTrigger value="context">Contexto</TabsTrigger>
           <TabsTrigger value="notes">Notas</TabsTrigger>
           <TabsTrigger value="timeline">Timeline</TabsTrigger>
+          <TabsTrigger value="partners">
+            Partners ({opportunity.commercialPartners.length})
+          </TabsTrigger>
+          <TabsTrigger value="offers">
+            Ofertas ({opportunity.commercialOffers.length})
+          </TabsTrigger>
         </TabsList>
         <TabsContent value="activities" className="pt-4">
           <ActivitiesPanel opportunityId={opportunity.id} />
@@ -231,6 +257,92 @@ export default async function OpportunityDetailPage({
         </TabsContent>
         <TabsContent value="timeline" className="pt-4">
           <CompanyTimeline opportunityId={opportunity.id} />
+        </TabsContent>
+        <TabsContent value="partners" className="pt-4">
+          <OpportunityCommercialPartnersPanel
+            opportunityId={opportunity.id}
+            assignments={opportunity.commercialPartners}
+            catalog={partnerCatalog.map((partner) => ({
+              id: partner.id,
+              displayName: partner.displayName,
+            }))}
+          />
+        </TabsContent>
+        <TabsContent value="offers" className="space-y-3 pt-4">
+          <Button
+            render={
+              <Link href={`/opportunities/${opportunity.id}/offers/new`} />
+            }
+          >
+            Nueva oferta
+          </Button>
+          {opportunity.commercialOffers.length === 0 ? (
+            <p className="text-muted-foreground text-sm">
+              Sin ofertas comerciales.
+            </p>
+          ) : (
+            opportunity.commercialOffers.map((offer) => (
+              <div key={offer.id} className="rounded-md border p-4">
+                <div className="flex flex-wrap items-start justify-between gap-3">
+                  <div>
+                    <p className="font-medium">
+                      Versión {offer.versionNumber} · {offer.status}
+                    </p>
+                    <p className="text-muted-foreground text-sm">
+                      {offer.productName ?? "Sin producto"} ·{" "}
+                      {offer.pricingUnit}
+                    </p>
+                  </div>
+                  <div className="flex gap-2">
+                    <Button
+                      variant="secondary"
+                      size="sm"
+                      render={
+                        <Link
+                          href={`/opportunities/${opportunity.id}/offers/${offer.id}`}
+                        />
+                      }
+                    >
+                      {offer.status === "draft" ? "Editar" : "Ver detalle"}
+                    </Button>
+                    <form action={cloneCommercialOffer.bind(null, offer.id)}>
+                      <Button type="submit" variant="secondary" size="sm">
+                        Nueva versión
+                      </Button>
+                    </form>
+                  </div>
+                </div>
+                <div className="mt-3 grid gap-3 text-sm sm:grid-cols-3">
+                  <div>
+                    <span className="text-muted-foreground">Costo:</span>{" "}
+                    {offer.projectCostAmount?.toString() ?? "—"}{" "}
+                    {offer.pricingUnit}
+                  </div>
+                  <div>
+                    <span className="text-muted-foreground">Utilidad:</span>{" "}
+                    {offer.distributableProfitAmount?.toString() ?? "—"}{" "}
+                    {offer.pricingUnit}
+                  </div>
+                  <div>
+                    <span className="text-muted-foreground">Precio neto:</span>{" "}
+                    {offer.economicBaseNetAmount?.toString() ?? "—"}{" "}
+                    {offer.pricingUnit}
+                  </div>
+                </div>
+                {offer.profitShares.length > 0 && (
+                  <div className="mt-3 flex flex-wrap gap-2">
+                    {offer.profitShares.map((share) => (
+                      <Badge key={share.id} variant="outline">
+                        {share.beneficiaryNameSnapshot}:{" "}
+                        {share.percentage.toString()}% ·{" "}
+                        {share.amount.toString()} {offer.pricingUnit}
+                      </Badge>
+                    ))}
+                  </div>
+                )}
+              </div>
+            ))
+          )}
         </TabsContent>
       </Tabs>
     </div>

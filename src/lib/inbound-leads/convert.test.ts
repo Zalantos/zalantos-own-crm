@@ -17,13 +17,21 @@ type FakeOpportunity = Record<string, unknown> & { id: string };
 
 // Fake de las piezas de Prisma.TransactionClient que convertLeadTx toca.
 // Mismo estilo que apply-lock.test.ts: estado en memoria, sin DB real.
-function createFakeTx(seed?: { companies?: FakeCompany[]; people?: FakePerson[] }) {
+function createFakeTx(seed?: {
+  companies?: FakeCompany[];
+  people?: FakePerson[];
+}) {
   const companies: FakeCompany[] = seed?.companies ? [...seed.companies] : [];
   const people: FakePerson[] = seed?.people ? [...seed.people] : [];
   const opportunities: FakeOpportunity[] = [];
   const notes: Record<string, unknown>[] = [];
   const timelineEvents: Record<string, unknown>[] = [];
   const leadUpdates: Record<string, unknown>[] = [];
+  const relationships: Array<{
+    id: string;
+    personId: string;
+    companyId: string;
+  }> = [];
   let nextId = 1;
   const genId = (prefix: string) => `${prefix}-${nextId++}`;
 
@@ -101,6 +109,27 @@ function createFakeTx(seed?: { companies?: FakeCompany[]; people?: FakePerson[] 
         return row;
       },
     },
+    personCompanyRelationship: {
+      findUnique: async ({
+        where,
+      }: {
+        where: { personId_companyId: { personId: string; companyId: string } };
+      }) =>
+        relationships.find(
+          (relationship) =>
+            relationship.personId === where.personId_companyId.personId &&
+            relationship.companyId === where.personId_companyId.companyId,
+        ) ?? null,
+      create: async ({
+        data,
+      }: {
+        data: { personId: string; companyId: string };
+      }) => {
+        const row = { id: genId("relationship"), ...data };
+        relationships.push(row);
+        return row;
+      },
+    },
     pipelineStage: {
       findFirst: async () => ({ id: "stage-1", label: "Lead identificado" }),
     },
@@ -132,7 +161,15 @@ function createFakeTx(seed?: { companies?: FakeCompany[]; people?: FakePerson[] 
     },
   } as unknown as Prisma.TransactionClient;
 
-  return { tx, companies, people, opportunities, notes, timelineEvents, leadUpdates };
+  return {
+    tx,
+    companies,
+    people,
+    opportunities,
+    notes,
+    timelineEvents,
+    leadUpdates,
+  };
 }
 
 function makeLead(overrides: Partial<ConvertibleLead> = {}): ConvertibleLead {
@@ -171,7 +208,10 @@ describe("convertLeadTx", () => {
   });
 
   it("reutiliza una Person existente por email en vez de crear otra", async () => {
-    const existingCompany: FakeCompany = { id: "company-1", name: "Acme Mining" };
+    const existingCompany: FakeCompany = {
+      id: "company-1",
+      name: "Acme Mining",
+    };
     const existingPerson: FakePerson = {
       id: "person-1",
       companyId: "company-1",
@@ -197,7 +237,10 @@ describe("convertLeadTx", () => {
   });
 
   it("no crea una segunda Person duplicada al convertir dos leads de la misma empresa", async () => {
-    const existingCompany: FakeCompany = { id: "company-1", name: "Acme Mining" };
+    const existingCompany: FakeCompany = {
+      id: "company-1",
+      name: "Acme Mining",
+    };
     const { tx, people } = createFakeTx({ companies: [existingCompany] });
 
     const leadA = makeLead({ id: "lead-a" });

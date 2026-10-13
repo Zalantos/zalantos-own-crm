@@ -26,9 +26,31 @@ export async function buildCompanySnapshot(
   ] = await Promise.all([
     db.opportunity.findMany({
       where: { companyId },
-      include: { stage: { select: { key: true, label: true } } },
+      include: {
+        stage: { select: { key: true, label: true } },
+        commercialPartners: {
+          include: {
+            commercialPartner: { select: { id: true, displayName: true } },
+          },
+        },
+        commercialOffers: {
+          orderBy: { versionNumber: "desc" },
+          take: 1,
+          include: { profitShares: true },
+        },
+      },
     }),
-    db.person.findMany({ where: { companyId } }),
+    db.person.findMany({
+      where: {
+        OR: [{ companyId }, { companyRelationships: { some: { companyId } } }],
+      },
+      include: {
+        companyRelationships: {
+          include: { company: { select: { id: true, name: true } } },
+          orderBy: [{ isPrimary: "desc" }, { createdAt: "asc" }],
+        },
+      },
+    }),
     db.note.findMany({
       where: { companyId },
       orderBy: { createdAt: "desc" },
@@ -120,6 +142,36 @@ export async function buildCompanySnapshot(
       estimatedValue: o.estimatedValue?.toString() ?? null,
       decisionMakerId: o.decisionMakerId,
       sponsorId: o.sponsorId,
+      commercialPartners: (o.commercialPartners ?? []).map((assignment) => ({
+        id: assignment.commercialPartner.id,
+        name: assignment.commercialPartner.displayName,
+        role: assignment.role,
+        profitSharePercentage:
+          assignment.profitSharePercentage?.toString() ?? null,
+      })),
+      currentOffer: o.commercialOffers?.[0]
+        ? {
+            id: o.commercialOffers[0].id,
+            versionNumber: o.commercialOffers[0].versionNumber,
+            status: o.commercialOffers[0].status,
+            pricingUnit: o.commercialOffers[0].pricingUnit,
+            economicScope: o.commercialOffers[0].economicScope,
+            economicBaseNetAmount:
+              o.commercialOffers[0].economicBaseNetAmount?.toString() ?? null,
+            projectCostAmount:
+              o.commercialOffers[0].projectCostAmount?.toString() ?? null,
+            distributableProfitAmount:
+              o.commercialOffers[0].distributableProfitAmount?.toString() ??
+              null,
+            validUntil: o.commercialOffers[0].validUntil?.toISOString() ?? null,
+            profitShares: o.commercialOffers[0].profitShares.map((share) => ({
+              beneficiaryType: share.beneficiaryType,
+              beneficiaryName: share.beneficiaryNameSnapshot,
+              percentage: share.percentage.toString(),
+              amount: share.amount.toString(),
+            })),
+          }
+        : null,
     })),
     people: people.map((p) => ({
       id: p.id,
@@ -130,6 +182,17 @@ export async function buildCompanySnapshot(
       linkedinUrl: p.linkedinUrl,
       isDecisionMaker: p.isDecisionMaker,
       isSponsor: p.isSponsor,
+      companies: (p.companyRelationships ?? []).map((relationship) => ({
+        id: relationship.company.id,
+        name: relationship.company.name,
+        roles: relationship.roles,
+        roleTitle: relationship.roleTitle,
+        isPrimary: relationship.isPrimary,
+      })),
+      primaryCompany:
+        (p.companyRelationships ?? []).find(
+          (relationship) => relationship.isPrimary,
+        )?.company ?? null,
     })),
     recentNotes: notes.map((n) => ({ title: n.title, body: n.body })),
     recentActivities: activities.map((a) => ({

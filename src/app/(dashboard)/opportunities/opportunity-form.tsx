@@ -1,6 +1,6 @@
 "use client";
 
-import { useActionState } from "react";
+import { useActionState, useState } from "react";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
@@ -12,6 +12,10 @@ import {
 } from "./actions";
 import type { StageOption } from "@/lib/pipeline/stages";
 import type { Company, Opportunity, Person } from "@prisma/client";
+
+type PersonWithCompanies = Person & {
+  companyRelationships: Array<{ companyId: string }>;
+};
 
 const URGENCY_OPTIONS = ["low", "medium", "high"];
 const STATUS_OPTIONS = ["open", "won", "lost"];
@@ -26,7 +30,7 @@ export function OpportunityForm({
 }: {
   opportunity?: Opportunity;
   companies: Company[];
-  people: Person[];
+  people: PersonWithCompanies[];
   stages: StageOption[];
   defaultCompanyId?: string;
   customFieldsSection?: React.ReactNode;
@@ -35,6 +39,14 @@ export function OpportunityForm({
   const [state, formAction] = useActionState<FormState, FormData>(
     action,
     undefined,
+  );
+  const [selectedCompanyId, setSelectedCompanyId] = useState(
+    opportunity?.companyId ?? defaultCompanyId ?? "",
+  );
+  const eligiblePeople = people.filter((person) =>
+    person.companyRelationships.some(
+      (relationship) => relationship.companyId === selectedCompanyId,
+    ),
   );
 
   return (
@@ -48,7 +60,8 @@ export function OpportunityForm({
             id="companyId"
             name="companyId"
             required
-            defaultValue={opportunity?.companyId ?? defaultCompanyId ?? ""}
+            value={selectedCompanyId}
+            onChange={(event) => setSelectedCompanyId(event.target.value)}
             className="bg-background h-9 w-full rounded-md border px-3 text-sm"
           >
             <option value="">Seleccionar empresa...</option>
@@ -119,7 +132,7 @@ export function OpportunityForm({
             className="bg-background h-9 w-full rounded-md border px-3 text-sm"
           >
             <option value="">Sin definir</option>
-            {people.map((person) => (
+            {eligiblePeople.map((person) => (
               <option key={person.id} value={person.id}>
                 {person.firstName} {person.lastName}
               </option>
@@ -135,7 +148,7 @@ export function OpportunityForm({
             className="bg-background h-9 w-full rounded-md border px-3 text-sm"
           >
             <option value="">Sin definir</option>
-            {people.map((person) => (
+            {eligiblePeople.map((person) => (
               <option key={person.id} value={person.id}>
                 {person.firstName} {person.lastName}
               </option>

@@ -60,13 +60,23 @@ export async function resolvePageContext(
           roleTitle: true,
           companyId: true,
           company: { select: { name: true } },
+          companyRelationships: {
+            include: { company: { select: { id: true, name: true } } },
+            orderBy: [{ isPrimary: "desc" }, { createdAt: "asc" }],
+          },
         },
       });
       if (!person) return null;
       const fullName = `${person.firstName} ${person.lastName}`.trim();
+      const primaryRelationship = person.companyRelationships.find(
+        (relationship) => relationship.isPrimary,
+      );
+      const companies = person.companyRelationships
+        .map((relationship) => relationship.company.name)
+        .join(", ");
       return {
-        description: `El usuario está viendo el contacto "${fullName}" (id ${person.id}${person.roleTitle ? `, cargo: ${person.roleTitle}` : ""})${person.company ? ` de la empresa "${person.company.name}" (id ${person.companyId})` : ""}.`,
-        companyId: person.companyId,
+        description: `El usuario está viendo el contacto "${fullName}" (id ${person.id}${(primaryRelationship?.roleTitle ?? person.roleTitle) ? `, cargo principal: ${primaryRelationship?.roleTitle ?? person.roleTitle}` : ""})${companies ? ` relacionado con: ${companies}` : person.company ? ` de la empresa "${person.company.name}"` : ""}.`,
+        companyId: primaryRelationship?.companyId ?? person.companyId,
         opportunityId: null,
       };
     }

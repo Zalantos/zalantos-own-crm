@@ -80,37 +80,46 @@ model Organization {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  users                  User[]
-  pipelineStages         PipelineStage[]
-  invitations            Invitation[]
-  passwordResetTokens    PasswordResetToken[]
-  companies              Company[]
-  people                 Person[]
-  opportunities          Opportunity[]
-  activities             Activity[]
-  activityPeople         ActivityPerson[]
-  notes                  Note[]
-  savedViews             SavedView[]
-  customFieldDefinitions CustomFieldDefinition[]
-  customFieldValues      CustomFieldValue[]
-  workflows              Workflow[]
-  workflowLogs           WorkflowLog[]
-  integrationDeliveries  IntegrationDelivery[]
-  inboundLeads           InboundLead[]
-  teamMembers            TeamMember[]
-  meetings               Meeting[]
-  evidence               Evidence[]
-  changeProposals        CRMChangeProposal[]
-  changeItems            CRMChangeItem[]
-  agentChatThreads       AgentChatThread[]
-  agentChatMessages      AgentChatMessage[]
-  agentAttachments       AgentAttachment[]
-  timelineEvents         TimelineEvent[]
-  entityContextSources   EntityContextSource[]
-  entityContextProfiles  EntityContextProfile[]
-  telegramLinks          TelegramLink[]
-  telegramLinkCodes      TelegramLinkCode[]
-  mcpAccessTokens        McpAccessToken[]
+  users                         User[]
+  pipelineStages                PipelineStage[]
+  invitations                   Invitation[]
+  passwordResetTokens           PasswordResetToken[]
+  companies                     Company[]
+  people                        Person[]
+  opportunities                 Opportunity[]
+  activities                    Activity[]
+  activityPeople                ActivityPerson[]
+  notes                         Note[]
+  savedViews                    SavedView[]
+  customFieldDefinitions        CustomFieldDefinition[]
+  customFieldValues             CustomFieldValue[]
+  workflows                     Workflow[]
+  workflowLogs                  WorkflowLog[]
+  integrationDeliveries         IntegrationDelivery[]
+  inboundLeads                  InboundLead[]
+  teamMembers                   TeamMember[]
+  meetings                      Meeting[]
+  evidence                      Evidence[]
+  changeProposals               CRMChangeProposal[]
+  changeItems                   CRMChangeItem[]
+  agentChatThreads              AgentChatThread[]
+  agentChatMessages             AgentChatMessage[]
+  agentAttachments              AgentAttachment[]
+  timelineEvents                TimelineEvent[]
+  entityContextSources          EntityContextSource[]
+  entityContextProfiles         EntityContextProfile[]
+  telegramLinks                 TelegramLink[]
+  telegramLinkCodes             TelegramLinkCode[]
+  mcpAccessTokens               McpAccessToken[]
+  personCompanyRelationships    PersonCompanyRelationship[]
+  commercialPartners            CommercialPartner[]
+  companyCommercialPartners     CompanyCommercialPartner[]
+  opportunityCommercialPartners OpportunityCommercialPartner[]
+  commercialOffers              CommercialOffer[]
+  commercialOfferLineItems      CommercialOfferLineItem[]
+  commercialOfferDocuments      CommercialOfferDocument[]
+  commercialOfferProfitShares   CommercialOfferProfitShare[]
+  businessHolidays              BusinessHoliday[]
 
   @@map("organizations")
 }
@@ -209,13 +218,16 @@ model Company {
   createdAt       DateTime     @default(now())
   updatedAt       DateTime     @updatedAt
 
-  people                Person[]
-  opportunities         Opportunity[]
-  activities            Activity[]
-  notes                 Note[]
-  meetings              Meeting[]
-  timelineEvents        TimelineEvent[]
-  convertedInboundLeads InboundLead[]   @relation("InboundLeadConvertedCompany")
+  people                       Person[]
+  opportunities                Opportunity[]
+  activities                   Activity[]
+  notes                        Note[]
+  meetings                     Meeting[]
+  timelineEvents               TimelineEvent[]
+  convertedInboundLeads        InboundLead[]               @relation("InboundLeadConvertedCompany")
+  personRelationships          PersonCompanyRelationship[]
+  linkedCommercialPartners     CommercialPartner[]         @relation("CommercialPartnerLinkedCompany")
+  commercialPartnerAssignments CompanyCommercialPartner[]
 
   @@index([organizationId, name])
   @@index([organizationId, status])
@@ -247,9 +259,11 @@ model Person {
   activities                   Activity[]
   activityParticipations       ActivityPerson[]
   notesRel                     Note[]
-  opportunitiesAsDecisionMaker Opportunity[]    @relation("OpportunityDecisionMaker")
-  opportunitiesAsSponsor       Opportunity[]    @relation("OpportunitySponsor")
-  convertedInboundLeads        InboundLead[]    @relation("InboundLeadConvertedPerson")
+  opportunitiesAsDecisionMaker Opportunity[]               @relation("OpportunityDecisionMaker")
+  opportunitiesAsSponsor       Opportunity[]               @relation("OpportunitySponsor")
+  convertedInboundLeads        InboundLead[]               @relation("InboundLeadConvertedPerson")
+  companyRelationships         PersonCompanyRelationship[]
+  linkedCommercialPartners     CommercialPartner[]         @relation("CommercialPartnerLinkedPerson")
 
   @@unique([organizationId, email])
   @@index([organizationId])
@@ -291,7 +305,9 @@ model Opportunity {
   activities            Activity[]
   notes                 Note[]
   meetings              Meeting[]
-  convertedInboundLeads InboundLead[] @relation("InboundLeadConvertedOpportunity")
+  convertedInboundLeads InboundLead[]                  @relation("InboundLeadConvertedOpportunity")
+  commercialPartners    OpportunityCommercialPartner[]
+  commercialOffers      CommercialOffer[]
 
   @@index([organizationId, stageId])
   @@index([organizationId, status])
@@ -299,6 +315,236 @@ model Opportunity {
   @@index([createdById])
   @@index([nextStepDueDate])
   @@map("opportunities")
+}
+
+// Relación N:M entre personas y empresas. Person.companyId/roleTitle se
+// mantienen temporalmente como espejo de la relación principal.
+model PersonCompanyRelationship {
+  id             String       @id @default(cuid())
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  personId       String
+  person         Person       @relation(fields: [personId], references: [id], onDelete: Cascade)
+  companyId      String
+  company        Company      @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  roles          String[]     @default(["contact"])
+  roleTitle      String?
+  isPrimary      Boolean      @default(false)
+  startedAt      DateTime?
+  endedAt        DateTime?
+  notes          String?      @db.Text
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+
+  @@unique([personId, companyId])
+  @@index([organizationId, companyId])
+  @@index([organizationId, personId])
+  @@map("person_company_relationships")
+}
+
+model CommercialPartner {
+  id              String       @id @default(cuid())
+  organizationId  String
+  organization    Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  displayName     String
+  kind            String       @default("external")
+  linkedCompanyId String?
+  linkedCompany   Company?     @relation("CommercialPartnerLinkedCompany", fields: [linkedCompanyId], references: [id], onDelete: SetNull)
+  linkedPersonId  String?
+  linkedPerson    Person?      @relation("CommercialPartnerLinkedPerson", fields: [linkedPersonId], references: [id], onDelete: SetNull)
+  isActive        Boolean      @default(true)
+  notes           String?      @db.Text
+  createdAt       DateTime     @default(now())
+  updatedAt       DateTime     @updatedAt
+
+  companyAssignments     CompanyCommercialPartner[]
+  opportunityAssignments OpportunityCommercialPartner[]
+  offerProfitShares      CommercialOfferProfitShare[]
+
+  @@index([organizationId, isActive])
+  @@index([linkedCompanyId])
+  @@index([linkedPersonId])
+  @@map("commercial_partners")
+}
+
+model CompanyCommercialPartner {
+  id                           String            @id @default(cuid())
+  organizationId               String
+  organization                 Organization      @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  companyId                    String
+  company                      Company           @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  commercialPartnerId          String
+  commercialPartner            CommercialPartner @relation(fields: [commercialPartnerId], references: [id], onDelete: Cascade)
+  role                         String
+  defaultProfitSharePercentage Decimal?          @db.Decimal(5, 2)
+  notes                        String?           @db.Text
+  isActive                     Boolean           @default(true)
+  createdAt                    DateTime          @default(now())
+  updatedAt                    DateTime          @updatedAt
+
+  opportunityAssignments OpportunityCommercialPartner[]
+
+  @@unique([companyId, commercialPartnerId])
+  @@index([organizationId, companyId])
+  @@index([commercialPartnerId])
+  @@map("company_commercial_partners")
+}
+
+model OpportunityCommercialPartner {
+  id                         String                    @id @default(cuid())
+  organizationId             String
+  organization               Organization              @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  opportunityId              String
+  opportunity                Opportunity               @relation(fields: [opportunityId], references: [id], onDelete: Cascade)
+  commercialPartnerId        String
+  commercialPartner          CommercialPartner         @relation(fields: [commercialPartnerId], references: [id], onDelete: Cascade)
+  companyCommercialPartnerId String?
+  companyCommercialPartner   CompanyCommercialPartner? @relation(fields: [companyCommercialPartnerId], references: [id], onDelete: SetNull)
+  role                       String
+  profitSharePercentage      Decimal?                  @db.Decimal(5, 2)
+  notes                      String?                   @db.Text
+  createdAt                  DateTime                  @default(now())
+  updatedAt                  DateTime                  @updatedAt
+
+  @@unique([opportunityId, commercialPartnerId])
+  @@index([organizationId, opportunityId])
+  @@index([commercialPartnerId])
+  @@map("opportunity_commercial_partners")
+}
+
+model CommercialOffer {
+  id                        String       @id @default(cuid())
+  organizationId            String
+  organization              Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  opportunityId             String
+  opportunity               Opportunity  @relation(fields: [opportunityId], references: [id], onDelete: Cascade)
+  versionNumber             Int
+  status                    String       @default("draft")
+  offerorName               String
+  presenterTeamMemberId     String?
+  presenterTeamMember       TeamMember?  @relation(fields: [presenterTeamMemberId], references: [id], onDelete: SetNull)
+  presenterNameSnapshot     String?
+  productName               String?
+  sentAt                    DateTime?
+  validBusinessDays         Int?
+  validUntil                DateTime?
+  pricingUnit               String       @default("CLP")
+  plusVat                   Boolean      @default(true)
+  exchangeRateToClp         Decimal?     @db.Decimal(18, 6)
+  exchangeRateDate          DateTime?
+  exchangeRateSource        String?
+  executiveSummary          String?      @db.Text
+  painSummary               String?      @db.Text
+  solutionSummary           String?      @db.Text
+  implementationPlan        String?      @db.Text
+  outOfScope                String?      @db.Text
+  commercialTerms           String?      @db.Text
+  risks                     String?      @db.Text
+  nextSteps                 String?      @db.Text
+  economicScope             String?
+  economicScopeLabel        String?
+  economicBaseNetAmount     Decimal?     @db.Decimal(18, 4)
+  projectCostAmount         Decimal?     @db.Decimal(18, 4)
+  distributableProfitAmount Decimal?     @db.Decimal(18, 4)
+  createdVia                String       @default("manual")
+  createdById               String?
+  createdBy                 User?        @relation(fields: [createdById], references: [id], onDelete: SetNull)
+  sourceFingerprint         String?
+  sourceRefs                Json?
+  extractionConfidence      Float?
+  createdAt                 DateTime     @default(now())
+  updatedAt                 DateTime     @updatedAt
+
+  lineItems    CommercialOfferLineItem[]
+  documents    CommercialOfferDocument[]
+  profitShares CommercialOfferProfitShare[]
+
+  @@unique([opportunityId, versionNumber])
+  @@unique([organizationId, sourceFingerprint])
+  @@index([organizationId, status])
+  @@index([opportunityId, versionNumber])
+  @@index([validUntil])
+  @@index([createdById])
+  @@map("commercial_offers")
+}
+
+model CommercialOfferLineItem {
+  id                String          @id @default(cuid())
+  organizationId    String
+  organization      Organization    @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  commercialOfferId String
+  commercialOffer   CommercialOffer @relation(fields: [commercialOfferId], references: [id], onDelete: Cascade)
+  type              String
+  description       String
+  quantity          Decimal?        @db.Decimal(18, 4)
+  amount            Decimal         @db.Decimal(18, 4)
+  pricingUnit       String
+  frequency         String?
+  startMonth        Int?
+  endMonth          Int?
+  billingTrigger    String?
+  sortOrder         Int             @default(0)
+  createdAt         DateTime        @default(now())
+  updatedAt         DateTime        @updatedAt
+
+  @@index([organizationId, commercialOfferId])
+  @@map("commercial_offer_line_items")
+}
+
+model CommercialOfferDocument {
+  id                    String               @id @default(cuid())
+  organizationId        String
+  organization          Organization         @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  commercialOfferId     String
+  commercialOffer       CommercialOffer      @relation(fields: [commercialOfferId], references: [id], onDelete: Cascade)
+  name                  String
+  documentType          String?
+  externalUrl           String?
+  entityContextSourceId String?
+  entityContextSource   EntityContextSource? @relation(fields: [entityContextSourceId], references: [id], onDelete: SetNull)
+  versionLabel          String?
+  notes                 String?              @db.Text
+  createdAt             DateTime             @default(now())
+  updatedAt             DateTime             @updatedAt
+
+  @@index([organizationId, commercialOfferId])
+  @@index([entityContextSourceId])
+  @@map("commercial_offer_documents")
+}
+
+model CommercialOfferProfitShare {
+  id                      String             @id @default(cuid())
+  organizationId          String
+  organization            Organization       @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  commercialOfferId       String
+  commercialOffer         CommercialOffer    @relation(fields: [commercialOfferId], references: [id], onDelete: Cascade)
+  beneficiaryType         String
+  commercialPartnerId     String?
+  commercialPartner       CommercialPartner? @relation(fields: [commercialPartnerId], references: [id], onDelete: SetNull)
+  beneficiaryNameSnapshot String
+  percentage              Decimal            @db.Decimal(5, 2)
+  amount                  Decimal            @db.Decimal(18, 4)
+  createdAt               DateTime           @default(now())
+  updatedAt               DateTime           @updatedAt
+
+  @@unique([commercialOfferId, beneficiaryType, commercialPartnerId])
+  @@index([organizationId, commercialOfferId])
+  @@index([commercialPartnerId])
+  @@map("commercial_offer_profit_shares")
+}
+
+model BusinessHoliday {
+  id             String       @id @default(cuid())
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  date           DateTime     @db.Date
+  name           String
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+
+  @@unique([organizationId, date])
+  @@index([organizationId, date])
+  @@map("business_holidays")
 }
 
 model Activity {
@@ -599,15 +845,16 @@ model User {
   createdAt      DateTime      @default(now())
   updatedAt      DateTime      @updatedAt
 
-  teamMember           TeamMember?
-  createdCompanies     Company[]
-  createdPeople        Person[]
-  createdOpportunities Opportunity[]
-  createdActivities    Activity[]
-  createdNotes         Note[]
-  createdSavedViews    SavedView[]
-  passwordResetTokens  PasswordResetToken[]
-  reviewedInboundLeads InboundLead[]        @relation("InboundLeadReviewedBy")
+  teamMember              TeamMember?
+  createdCompanies        Company[]
+  createdPeople           Person[]
+  createdOpportunities    Opportunity[]
+  createdActivities       Activity[]
+  createdNotes            Note[]
+  createdCommercialOffers CommercialOffer[]
+  createdSavedViews       SavedView[]
+  passwordResetTokens     PasswordResetToken[]
+  reviewedInboundLeads    InboundLead[]        @relation("InboundLeadReviewedBy")
 
   @@index([organizationId])
   @@map("users")
@@ -628,8 +875,9 @@ model TeamMember {
   createdAt      DateTime     @default(now())
   updatedAt      DateTime     @updatedAt
 
-  assignedActivities  Activity[] @relation("ActivityAssignee")
-  completedActivities Activity[] @relation("ActivityCompletedBy")
+  assignedActivities        Activity[]        @relation("ActivityAssignee")
+  completedActivities       Activity[]        @relation("ActivityCompletedBy")
+  presentedCommercialOffers CommercialOffer[]
 
   @@index([organizationId])
   @@map("team_members")
@@ -769,6 +1017,8 @@ model EntityContextSource {
   uploadedBy      String
   createdAt       DateTime     @default(now())
   updatedAt       DateTime     @updatedAt
+
+  commercialOfferDocuments CommercialOfferDocument[]
 
   @@index([organizationId, entityType, entityId])
   @@index([organizationId, status])

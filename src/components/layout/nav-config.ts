@@ -1,5 +1,6 @@
 import {
   Building2Icon,
+  CalendarDaysIcon,
   CableIcon,
   CheckSquareIcon,
   ClipboardListIcon,
@@ -74,6 +75,11 @@ export const ADMIN_SECTION: NavSection = {
       href: "/admin/settings/stages",
       label: "Etapas del pipeline",
       icon: ListOrderedIcon,
+    },
+    {
+      href: "/admin/settings/holidays",
+      label: "Feriados comerciales",
+      icon: CalendarDaysIcon,
     },
     {
       href: "/admin/settings/telegram",
