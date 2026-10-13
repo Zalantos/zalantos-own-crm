@@ -35,6 +35,10 @@ enum ProposalStatus {
   rejected
   partially_approved
   applied
+  partially_applied
+  failed
+  partially_reverted
+  reverted
 }
 
 enum CustomFieldType {
@@ -700,6 +704,11 @@ model CRMChangeProposal {
   meeting         Meeting?       @relation(fields: [meetingId], references: [id], onDelete: Cascade)
   // meeting | agent | enrichment
   source          String         @default("meeting")
+  // legacy | web | telegram | mcp | meeting | enrichment | workflow
+  channel         String         @default("legacy")
+  // User that originated the AI action. Logical ref so historical rows and
+  // service-generated changes can keep null without coupling retention to User.
+  initiatedBy     String?
   // Denormalized context (backfilled from the meeting for legacy rows).
   companyId       String?
   opportunityId   String?
@@ -717,6 +726,7 @@ model CRMChangeProposal {
   reviewedBy      String?
   reviewedAt      DateTime?
   applyStartedAt  DateTime?
+  completedAt     DateTime?
   createdAt       DateTime       @default(now())
 
   items CRMChangeItem[]
@@ -724,6 +734,8 @@ model CRMChangeProposal {
   @@index([organizationId])
   @@index([meetingId])
   @@index([status])
+  @@index([organizationId, channel, createdAt])
+  @@index([initiatedBy])
   @@index([chatThreadId])
   @@index([contextSourceId])
   @@index([personId])
@@ -789,45 +801,64 @@ model EntityContextProfile {
 }
 
 model CRMChangeItem {
-  id             String            @id @default(cuid())
-  organizationId String
-  organization   Organization      @relation(fields: [organizationId], references: [id], onDelete: Restrict)
-  proposalId     String
-  proposal       CRMChangeProposal @relation(fields: [proposalId], references: [id], onDelete: Cascade)
+  id               String            @id @default(cuid())
+  organizationId   String
+  organization     Organization      @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  proposalId       String
+  proposal         CRMChangeProposal @relation(fields: [proposalId], references: [id], onDelete: Cascade)
   // stage_change | create_task | add_contact | link_contact | update_pain |
-  // add_note | update_sponsor | update_decision_maker | update_field
-  type           String
+  // add_note | update_sponsor | update_decision_maker | update_field |
+  // log_activity | create_meeting | update_task | update_note |
+  // update_activity | update_meeting
+  type             String
   // Target entity type: company | opportunity | person | activity | note
-  entity         String
+  entity           String
   // Logical reference (no FK); null when the item creates a new entity.
-  entityId       String?
-  beforeValue    Json?
-  afterValue     Json?
+  entityId         String?
+  beforeValue      Json?
+  afterValue       Json?
   // Cadenas legibles calculadas al crear la propuesta (etiqueta + diff textual).
   // Se persisten para poder renderizar el card de revisión desde la DB (p. ej. en
   // la página /agent/proposals) con paridad con el chat. Null en propuestas
   // creadas antes de esta columna.
-  label          String?
-  before         String?           @db.Text
-  after          String?           @db.Text
-  confidence     Float
-  explanation    String            @db.Text
+  label            String?
+  before           String?           @db.Text
+  after            String?           @db.Text
+  confidence       Float
+  explanation      String            @db.Text
   // Verbatim quote from the transcript/document/user message that justifies
   // the change (distinct from the free-text explanation).
-  evidence       String?           @db.Text
+  evidence         String?           @db.Text
   // Existing person the dedup matched; set on link_contact items.
-  duplicateOfId  String?
-  approved       Boolean           @default(false)
+  duplicateOfId    String?
+  approved         Boolean           @default(false)
+  // Safe AI changes execute immediately; destructive changes keep this true
+  // until the requester or an ADMIN approves them.
+  requiresApproval Boolean           @default(false)
+  // Stable order within a batch; legacy rows remain null.
+  sequence         Int?
   // pending | approved | rejected | applied | failed | reverted
-  status         String            @default("pending")
-  appliedAt      DateTime?
+  status           String            @default("pending")
+  appliedAt        DateTime?
+  // Canonical state immediately after applying. Revert compares the current
+  // touched fields with this snapshot so it never overwrites newer work.
+  appliedSnapshot  Json?
+  undoExpiresAt    DateTime?
+  failureCode      String?
+  failureMessage   String?           @db.Text
   // What to undo when reverting an applied item:
   // { createdEntityId?, opportunityId?, prevDecisionMakerId?, prevSponsorId? }.
-  revertData     Json?
-  revertedAt     DateTime?
+  revertData       Json?
+  revertedAt       DateTime?
+  revertedBy       String?
+  causedByItemId   String?
+  causedByItem     CRMChangeItem?    @relation("CRMChangeItemEffects", fields: [causedByItemId], references: [id], onDelete: SetNull)
+  effects          CRMChangeItem[]   @relation("CRMChangeItemEffects")
 
   @@index([organizationId])
   @@index([proposalId])
+  @@index([causedByItemId])
+  @@index([undoExpiresAt])
   @@map("crm_change_items")
 }
 

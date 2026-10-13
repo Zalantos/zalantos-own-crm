@@ -34,7 +34,6 @@ import {
   assertCompany,
   assertOpportunityOfCompany,
   assertPeople,
-  defaultWriteToolDeps,
   emptyToNull,
   isoDateString,
   resolveAssignee,
@@ -47,7 +46,7 @@ import {
 const FUTURE_TOLERANCE_MS = 24 * 60 * 60 * 1000;
 
 const INSTANT_RULE =
-  "Se aplica al instante SI es el único cambio del turno; si hay otro cambio en el mismo turno, queda junto a él en una propuesta para revisar.";
+  "Se aplica al instante y queda disponible en Actividad de IA para deshacer.";
 
 // Estados que acepta el agente: "pending" es el nombre natural de una tarea
 // abierta y se guarda como "todo" (columna "Por hacer" del tablero).
@@ -152,13 +151,19 @@ export const updateTaskInputSchema = z.object({
     .nullable()
     .optional()
     .describe(
-      "Id del miembro del equipo (o de su usuario); null para dejarla sin responsable",
+      "Id del miembro del equipo (o de su usuario); 'me' asigna al usuario actual y null la deja sin responsable",
     ),
   assigneeEmail: z
     .string()
     .optional()
     .describe(
       "Email del miembro del equipo responsable (alternativa a assigneeId)",
+    ),
+  assigneeName: z
+    .string()
+    .optional()
+    .describe(
+      "Nombre del responsable; si es ambiguo, resolvelo antes con list_team_members",
     ),
   completedById: z
     .string()
@@ -191,7 +196,7 @@ type UpdateTaskArgs = z.output<typeof updateTaskInputSchema>;
 
 export function buildActivityWriteTools(
   ctx: AgentToolContext,
-  deps: WriteToolDeps = defaultWriteToolDeps,
+  deps?: WriteToolDeps,
 ) {
   const base: WriteBase = {
     organizationId: ctx.organizationId,
@@ -199,7 +204,6 @@ export function buildActivityWriteTools(
     createdVia: "agent",
     metadata: { via: "agent" },
   };
-
   async function runTaskUpdate(args: UpdateTaskArgs) {
     const task = await ctx.db.activity.findUnique({
       where: { id: args.taskId },
@@ -237,10 +241,14 @@ export function buildActivityWriteTools(
     }
     if (args.assigneeId === null) {
       input.assigneeId = null;
-    } else if (args.assigneeId || args.assigneeEmail) {
+    } else if (args.assigneeId || args.assigneeEmail || args.assigneeName) {
       const assignee = await resolveAssignee(ctx.db, {
-        assigneeId: args.assigneeId ?? undefined,
+        assigneeId:
+          args.assigneeId === "me"
+            ? ctx.userId
+            : (args.assigneeId ?? undefined),
         assigneeEmail: args.assigneeEmail,
+        assigneeName: args.assigneeName,
       });
       input.assigneeId = assignee?.id ?? null;
     }
@@ -269,8 +277,8 @@ export function buildActivityWriteTools(
     }
 
     const changes = diffTaskUpdate(task, input);
-    // Pedir lo que ya está (p. ej. completar una tarea hecha) no es un
-    // cambio: no consume el "único cambio del turno" ni genera propuesta.
+    // Pedir lo que ya está (p. ej. completar una tarea hecha) no genera un
+    // cambio ni una entrada vacía en la bitácora.
     if (Object.keys(changes).length === 0) {
       return { status: "unchanged" as const, taskId: task.id };
     }
@@ -340,7 +348,7 @@ export function buildActivityWriteTools(
       after: summaryParts.join(" · "),
     };
 
-    if (ctx.turnState.changeCount === 0) {
+    if (deps && ctx.turnState.changeCount === 0) {
       ctx.turnState.changeCount += 1;
       const result = await deps.transaction(ctx.organizationId, (tx) =>
         applyTaskUpdate(tx, base, task.id, changes),
@@ -434,7 +442,7 @@ export function buildActivityWriteTools(
           ),
         };
 
-        if (ctx.turnState.changeCount === 0) {
+        if (deps && ctx.turnState.changeCount === 0) {
           ctx.turnState.changeCount += 1;
           const revert = await deps.transaction(ctx.organizationId, (tx) =>
             insertLoggedActivity(tx, base, input),
@@ -511,7 +519,7 @@ export function buildActivityWriteTools(
           ),
         };
 
-        if (ctx.turnState.changeCount === 0) {
+        if (deps && ctx.turnState.changeCount === 0) {
           ctx.turnState.changeCount += 1;
           const revert = await deps.transaction(ctx.organizationId, (tx) =>
             insertManualMeeting(tx, base, input),
@@ -538,6 +546,37 @@ export function buildActivityWriteTools(
     update_task: defineAgentTool({
       description: `Modifica una tarea existente por taskId: tipo, estado (pending, in_progress, blocked, done), fecha planificada, vencimiento, responsable, quién la completó, título, descripción, motivo de bloqueo o prioridad. Solo se cambian los campos enviados. No existe el estado "cancelled". Los responsables son miembros del equipo interno. ${INSTANT_RULE} Resolvé taskId con list_tasks y el resto de ids con search_crm; nunca inventes un id.`,
       inputSchema: updateTaskInputSchema,
+      execute: runTaskUpdate,
+    }),
+
+    assign_task: defineAgentTool({
+      description:
+        "Asigna, reasigna o quita el responsable de una tarea. Podés identificarlo por assigneeId, assigneeEmail o assigneeName; usá assigneeId=null para dejar la tarea sin responsable. Se aplica al instante y queda en Actividad de IA para deshacer.",
+      inputSchema: z
+        .object({
+          taskId: z.string().min(1).describe("Id de la tarea (de list_tasks)"),
+          assigneeId: z
+            .string()
+            .nullable()
+            .optional()
+            .describe(
+              "Id del miembro o usuario; 'me' asigna al usuario actual; null quita el responsable",
+            ),
+          assigneeEmail: z.string().optional(),
+          assigneeName: z.string().optional(),
+        })
+        .refine(
+          (value) =>
+            [
+              Object.hasOwn(value, "assigneeId"),
+              Boolean(value.assigneeEmail),
+              Boolean(value.assigneeName),
+            ].filter(Boolean).length === 1,
+          {
+            message:
+              "Indicá exactamente uno entre assigneeId, assigneeEmail o assigneeName; usá assigneeId=null para quitarlo",
+          },
+        ),
       execute: runTaskUpdate,
     }),
 

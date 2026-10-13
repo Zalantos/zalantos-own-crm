@@ -14,8 +14,4 @@ export const agentConfig = {
   maxContextMessages: 30,
   // Chars of an attachment injected inline; the rest is paged via read_attachment.
   attachmentInlineCharLimit: 12_000,
-  // Máximo de ítems que una propuesta puede tener para confirmarse por chat
-  // ("sí"/"aplicala"). Un solo ítem se confirma por texto; con 2 o más se
-  // redirige a la web para revisar el diff completo antes de aplicar.
-  maxChatConfirmItems: 1,
 };

@@ -1,8 +1,8 @@
 import type { Prisma } from "@prisma/client";
-import { withOrgTransaction, type TenantClient } from "@/lib/tenant";
-import { approvalFromConfidence } from "@/lib/crm/proposal-policy";
+import type { TenantClient } from "@/lib/tenant";
+import { applyProposal } from "@/lib/meeting-intelligence/apply";
 import { agentConfig } from "./config";
-import type { AgentToolContext, PendingInstantChange } from "./executor";
+import type { AgentToolContext } from "./executor";
 
 export type AgentProposalItemInput = {
   type:
@@ -16,14 +16,17 @@ export type AgentProposalItemInput = {
     | "create_task"
     | "log_activity"
     | "create_meeting"
-    | "update_task";
+    | "update_task"
+    | "update_note"
+    | "update_activity"
+    | "update_meeting";
   entity:
     "company" | "opportunity" | "person" | "note" | "activity" | "meeting";
   entityId: string | null;
   beforeValue: Prisma.InputJsonValue | null;
   afterValue: Prisma.InputJsonValue;
   explanation: string;
-  // Model's self-assessed confidence (0-1); drives auto-approval and the card.
+  // Model's self-assessed confidence (0-1); drives attention styling only.
   confidence: number;
   // Verbatim quote from the user's message/document that justifies the change.
   evidence?: string | null;
@@ -33,6 +36,7 @@ export type AgentProposalItemInput = {
   label: string;
   before: string;
   after: string;
+  requiresApproval?: boolean;
 };
 
 type ProposalItemResult = {
@@ -44,7 +48,80 @@ type ProposalItemResult = {
   evidence: string | null;
   confidence: number;
   approved: boolean;
+  status: string;
+  undoExpiresAt: Date | null;
+  failureCode: string | null;
+  failureMessage: string | null;
 };
+
+type AgentMutationResult = {
+  status: string;
+  changeBatchId: string;
+  proposalId: string;
+  items: ProposalItemResult[];
+  appliedItems: ProposalItemResult[];
+  failedItems: ProposalItemResult[];
+  pendingItems: ProposalItemResult[];
+  errors: { itemId: string; code: string; message: string }[];
+  undoExpiresAt: Date | null;
+};
+
+function mutationResult(
+  status: string,
+  proposalId: string,
+  items: ProposalItemResult[],
+): AgentMutationResult {
+  const appliedItems = items.filter((item) => item.status === "applied");
+  const failedItems = items.filter((item) => item.status === "failed");
+  const pendingItems = items.filter((item) =>
+    ["pending", "approved"].includes(item.status),
+  );
+  const expirations = appliedItems
+    .map((item) => item.undoExpiresAt)
+    .filter((value): value is Date => value != null)
+    .sort((left, right) => left.getTime() - right.getTime());
+  return {
+    status,
+    changeBatchId: proposalId,
+    proposalId,
+    items,
+    appliedItems,
+    failedItems,
+    pendingItems,
+    errors: failedItems.map((item) => ({
+      itemId: item.id,
+      code: item.failureCode ?? "apply_failed",
+      message: item.failureMessage ?? "No se pudo aplicar el cambio",
+    })),
+    undoExpiresAt: expirations[0] ?? null,
+  };
+}
+
+export async function readMutationResult(
+  db: TenantClient,
+  proposalId: string,
+): Promise<AgentMutationResult> {
+  const proposal = await db.cRMChangeProposal.findUnique({
+    where: { id: proposalId },
+    include: { items: { orderBy: [{ sequence: "asc" }, { id: "asc" }] } },
+  });
+  if (!proposal) throw new Error("No se pudo leer el cambio");
+  const items = proposal.items.map((item): ProposalItemResult => ({
+    id: item.id,
+    label: item.label ?? "",
+    before: item.before ?? "",
+    after: item.after ?? "",
+    explanation: item.explanation,
+    evidence: item.evidence ?? null,
+    confidence: item.confidence,
+    approved: item.approved,
+    status: item.status,
+    undoExpiresAt: item.undoExpiresAt,
+    failureCode: item.failureCode,
+    failureMessage: item.failureMessage,
+  }));
+  return mutationResult(proposal.status, proposal.id, items);
+}
 
 type CreateAgentProposalInput = {
   threadId: string;
@@ -54,13 +131,17 @@ type CreateAgentProposalInput = {
   opportunityId?: string | null;
   items: AgentProposalItemInput[];
   model?: string;
+  channel: AgentToolContext["channel"];
+  initiatedBy: string;
 };
 
 // Los creates anidados no pasan por el auto-scoping: org explícita.
 function toItemCreateData(
   organizationId: string,
   item: AgentProposalItemInput,
+  sequence: number,
 ) {
+  const requiresApproval = item.requiresApproval ?? false;
   return {
     organizationId,
     type: item.type,
@@ -76,14 +157,16 @@ function toItemCreateData(
     label: item.label,
     before: item.before,
     after: item.after,
-    // Pre-approve only high-confidence items; the rest need a tick.
-    ...approvalFromConfidence(item.confidence),
+    requiresApproval,
+    sequence,
+    // Confidence is now an attention signal, not an execution gate.
+    approved: !requiresApproval,
+    status: requiresApproval ? "pending" : "approved",
   };
 }
 
-// The only write path available to "proposal"-classified agent tools: it
-// persists a reviewable CRMChangeProposal. Items start approved so the user
-// only unticks what they disagree with before applying.
+// Persists the batch and its items before any CRM write. Safe items start
+// approved for immediate execution; destructive items remain pending.
 export async function createAgentProposal(
   db: TenantClient,
   organizationId: string,
@@ -93,6 +176,8 @@ export async function createAgentProposal(
     opportunityId,
     items,
     model,
+    channel,
+    initiatedBy,
   }: CreateAgentProposalInput,
 ) {
   // Proposal-level confidence = the least confident item (the weakest link).
@@ -104,13 +189,17 @@ export async function createAgentProposal(
     data: {
       organizationId,
       source: "agent",
+      channel,
+      initiatedBy,
       companyId,
       opportunityId: opportunityId ?? null,
       chatThreadId: threadId,
       confidence: proposalConfidence,
       model: model ?? agentConfig.modelSpec,
       items: {
-        create: items.map((item) => toItemCreateData(organizationId, item)),
+        create: items.map((item, index) =>
+          toItemCreateData(organizationId, item, index),
+        ),
       },
     },
     include: { items: true },
@@ -128,6 +217,10 @@ export async function createAgentProposal(
       evidence: item.evidence ?? null,
       confidence: item.confidence,
       approved: item.approved,
+      status: item.status,
+      undoExpiresAt: item.undoExpiresAt,
+      failureCode: item.failureCode,
+      failureMessage: item.failureMessage,
     })),
   };
 }
@@ -141,11 +234,17 @@ export async function appendItemsToProposal(
   proposalId: string,
   items: AgentProposalItemInput[],
 ) {
+  const currentCount = await db.cRMChangeItem.count({ where: { proposalId } });
   const proposal = await db.cRMChangeProposal.update({
     where: { id: proposalId },
     data: {
+      status: "pending",
+      applyStartedAt: null,
+      completedAt: null,
       items: {
-        create: items.map((item) => toItemCreateData(organizationId, item)),
+        create: items.map((item, index) =>
+          toItemCreateData(organizationId, item, currentCount + index),
+        ),
       },
     },
     include: { items: true },
@@ -163,79 +262,63 @@ export async function appendItemsToProposal(
       evidence: item.evidence ?? null,
       confidence: item.confidence,
       approved: item.approved,
+      status: item.status,
+      undoExpiresAt: item.undoExpiresAt,
+      failureCode: item.failureCode,
+      failureMessage: item.failureMessage,
     })),
   };
 }
 
-async function revertPendingInstant(
-  ctx: AgentToolContext,
-  pending: PendingInstantChange,
-) {
-  await withOrgTransaction(ctx.organizationId, async (tx) => {
-    if (pending.undo) {
-      await pending.undo(tx);
-    } else if (pending.kind === "note") {
-      await tx.note.delete({
-        where: { id: pending.entityId, organizationId: ctx.organizationId },
-      });
-    } else {
-      await tx.activity.delete({
-        where: { id: pending.entityId, organizationId: ctx.organizationId },
-      });
-    }
-  });
-}
-
-// Punto único por el que pasa cualquier cambio del turno que no pueda (o ya
-// no pueda) aplicarse al instante: field/stage/contact/opportunity/company
-// (siempre) y note/task (a partir del segundo cambio del turno). Todo cae en
-// UNA sola CRMChangeProposal por turno — crea la primera vez, agrega después.
-// `items` acepta más de uno porque update_record_fields puede proponer varios
-// campos en un mismo llamado; para el resto de las tools es un array de 1.
+// Punto único para cualquier mutación del agente. Persiste el lote antes de
+// escribir y aplica inmediatamente todos los ítems no destructivos. Una misma
+// conversación conserva un lote por turno; llamadas posteriores agregan y
+// aplican únicamente los nuevos ítems.
 export async function registerProposalChange(
   ctx: AgentToolContext,
   target: { companyId: string | null; opportunityId?: string | null },
   items: AgentProposalItemInput[],
-): Promise<{
-  status: "proposal_created" | "moved_to_proposal";
-  proposalId: string;
-  items: ProposalItemResult[];
-}> {
+): Promise<AgentMutationResult> {
   const state = ctx.turnState;
   state.changeCount += 1;
   const isFirstChange = state.changeCount === 1;
-
-  const pending = state.pendingInstant;
-  const itemsToAdd = pending ? [pending.item, ...items] : items;
 
   const result = state.proposalId
     ? await appendItemsToProposal(
         ctx.db,
         ctx.organizationId,
         state.proposalId,
-        itemsToAdd,
+        items,
       )
     : await createAgentProposal(ctx.db, ctx.organizationId, {
         threadId: ctx.threadId,
         companyId: target.companyId,
         opportunityId: target.opportunityId ?? null,
-        items: itemsToAdd,
+        items,
         model: ctx.proposalModel,
+        channel: ctx.channel,
+        initiatedBy: ctx.userId,
       });
 
   state.proposalId = result.proposalId;
 
-  // Recién ahora, con el ítem ya persistido en la propuesta, borrar la fila
-  // que se había escrito al instante (si falla la creación de arriba, la
-  // fila original queda intacta en vez de perderse).
-  if (pending) {
-    await revertPendingInstant(ctx, pending);
-    state.pendingInstant = null;
+  if (ctx.autoApply === false) {
+    return mutationResult(
+      isFirstChange ? "proposal_created" : "moved_to_proposal",
+      result.proposalId,
+      result.items,
+    );
   }
 
-  return {
-    status: isFirstChange ? "proposal_created" : "moved_to_proposal",
-    proposalId: result.proposalId,
-    items: result.items,
-  };
+  const hasDirectItems = items.some((item) => !item.requiresApproval);
+  if (hasDirectItems) {
+    await applyProposal(
+      ctx.db,
+      ctx.organizationId,
+      result.proposalId,
+      ctx.userId,
+    );
+  }
+
+  return readMutationResult(ctx.db, result.proposalId);
 }

@@ -320,6 +320,8 @@ export function createTestContext(seed: Record<string, Row[]> = {}) {
     db: fake.db,
     userId: "user-1",
     threadId: "thread-1",
+    channel: "mcp",
+    autoApply: false,
     proposalModel: "mcp",
     pageContext: null,
     turnState: { changeCount: 0, pendingInstant: null, proposalId: null },

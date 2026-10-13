@@ -115,6 +115,7 @@ export async function POST(req: Request) {
       db,
       userId,
       threadId,
+      channel: "web",
       pageContext,
     }),
     stopWhen: stepCountIs(agentConfig.maxSteps),
@@ -128,8 +129,7 @@ export async function POST(req: Request) {
         started_at: startedAt.toISOString(),
         duration_ms: Date.now() - startedAt.getTime(),
         status: "error",
-        error_message:
-          error instanceof Error ? error.message : String(error),
+        error_message: error instanceof Error ? error.message : String(error),
         workflow_name: "agent-copilot",
         agent_name: "crm-copilot",
         source_type: "backend",

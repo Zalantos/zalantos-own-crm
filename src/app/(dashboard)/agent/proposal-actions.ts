@@ -8,51 +8,57 @@ import {
   applyProposal,
   getProposalContext,
   revertItem,
+  revertProposal,
 } from "@/lib/meeting-intelligence/apply";
 import {
   dispatchIntegrationEvent,
   type OrgGatewayConfig,
 } from "@/lib/integrations/gateway";
 import { appendTimelineEvent } from "@/lib/timeline";
+import { requireCanApproveProposal } from "@/lib/agent/proposal-authorization";
 
-// Agent proposals are tied to a chat thread; only the thread owner can act on
-// them. Meeting proposals are managed from /meetings, not from here.
-async function requireOwnedAgentProposal(
-  db: TenantClient,
-  proposalId: string,
-  userId: string,
-) {
+async function requireOrgProposal(db: TenantClient, proposalId: string) {
   const proposal = await db.cRMChangeProposal.findUnique({
     where: { id: proposalId },
-    select: { id: true, source: true, status: true, chatThreadId: true },
+    select: {
+      id: true,
+      source: true,
+      status: true,
+      chatThreadId: true,
+      initiatedBy: true,
+      meeting: { select: { createdBy: true } },
+    },
   });
-  if (!proposal || proposal.source !== "agent" || !proposal.chatThreadId) {
-    throw new Error("Propuesta no encontrada");
-  }
-  const thread = await db.agentChatThread.findUnique({
-    where: { id: proposal.chatThreadId },
-    select: { userId: true },
-  });
-  if (thread?.userId !== userId) {
-    throw new Error("Propuesta no encontrada");
-  }
+  if (!proposal) throw new Error("Cambio no encontrado");
   return proposal;
 }
 
 export type AgentProposalState = {
   status: string;
-  items: { id: string; approved: boolean; status: string }[];
+  items: {
+    id: string;
+    approved: boolean;
+    status: string;
+    undoExpiresAt: Date | null;
+    failureMessage: string | null;
+  }[];
 };
 
 export async function getAgentProposalState(
   proposalId: string,
 ): Promise<AgentProposalState> {
-  const { user, db } = await requireOrgContext();
-  const proposal = await requireOwnedAgentProposal(db, proposalId, user.id);
+  const { db } = await requireOrgContext();
+  const proposal = await requireOrgProposal(db, proposalId);
   const items = await db.cRMChangeItem.findMany({
     where: { proposalId },
-    orderBy: { id: "asc" },
-    select: { id: true, approved: true, status: true },
+    orderBy: [{ sequence: "asc" }, { id: "asc" }],
+    select: {
+      id: true,
+      approved: true,
+      status: true,
+      undoExpiresAt: true,
+      failureMessage: true,
+    },
   });
   return { status: proposal.status, items };
 }
@@ -63,12 +69,16 @@ export async function setAgentItemApproval(
   approved: boolean,
 ) {
   const { user, db } = await requireOrgContext();
-  const proposal = await requireOwnedAgentProposal(db, proposalId, user.id);
-  if (proposal.status !== "pending") {
+  const proposal = await requireCanApproveProposal(db, proposalId, user);
+  if (!["pending", "partially_applied"].includes(proposal.status)) {
     throw new Error("La propuesta ya no se puede editar");
   }
   const { count } = await db.cRMChangeItem.updateMany({
-    where: { id: itemId, proposalId, proposal: { status: "pending" } },
+    where: {
+      id: itemId,
+      proposalId,
+      proposal: { status: { in: ["pending", "partially_applied"] } },
+    },
     data: { approved, status: approved ? "approved" : "pending" },
   });
   if (count !== 1) throw new Error("La propuesta ya no se puede editar");
@@ -91,7 +101,7 @@ function entityPaths(context: {
 
 export async function applyAgentProposal(proposalId: string) {
   const { user, org, db } = await requireOrgContext();
-  const proposal = await requireOwnedAgentProposal(db, proposalId, user.id);
+  const proposal = await requireCanApproveProposal(db, proposalId, user);
 
   const result = await applyProposal(db, org.id, proposalId, user.id);
 
@@ -171,7 +181,7 @@ export async function revertAgentItem(
   itemId: string,
 ): Promise<{ error?: string }> {
   const { user, org, db } = await requireOrgContext();
-  await requireOwnedAgentProposal(db, proposalId, user.id);
+  await requireOrgProposal(db, proposalId);
   try {
     await revertItem(db, org.id, itemId, user.id);
   } catch (error) {
@@ -187,13 +197,40 @@ export async function revertAgentItem(
   return {};
 }
 
+export async function revertAgentProposal(
+  proposalId: string,
+): Promise<{ error?: string; reverted?: number }> {
+  const { user, org, db } = await requireOrgContext();
+  await requireOrgProposal(db, proposalId);
+  try {
+    const result = await revertProposal(db, org.id, proposalId, user.id);
+    revalidatePath("/agent/proposals");
+    return result;
+  } catch (error) {
+    return {
+      error: error instanceof Error ? error.message : "No se pudo deshacer.",
+    };
+  }
+}
+
 export async function rejectAgentProposal(proposalId: string) {
   const { user, org, db } = await requireOrgContext();
-  await requireOwnedAgentProposal(db, proposalId, user.id);
+  await requireCanApproveProposal(db, proposalId, user);
 
+  const applied = await db.cRMChangeItem.count({
+    where: { proposalId, status: "applied" },
+  });
   const { count } = await db.cRMChangeProposal.updateMany({
-    where: { id: proposalId, status: "pending" },
-    data: { status: "rejected", reviewedBy: user.id, reviewedAt: new Date() },
+    where: {
+      id: proposalId,
+      status: { in: ["pending", "partially_applied"] },
+    },
+    data: {
+      status: applied > 0 ? "partially_approved" : "rejected",
+      reviewedBy: user.id,
+      reviewedAt: new Date(),
+      completedAt: new Date(),
+    },
   });
   if (count !== 1) throw new Error("La propuesta ya no se puede rechazar");
   await db.cRMChangeItem.updateMany({

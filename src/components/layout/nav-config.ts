@@ -48,10 +48,14 @@ export const CRM_SECTION: NavSection = {
     { href: "/meetings", label: "Meeting Intelligence", icon: VideoIcon },
     {
       href: "/agent/proposals",
-      label: "Propuestas del agente",
+      label: "Actividad de IA",
       icon: ClipboardListIcon,
     },
-    { href: "/audit-log", label: "Historial de Actividades", icon: HistoryIcon },
+    {
+      href: "/audit-log",
+      label: "Historial de Actividades",
+      icon: HistoryIcon,
+    },
   ],
 };
 

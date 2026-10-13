@@ -54,7 +54,7 @@ fijo `OpportunityStage`.
 ## DEC-003 — Propuestas de cambio CRM con revisión humana
 
 **Fecha:** 2026-07-01 (`meeting_intelligence`)  
-**Estado:** active
+**Estado:** superseded por DEC-009
 
 **Contexto:** La IA no debe escribir directamente en entidades CRM sin supervisión.
 
@@ -70,6 +70,38 @@ textual, confianza y capacidad de revertir items aplicados.
 
 - UI de revisión en meetings y agente.
 - Lógica de apply/revert en `src/lib/meeting-intelligence/apply.ts`.
+
+---
+
+## DEC-009 — Ejecución directa de IA con trazabilidad reversible
+
+**Fecha:** 2026-10-09 (`ai_change_traceability`)
+**Estado:** active
+
+**Contexto:** La aprobación previa de toda mutación convirtió la bandeja en un
+cuello de botella. El producto adopta confianza operativa en la IA, manteniendo
+una salida segura ante errores.
+
+**Decisión:**
+
+1. Toda mutación no destructiva de web, Telegram, MCP, reuniones o
+   enriquecimiento se registra y ejecuta inmediatamente por ítem.
+2. `CRMChangeProposal` y `CRMChangeItem` son la bitácora única. Baja confianza,
+   fallos y pendientes destructivos se destacan en Actividad de IA.
+3. Los cambios aplicados se pueden deshacer durante 90 días sólo si los campos
+   o registros siguen intactos; el lote se prevalida completo y se revierte en
+   orden inverso.
+4. Sólo eliminaciones y fusiones que hagan desaparecer datos requieren
+   aprobación previa del solicitante o un `ADMIN`.
+5. Efectos internos de workflows se enlazan al cambio causante. Efectos externos
+   no se consideran reversibles en esta fase.
+
+**Consecuencias:**
+
+- `/agent/proposals` conserva su URL pero pasa a ser Actividad de IA org-wide.
+- Los lotes pueden quedar parcialmente aplicados; un fallo no revierte hermanos.
+- Las propuestas pendientes existentes no se autoaplican.
+- La reversión evita sobrescribir ediciones posteriores y nunca borra en cascada.
 
 ---
 
@@ -154,9 +186,9 @@ otras fuentes externas.
    `sourceType` string (`upload`, `linkedin`, `url`, …).
 2. Perfil consolidado `EntityContextProfile` (summary, keyFacts, topics) visible
    en la ficha.
-3. Política híbrida: perfil + nota de contexto se escriben automático; cambios a
-   campos CRM van por `CRMChangeProposal` con `source=enrichment` (siempre
-   pending, sin auto-aprobación).
+3. Perfil + nota de contexto se escriben automáticamente. Desde DEC-009, los
+   campos CRM también se aplican de inmediato y quedan trazados en
+   `CRMChangeProposal(source=enrichment, channel=enrichment)`.
 4. Conectores externos futuros solo normalizan a texto/metadata y crean un
    `EntityContextSource`; el pipeline de análisis es el mismo.
 
@@ -189,14 +221,14 @@ Telegram sin sesión web. No se quiere acoplar el Bot API dentro del monolito.
 2. Vínculo permanente `TelegramLink` (`telegramChatId` ↔ `userId` + org) y
    códigos efímeros `TelegramLinkCode`.
 3. Memoria conversacional en `AgentChatThread` (no buffer de n8n).
-4. Confirmación de propuestas pequeñas por tool `confirm_pending_proposal`;
-   propuestas grandes → revisión web.
+4. Ejecución directa de cambios no destructivos; `confirm_pending_proposal`
+   queda para acciones destructivas y propuestas legacy, sin límite de tamaño.
 
 **Alternativas consideradas:**
 
 - Bot Telegram nativo dentro de Next.js.
 - Memoria conversacional solo en n8n.
-- Aprobar cualquier tamaño de propuesta por chat.
+- Mantener aprobación previa para toda mutación.
 
 **Consecuencias:**
 

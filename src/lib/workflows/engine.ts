@@ -26,7 +26,47 @@ export async function evaluateWorkflows(
       const actions = workflow.actionsJson as unknown as Action[];
       const messages: string[] = [];
       for (const action of actions) {
-        messages.push(await executeAction(db, organizationId, action, event));
+        const result = await executeAction(db, organizationId, action, event);
+        messages.push(result.message);
+        if (event.changeProposalId && result.createdActivity) {
+          const sequence = await db.cRMChangeItem.count({
+            where: { proposalId: event.changeProposalId },
+          });
+          const appliedAt = new Date();
+          await db.cRMChangeItem.create({
+            data: {
+              organizationId,
+              proposalId: event.changeProposalId,
+              type: "create_task",
+              entity: "activity",
+              entityId: result.createdActivity.id,
+              beforeValue: undefined,
+              afterValue: {
+                title: result.createdActivity.title,
+                activityType: result.createdActivity.type,
+                dueDate: result.createdActivity.dueDate?.toISOString() ?? null,
+                status: result.createdActivity.status,
+              },
+              label: `Workflow: ${result.createdActivity.title}`,
+              before: "—",
+              after: result.createdActivity.title,
+              confidence: 1,
+              explanation: `Actividad creada por workflow "${workflow.name}" como efecto de un cambio de IA.`,
+              approved: true,
+              requiresApproval: false,
+              sequence,
+              status: "applied",
+              appliedAt,
+              undoExpiresAt: new Date(appliedAt.getTime() + 90 * 86_400_000),
+              appliedSnapshot: {
+                createdEntityId: result.createdActivity.id,
+                record: JSON.parse(JSON.stringify(result.createdActivity)),
+              },
+              revertData: { createdEntityId: result.createdActivity.id },
+              causedByItemId: event.causedByItemId ?? null,
+            },
+          });
+        }
       }
 
       await db.workflowLog.create({

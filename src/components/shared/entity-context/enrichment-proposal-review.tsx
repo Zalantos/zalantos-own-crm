@@ -31,6 +31,10 @@ const PROPOSAL_STATUS_LABELS: Record<string, string> = {
   approved: "Aprobada",
   partially_approved: "Aprobada parcialmente",
   applied: "Aplicada",
+  partially_applied: "Aplicada parcialmente",
+  failed: "Fallida",
+  partially_reverted: "Deshecha parcialmente",
+  reverted: "Deshecha",
   rejected: "Rechazada",
 };
 
@@ -81,9 +85,19 @@ export function EnrichmentProposalReview({
   const router = useRouter();
   const [pending, startTransition] = useTransition();
   const isApplying = proposal.status === "applying";
-  const isFinal = ["applied", "partially_approved", "rejected"].includes(
-    proposal.status,
+  const hasPendingItems = proposal.items.some((item) =>
+    ["pending", "approved"].includes(item.status),
   );
+  const isFinal =
+    [
+      "applied",
+      "failed",
+      "partially_approved",
+      "partially_reverted",
+      "reverted",
+      "rejected",
+    ].includes(proposal.status) ||
+    (proposal.status === "partially_applied" && !hasPendingItems);
   const approvedCount = proposal.items.filter((item) => item.approved).length;
   const appliedCount = proposal.items.filter(
     (item) => item.status === "applied",
@@ -117,7 +131,7 @@ export function EnrichmentProposalReview({
     <div className="space-y-3 rounded-md border p-4">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div className="flex items-center gap-2">
-          <h3 className="text-sm font-medium">Propuesta de enriquecimiento</h3>
+          <h3 className="text-sm font-medium">Cambios de enriquecimiento</h3>
           <Badge variant="outline">
             {PROPOSAL_STATUS_LABELS[proposal.status] ?? proposal.status}
           </Badge>

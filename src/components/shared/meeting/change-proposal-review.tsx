@@ -55,6 +55,10 @@ const PROPOSAL_STATUS_LABELS: Record<string, string> = {
   approved: "Aprobada",
   partially_approved: "Aprobada parcialmente",
   applied: "Aplicada",
+  partially_applied: "Aplicada parcialmente",
+  failed: "Fallida",
+  partially_reverted: "Deshecha parcialmente",
+  reverted: "Deshecha",
   rejected: "Rechazada",
 };
 
@@ -134,9 +138,19 @@ export function ChangeProposalReview({
   const [pending, startTransition] = useTransition();
   const [editingId, setEditingId] = useState<string | null>(null);
   const isApplying = proposal.status === "applying";
-  const isFinal = ["applied", "partially_approved", "rejected"].includes(
-    proposal.status,
+  const hasPendingItems = proposal.items.some((item) =>
+    ["pending", "approved"].includes(item.status),
   );
+  const isFinal =
+    [
+      "applied",
+      "failed",
+      "partially_approved",
+      "partially_reverted",
+      "reverted",
+      "rejected",
+    ].includes(proposal.status) ||
+    (proposal.status === "partially_applied" && !hasPendingItems);
 
   function run(fn: () => Promise<void>, message: string) {
     startTransition(async () => {
@@ -156,7 +170,7 @@ export function ChangeProposalReview({
     <div className="space-y-3 rounded-md border p-4">
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2">
-          <span className="text-sm font-medium">Propuesta de cambios</span>
+          <span className="text-sm font-medium">Cambios de la reunión</span>
           <Badge variant={confidenceVariant(proposal.confidence)}>
             {Math.round(proposal.confidence * 100)}% confianza
           </Badge>

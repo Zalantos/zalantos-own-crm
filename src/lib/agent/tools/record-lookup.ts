@@ -73,40 +73,78 @@ export async function assertPeople(db: TenantClient, personIds: string[]) {
   return unique;
 }
 
-export type AssigneeRef = { assigneeId?: string; assigneeEmail?: string };
+export type AssigneeRef = {
+  assigneeId?: string;
+  assigneeEmail?: string;
+  assigneeName?: string;
+};
 
 // Los responsables de tareas son TeamMember. Se acepta el id del
-// TeamMember, el id del User vinculado o un email (del TeamMember o de su
-// usuario), y solo miembros activos.
+// TeamMember, el id del User vinculado, un email (del TeamMember o de su
+// usuario) o un nombre inequívoco, y solo miembros activos.
 export async function resolveAssignee(
   db: TenantClient,
   ref: AssigneeRef,
 ): Promise<{ id: string; name: string } | null> {
   const assigneeId = emptyToNull(ref.assigneeId);
   const assigneeEmail = emptyToNull(ref.assigneeEmail)?.trim();
-  if (!assigneeId && !assigneeEmail) return null;
+  const assigneeName = emptyToNull(ref.assigneeName)?.trim();
+  if (!assigneeId && !assigneeEmail && !assigneeName) return null;
+
+  if (assigneeName && !assigneeId && !assigneeEmail) {
+    const exact = await db.teamMember.findMany({
+      where: {
+        isActive: true,
+        name: { equals: assigneeName, mode: "insensitive" },
+      },
+      take: 2,
+      select: { id: true, name: true },
+    });
+    if (exact.length === 1) return exact[0];
+    if (exact.length > 1) {
+      throw new Error(
+        `Hay más de un responsable llamado "${assigneeName}". Usá list_team_members y enviá assigneeId o assigneeEmail.`,
+      );
+    }
+    const partial = await db.teamMember.findMany({
+      where: {
+        isActive: true,
+        name: { contains: assigneeName, mode: "insensitive" },
+      },
+      take: 3,
+      select: { id: true, name: true },
+    });
+    if (partial.length === 1) return partial[0];
+    if (partial.length > 1) {
+      throw new Error(
+        `El nombre "${assigneeName}" coincide con varias personas. Usá list_team_members y enviá assigneeId o assigneeEmail.`,
+      );
+    }
+  }
 
   const member = await db.teamMember.findFirst({
     where: {
       isActive: true,
       ...(assigneeId
         ? { OR: [{ id: assigneeId }, { userId: assigneeId }] }
-        : {
-            OR: [
-              { email: { equals: assigneeEmail, mode: "insensitive" } },
-              {
-                user: {
-                  email: { equals: assigneeEmail, mode: "insensitive" },
+        : assigneeEmail
+          ? {
+              OR: [
+                { email: { equals: assigneeEmail, mode: "insensitive" } },
+                {
+                  user: {
+                    email: { equals: assigneeEmail, mode: "insensitive" },
+                  },
                 },
-              },
-            ],
-          }),
+              ],
+            }
+          : { id: "__not_found__" }),
     },
     select: { id: true, name: true },
   });
   if (!member) {
     throw new Error(
-      `Responsable no encontrado o inactivo: ${assigneeId ?? assigneeEmail}`,
+      `Responsable no encontrado o inactivo: ${assigneeId ?? assigneeEmail ?? assigneeName}`,
     );
   }
   return member;

@@ -17,15 +17,15 @@ Fuente de verdad: `prisma/schema.prisma`.
 
 ### CRM core
 
-| Modelo        | Tabla           | Relaciones clave                                                  |
-| ------------- | --------------- | ----------------------------------------------------------------- |
-| `Company`     | `companies`     | → opportunities, people, meetings, activities                     |
-| `Person`      | `people`        | → company (opcional); roles en opportunities                      |
-| `Opportunity` | `opportunities` | → company, stage, decisionMaker, sponsor                          |
-| `Activity`    | `activities`    | → company/person/opportunity, assignee y completedBy (TeamMember) |
-| `ActivityPerson` | `activity_people` | Personas que participaron de una actividad registrada (N:M)    |
-| `Note`        | `notes`         | → company/person/opportunity                                      |
-| `InboundLead` | `inbound_leads` | Bandeja previa a Company/Person/Opportunity; ver sección propia    |
+| Modelo           | Tabla             | Relaciones clave                                                  |
+| ---------------- | ----------------- | ----------------------------------------------------------------- |
+| `Company`        | `companies`       | → opportunities, people, meetings, activities                     |
+| `Person`         | `people`          | → company (opcional); roles en opportunities                      |
+| `Opportunity`    | `opportunities`   | → company, stage, decisionMaker, sponsor                          |
+| `Activity`       | `activities`      | → company/person/opportunity, assignee y completedBy (TeamMember) |
+| `ActivityPerson` | `activity_people` | Personas que participaron de una actividad registrada (N:M)       |
+| `Note`           | `notes`           | → company/person/opportunity                                      |
+| `InboundLead`    | `inbound_leads`   | Bandeja previa a Company/Person/Opportunity; ver sección propia   |
 
 ### Extensibilidad
 
@@ -49,8 +49,8 @@ Fuente de verdad: `prisma/schema.prisma`.
 | ------------------- | ---------------------- | ----------------------------------------------- |
 | `Meeting`           | `meetings`             | `processingStatus` enum; evidencia y propuestas |
 | `Evidence`          | `evidence`             | Archivos en R2; `extractedText`                 |
-| `CRMChangeProposal` | `crm_change_proposals` | Origen `meeting` o `agent`                      |
-| `CRMChangeItem`     | `crm_change_items`     | Items atómicos con reversión                    |
+| `CRMChangeProposal` | `crm_change_proposals` | Lote/bitácora IA, canal e iniciador             |
+| `CRMChangeItem`     | `crm_change_items`     | Cambios atómicos aplicables y reversibles       |
 | `TimelineEvent`     | `timeline_events`      | Historial por empresa                           |
 
 ### Agente IA
@@ -89,7 +89,8 @@ usuario y organización, las tools operan con `forOrg(organizationId)`.
 - `EntityType`: company, person, opportunity, activity, note, meeting
 - `Role`: ADMIN, MEMBER
 - `ProcessingStatus`: pending → extracting → transcribing → analyzing → ready | failed
-- `ProposalStatus`: pending, applying, approved, rejected, partially_approved, applied
+- `ProposalStatus`: pending, applying, approved, rejected, partially_approved,
+  applied, partially_applied, failed, partially_reverted, reverted
 - `CustomFieldType`: text, number, boolean, date, select, multiselect
 
 ## Reglas de negocio por entidad
@@ -108,8 +109,8 @@ usuario y organización, las tools operan con `forOrg(organizationId)`.
   `nextStepDueDate`, `lastContactAt`.
 - Estos campos viven en `Company` para aparecer en el dashboard/detalle de
   empresa aunque no exista una oportunidad abierta.
-- Enriquecimiento IA puede proponer cambios a estos campos, pero no los aplica
-  directo; pasan por `CRMChangeProposal(source=enrichment)`.
+- Enriquecimiento IA aplica estos campos inmediatamente y registra el lote en
+  `CRMChangeProposal(source=enrichment, channel=enrichment)`.
 
 ### Opportunity
 
@@ -136,11 +137,26 @@ usuario y organización, las tools operan con `forOrg(organizationId)`.
 
 Tipos conocidos: `stage_change`, `create_task`, `add_contact`, `link_contact`,
 `update_pain`, `add_note`, `update_sponsor`, `update_decision_maker`,
-`update_field`.
+`update_field`, `log_activity`, `create_meeting`, `update_task`, `update_note`,
+`update_activity`, `update_meeting`.
 
 Estados: pending → approved/rejected → applied/failed/reverted.
 
-`revertData` JSON permite deshacer cambios aplicados.
+`CRMChangeProposal` agrupa un turno o análisis y guarda `channel`
+(`web|telegram|mcp|meeting|enrichment|legacy`), `initiatedBy` y `completedAt`.
+Cada `CRMChangeItem` guarda orden, si requiere aprobación, `beforeValue`,
+snapshot posterior canónico, error estructurado, datos de reversión, vencimiento
+y usuario que revirtió. `causedByItemId` enlaza efectos internos de workflows.
+
+Las mutaciones no destructivas se aplican inmediatamente, incluso con confianza
+menor a `0.8`; estas últimas se destacan como “requiere atención”. Borrar o
+fusionar datos requiere aprobación previa. Cada ítem se aplica en su propia
+transacción para permitir lotes parcialmente aplicados.
+
+`revertData` permite deshacer durante 90 días. Antes de restaurar se comparan
+los campos afectados con `appliedSnapshot`; las creaciones sólo se eliminan si
+siguen intactas y no tienen dependencias ajenas. La reversión grupal prevalida
+todo el lote y ejecuta los ítems en orden inverso.
 
 Campos de presentación (migración `change_item_display_strings`): `label`,
 `before`, `after` — cadenas legibles persistidas al crear la propuesta para
@@ -155,8 +171,8 @@ en propuestas anteriores a la migración.
   `analyzing` → `ready` | `failed`.
 - `CRMChangeProposal.source` admite `enrichment`; refs lógicas
   `contextSourceId` y `personId`.
-- Política híbrida: perfil + nota (`createdVia=enrichment`) auto; campos CRM
-  solo vía propuesta (siempre pending, sin auto-aprobación).
+- Política: perfil y salidas derivadas no forman parte de la bitácora reversible;
+  los campos operativos CRM se aplican y registran de inmediato.
 
 ### Activity (tablero Kanban de tareas)
 
@@ -212,6 +228,8 @@ en propuestas anteriores a la migración.
   mayúsculas, dentro de la misma empresa.
 - `CRMChangeProposal.applyStartedAt` implementa el lease del estado `applying`
   para evitar aplicaciones concurrentes y permitir reintentos tras un crash.
+- `CRMChangeItem.undoExpiresAt` vence 90 días después de `appliedAt`; la fila se
+  conserva indefinidamente aunque ya no pueda deshacerse.
 
 ### Inbound Leads
 
@@ -223,7 +241,7 @@ en propuestas anteriores a la migración.
   criterio que `Opportunity.status`). Abrir el detalle no cambia el estado;
   requiere una acción explícita.
 - Idempotencia del canal entrante: `@@unique([organizationId, source,
-  externalId])`. El ingest hace `create` directo y resuelve el conflicto
+externalId])`. El ingest hace `create` directo y resuelve el conflicto
   (P2002) con un lookup — no un `findFirst` previo, que sería vulnerable a
   condiciones de carrera con reintentos concurrentes de n8n.
 - La conversión reutiliza `findExistingPerson` (mismo dedup que el resto del
@@ -272,9 +290,10 @@ Ver `@@index` en `schema.prisma` — la mayoría compuestos con `organizationId`
 | `activity_task_kanban_fields`          | Tablero Kanban de tareas: `plannedDate`, `completedById`, `blockedReason`, `statusChangedAt` en `activities`; remapea `status` (`pending`→`todo`, `completed`→`done`) |
 | `person_dedup_and_proposal_apply_lock` | Normaliza identidad de personas, hace único el email por organización y agrega el lease `applying` a propuestas                                                       |
 | `add_mcp_access_token`                 | Tokens personales MCP con revocación, último uso, thread lazy y RLS                                                                                                   |
-| `inbound_leads`                        | Modelo `InboundLead` (bandeja `/leads`) con idempotencia por `(organizationId, source, externalId)`                                                                  |
-| `inbound_leads_rls`                     | RLS `tenant_isolation` sobre `inbound_leads` (separada porque la migración base de RLS ya está desplegada)                                                           |
+| `inbound_leads`                        | Modelo `InboundLead` (bandeja `/leads`) con idempotencia por `(organizationId, source, externalId)`                                                                   |
+| `inbound_leads_rls`                    | RLS `tenant_isolation` sobre `inbound_leads` (separada porque la migración base de RLS ya está desplegada)                                                            |
 | `logged_activities_and_task_priority`  | Aditiva: `priority`, `occurredAt`, `durationMinutes`, `channel`, `outcomes` en `activities`; tabla `activity_people` con RLS                                          |
+| `ai_change_traceability`               | Canal/iniciador/fin de lote, snapshots, errores, expiración de reversión y relación de efectos internos; estados parciales/fallidos/revertidos                        |
 
 ## Qué no debe romperse
 

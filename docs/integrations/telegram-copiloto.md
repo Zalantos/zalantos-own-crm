@@ -29,6 +29,7 @@ Todos son `POST`. Los resultados de negocio responden `200`; solo fallos reales
 de server → `500`.
 
 ### `POST /api/telegram/link`
+
 Handshake de vinculación (`/vincular <código>`).
 
 - Request: `{ "code": "ABC123", "chat_id": 123456789, "username": "juan" }`
@@ -38,6 +39,7 @@ Handshake de vinculación (`/vincular <código>`).
   - chat ya vinculado (con código válido) → `{ "success": false, "error": "already_linked" }`
 
 ### `POST /api/telegram/context`
+
 Gate barato: n8n lo llama **antes** de transcribir voz o invocar al modelo.
 
 - Request: `{ "chat_id": 123456789 }`
@@ -46,6 +48,7 @@ Gate barato: n8n lo llama **antes** de transcribir voz o invocar al modelo.
   - vinculado → `{ "user_id": "...", "org_id": "...", "full_name": "..." }`
 
 ### `POST /api/telegram/message`
+
 Conversación con el copiloto. Reconstruye el historial desde la DB (n8n solo
 manda el texto actual). Sin streaming.
 
@@ -64,6 +67,7 @@ Telegram Trigger
 ```
 
 Notas de configuración n8n:
+
 - Header `Authorization: Bearer {INTEGRATION_GATEWAY_SECRET}` en los 3 HTTP Request.
 - Si el nodo HTTP usa `fullResponse: true`, la respuesta queda en `$json.body.*`
   (p. ej. `{{ $json.body.output }}` para el mensaje final de Telegram).
@@ -76,13 +80,14 @@ Un usuario admin genera su código en **Configuración → Telegram**
 Lo envía al bot con `/vincular <código>`. Desde ahí la sección lista los chats
 vinculados y permite desvincularlos (soft-delete: `isActive = false`).
 
-## Confirmación de propuestas por chat
+## Ejecución y confirmación por chat
 
-Sin tarjeta interactiva en Telegram, el agente puede usar la tool
-`confirm_pending_proposal` (ver `src/lib/agent/tools/confirm-proposal.ts`)
-cuando el usuario aprueba o rechaza explícitamente una propuesta recién
-generada. Límite: `agentConfig.maxChatConfirmItems` (5). Si hay más cambios,
-se redirige a `/agent/proposals` en la web.
+Las mutaciones no destructivas se ejecutan inmediatamente y quedan registradas
+con `channel=telegram` en Actividad de IA. La tool
+`confirm_pending_proposal` se conserva para propuestas legacy y futuras
+acciones destructivas; el solicitante o un `ADMIN` puede aprobar o rechazar el
+lote completo por chat sin límite de ítems. La reversión y el detalle de
+conflictos están disponibles en `/agent/proposals` y por MCP.
 
 ## Variables de entorno
 

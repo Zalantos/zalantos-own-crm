@@ -147,13 +147,12 @@ async function loadTarget(
   }
 }
 
-// Risky mutations: these tools never write CRM data directly — their only
-// side effect is creating a CRMChangeProposal that the user reviews in chat.
+// Non-destructive mutations are recorded first and then applied immediately.
 export function buildProposalTools(ctx: AgentToolContext) {
   return {
     update_record_fields: defineAgentTool({
       description:
-        "Propone cambios de campos sobre una empresa, oportunidad o persona (incluye campos custom con prefijo 'custom.'). NO aplica los cambios: crea una propuesta que el usuario revisa y aprueba en el chat.",
+        "Actualiza campos de una empresa, oportunidad o persona (incluye campos custom con prefijo 'custom.'). Se aplica al instante y queda en Actividad de IA para deshacer.",
       inputSchema: z.object({
         entity: entitySchema,
         entityId: z.string().min(1),
@@ -253,7 +252,7 @@ export function buildProposalTools(ctx: AgentToolContext) {
 
     change_stage: defineAgentTool({
       description:
-        "Propone un cambio de etapa de una oportunidad. NO lo aplica: crea una propuesta que el usuario aprueba en el chat. El valor de `stage` es el key de una etapa según list_writable_fields.",
+        "Cambia la etapa de una oportunidad al instante y registra el cambio para deshacer. El valor de `stage` es el key de una etapa según list_writable_fields.",
       inputSchema: z.object({
         opportunityId: z.string().min(1),
         stage: z.string().min(1),
@@ -313,7 +312,7 @@ export function buildProposalTools(ctx: AgentToolContext) {
 
     create_contact: defineAgentTool({
       description:
-        "Propone dar de alta un contacto nuevo en una empresa. NO lo crea: genera una propuesta que el usuario aprueba en el chat.",
+        "Crea o vincula un contacto en una empresa al instante y registra el cambio para deshacer.",
       inputSchema: z.object({
         companyId: z.string().min(1),
         firstName: z.string().min(1),
@@ -466,7 +465,7 @@ export function buildProposalTools(ctx: AgentToolContext) {
 
     create_opportunity: defineAgentTool({
       description:
-        "Propone dar de alta una oportunidad nueva en una empresa. NO la crea: genera una propuesta que el usuario aprueba en el chat.",
+        "Crea una oportunidad nueva en una empresa al instante y registra el cambio para deshacer.",
       inputSchema: z.object({
         companyId: z.string().min(1),
         name: z.string().min(1),
@@ -584,7 +583,7 @@ export function buildProposalTools(ctx: AgentToolContext) {
 
     create_company: defineAgentTool({
       description:
-        "Propone dar de alta una empresa nueva. NO la crea: genera una propuesta que el usuario aprueba en el chat.",
+        "Crea una empresa nueva al instante y registra el cambio para deshacer.",
       inputSchema: z.object({
         name: z.string().min(1),
         website: z.string().optional(),

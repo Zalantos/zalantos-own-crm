@@ -9,22 +9,16 @@ import {
 import { ACTIVITY_PRIORITIES } from "@/lib/activity-priority";
 import { ACTIVITY_STATUSES } from "@/lib/activity-status";
 import { ACTIVITY_TYPES } from "@/lib/activity-types";
-import {
-  defaultWriteToolDeps,
-  resolveAssignee,
-  type WriteToolDeps,
-} from "./record-lookup";
+import { resolveAssignee, type WriteToolDeps } from "./record-lookup";
 
 const emptyToNull = (value: string | undefined | null) =>
   value && value.trim() !== "" ? value : null;
 
-// Low-risk writes ("auto" en la política de riesgo): se aplican al instante
-// SOLO si son el único cambio del turno. Si el turno ya trae otro cambio (u
-// otra nota/tarea aparece después), quedan como ítem de una CRMChangeProposal
-// junto con el resto — ver registerProposalChange en proposals.ts.
+// Low-risk writes are persisted in the AI change ledger and applied
+// immediately by registerProposalChange.
 export function buildWriteSafeTools(
   ctx: AgentToolContext,
-  deps: WriteToolDeps = defaultWriteToolDeps,
+  deps?: WriteToolDeps,
 ) {
   // La empresa destino debe existir dentro de la org (una id ajena es
   // invisible para el cliente scoped).
@@ -41,7 +35,7 @@ export function buildWriteSafeTools(
   return {
     create_note: defineAgentTool({
       description:
-        "Crea una nota en el CRM asociada a una empresa (y opcionalmente a una oportunidad o persona). Se aplica al instante SI es el único cambio del turno; si hay otro cambio en el mismo turno, queda junto a él en una propuesta para revisar.",
+        "Crea una nota en el CRM asociada a una empresa (y opcionalmente a una oportunidad o persona). Se aplica al instante y queda disponible en Actividad de IA para deshacer.",
       inputSchema: z.object({
         companyId: z.string().min(1),
         opportunityId: z.string().optional(),
@@ -69,7 +63,7 @@ export function buildWriteSafeTools(
           after: body.length > 200 ? `${body.slice(0, 200)}…` : body,
         };
 
-        if (ctx.turnState.changeCount === 0) {
+        if (deps && ctx.turnState.changeCount === 0) {
           ctx.turnState.changeCount += 1;
           const note = await deps.transaction(
             ctx.organizationId,
@@ -110,7 +104,7 @@ export function buildWriteSafeTools(
             opportunityId: opportunityIdOrNull,
             item,
           };
-          return { status: "created", noteId: note.id };
+          return { status: "created" as const, noteId: note.id };
         }
 
         return registerProposalChange(
@@ -123,7 +117,7 @@ export function buildWriteSafeTools(
 
     create_task: defineAgentTool({
       description:
-        "Crea una tarea asociada a una empresa (y opcionalmente a una oportunidad o persona) con tipo, estado, fechas planificada/límite, responsable, autor de cierre, bloqueo y prioridad. Se aplica al instante SI es el único cambio del turno; si hay otro cambio en el mismo turno, queda junto a él en una propuesta para revisar.",
+        "Crea una tarea asociada a una empresa (y opcionalmente a una oportunidad o persona) con tipo, estado, fechas planificada/límite, responsable, autor de cierre, bloqueo y prioridad. Se aplica al instante y queda disponible en Actividad de IA para deshacer.",
       inputSchema: z.object({
         companyId: z.string().min(1),
         opportunityId: z.string().optional(),
@@ -139,12 +133,20 @@ export function buildWriteSafeTools(
         assigneeId: z
           .string()
           .optional()
-          .describe("Id del miembro del equipo responsable (o de su usuario)"),
+          .describe(
+            "Id del miembro del equipo responsable (o de su usuario); 'me' asigna al usuario actual",
+          ),
         assigneeEmail: z
           .string()
           .optional()
           .describe(
             "Email del miembro del equipo responsable (alternativa a assigneeId)",
+          ),
+        assigneeName: z
+          .string()
+          .optional()
+          .describe(
+            "Nombre del responsable; si es ambiguo, resolvelo antes con list_team_members",
           ),
         completedById: z.string().optional(),
         completedByEmail: z.string().optional(),
@@ -163,6 +165,7 @@ export function buildWriteSafeTools(
         dueDate,
         assigneeId,
         assigneeEmail,
+        assigneeName,
         completedById,
         completedByEmail,
         status,
@@ -181,8 +184,9 @@ export function buildWriteSafeTools(
         }
         await assertCompanyInOrg(companyId);
         const assignee = await resolveAssignee(ctx.db, {
-          assigneeId,
+          assigneeId: assigneeId === "me" ? ctx.userId : assigneeId,
           assigneeEmail,
+          assigneeName,
         });
         const completedBy = await resolveAssignee(ctx.db, {
           assigneeId: completedById,
@@ -231,7 +235,7 @@ export function buildWriteSafeTools(
             .join(" · "),
         };
 
-        if (ctx.turnState.changeCount === 0) {
+        if (deps && ctx.turnState.changeCount === 0) {
           ctx.turnState.changeCount += 1;
           const task = await deps.transaction(
             ctx.organizationId,
@@ -287,7 +291,7 @@ export function buildWriteSafeTools(
             opportunityId: opportunityIdOrNull,
             item,
           };
-          return { status: "created", taskId: task.id };
+          return { status: "created" as const, taskId: task.id };
         }
 
         return registerProposalChange(

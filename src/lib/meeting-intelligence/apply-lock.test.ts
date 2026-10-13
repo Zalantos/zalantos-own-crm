@@ -18,7 +18,7 @@ function createProposalDb(initial: ProposalState) {
         data,
       }: {
         where: {
-          status: string;
+          status: string | { in: string[] };
           applyStartedAt?: { lt: Date };
         };
         data: { status?: string; applyStartedAt?: Date };
@@ -27,7 +27,11 @@ function createProposalDb(initial: ProposalState) {
           !where.applyStartedAt ||
           (state.applyStartedAt != null &&
             state.applyStartedAt < where.applyStartedAt.lt);
-        if (state.status !== where.status || !timestampMatches) {
+        const statusMatches =
+          typeof where.status === "string"
+            ? state.status === where.status
+            : where.status.in.includes(state.status);
+        if (!statusMatches || !timestampMatches) {
           return { count: 0 };
         }
         state = {
@@ -83,6 +87,17 @@ describe("proposal apply lock", () => {
     assert.ok(
       (state().applyStartedAt?.getTime() ?? 0) > oldTimestamp.getTime(),
     );
+  });
+
+  it("retoma un lote parcialmente aplicado para ejecutar lo aprobado pendiente", async () => {
+    const { db, state } = createProposalDb({
+      status: "partially_applied",
+      applyStartedAt: null,
+      items: [{ status: "applied" }, { status: "approved" }],
+    });
+
+    assert.equal(await claimProposalForApply(db, "proposal-1"), null);
+    assert.equal(state().status, "applying");
   });
 
   it("returns the persisted result for a closed proposal", async () => {

@@ -16,24 +16,21 @@ import { buildConfirmProposalTools } from "./tools/confirm-proposal";
 import { buildAttachmentTools } from "./tools/attachments";
 import { buildContextSourceTools } from "./tools/context-sources";
 import { buildWebSearchTools } from "./tools/web-search";
+import { buildTeamMemberTools } from "./tools/team-members";
 
-// Nota/tarea ya escrita al instante en este turno porque era el primer (y por
-// ahora único) cambio. Si aparece un segundo cambio, se revierte esta fila y
-// `item` se reinserta como CRMChangeItem (ver registerProposalChange).
+// Estado mutable compartido por todas las tools de UN turno (mismo
+// buildAgentTools). No sobrevive entre turnos: se recrea en cada request.
+// Optional compatibility hook used only by the in-memory tool tests. Runtime
+// code always persists and applies through the change ledger.
 export type PendingInstantChange = {
   kind: "note" | "task" | "activity" | "meeting" | "task_update";
   entityId: string;
   companyId: string;
   opportunityId: string | null;
   item: AgentProposalItemInput;
-  // Cómo deshacer la escritura cuando no alcanza con borrar la fila
-  // (actividades registradas, reuniones, ediciones de tareas). Sin undo,
-  // note/task se borran por entityId.
   undo?: (tx: Prisma.TransactionClient) => Promise<void>;
 };
 
-// Estado mutable compartido por todas las tools de UN turno (mismo
-// buildAgentTools). No sobrevive entre turnos: se recrea en cada request.
 export type AgentTurnState = {
   changeCount: number;
   pendingInstant: PendingInstantChange | null;
@@ -45,6 +42,8 @@ export type AgentToolContext = {
   db: TenantClient;
   userId: string;
   threadId: string;
+  channel: "web" | "telegram" | "mcp";
+  autoApply?: boolean;
   proposalModel?: string;
   pageContext: ResolvedPageContext | null;
   turnState: AgentTurnState;
@@ -70,6 +69,7 @@ export function buildAgentToolDefinitions(ctx: AgentToolContext) {
     ...buildAnalyticsTools(ctx),
     ...buildTimelineTools(ctx),
     ...buildAgendaTools(ctx),
+    ...buildTeamMemberTools(ctx),
     ...buildMeetingTools(ctx),
     ...buildWriteSafeTools(ctx),
     ...buildActivityWriteTools(ctx),
@@ -102,14 +102,10 @@ function withErrorCapture(name: string, toolDefinition: Tool): Tool {
   } as Tool;
 }
 
-// Builds the tool set for one agent turn. Autonomy is enforced here by
-// construction: mutation tools live in write-proposal.ts and only ever create
-// CRMChangeProposal rows — there is no code path from them to a direct write.
-// La excepción son create_note/create_task (write-safe.ts), que escriben
-// directo SOLO si son el único cambio del turno; turnState (creado acá, una
-// vez por turno) es lo que decide eso y lo que junta cambios mixtos en una
-// sola propuesta. confirm_pending_proposal aplica una propuesta que el
-// usuario ya aprobó explícitamente en la conversación (no genera cambios nuevos).
+// Builds the tool set for one agent turn. Every runtime mutation first writes
+// CRMChangeProposal/CRMChangeItem and then uses the centralized apply engine.
+// turnState groups all mutations from the turn into the same traceable batch.
+// confirm_pending_proposal remains only for destructive or legacy batches.
 export function buildAgentTools(
   input: Omit<AgentToolContext, "turnState">,
 ): ToolSet {

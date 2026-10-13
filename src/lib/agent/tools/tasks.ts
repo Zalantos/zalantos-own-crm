@@ -23,6 +23,7 @@ export const listTasksInputSchema = z.object({
     .string()
     .optional()
     .describe("Email del miembro del equipo responsable"),
+  assigneeName: z.string().optional().describe("Nombre del responsable"),
   status: z
     .array(z.enum([...TASK_STATUS_INPUTS, "open"]))
     .optional()
@@ -69,10 +70,11 @@ export function buildTaskTools(ctx: AgentToolContext) {
           assigneeWhere = { assigneeId: null };
         } else if (args.assigneeId === "me") {
           assigneeWhere = { assignee: { userId: ctx.userId } };
-        } else if (args.assigneeId || args.assigneeEmail) {
+        } else if (args.assigneeId || args.assigneeEmail || args.assigneeName) {
           const assignee = await resolveAssignee(db, {
             assigneeId: args.assigneeId,
             assigneeEmail: args.assigneeEmail,
+            assigneeName: args.assigneeName,
           });
           assigneeWhere = { assigneeId: assignee?.id ?? null };
         }

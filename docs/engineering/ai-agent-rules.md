@@ -78,7 +78,8 @@ Actualizar docs cuando cambie:
 
 - `organizationId` obligatorio en writes de tenant.
 - Usar `forOrg(orgId)`, no `prismaSystem` para CRM.
-- Propuestas IA pasan por `CRMChangeProposal`, no escritura directa.
+- Toda mutación IA pasa por `CRMChangeProposal`/`CRMChangeItem`: las no
+  destructivas se aplican inmediatamente; borrar o fusionar requiere aprobación.
 
 ## Reglas de prompts / proveedores IA
 

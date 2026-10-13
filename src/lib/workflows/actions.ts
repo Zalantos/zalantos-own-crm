@@ -27,7 +27,7 @@ async function executeCreateActivity(
             }
           : {};
 
-  await db.activity.create({
+  const activity = await db.activity.create({
     data: {
       organizationId,
       ...linkField,
@@ -43,7 +43,10 @@ async function executeCreateActivity(
     },
   });
 
-  return `Actividad creada: "${action.title}"`;
+  return {
+    message: `Actividad creada: "${action.title}"`,
+    createdActivity: activity,
+  };
 }
 
 export async function executeAction(

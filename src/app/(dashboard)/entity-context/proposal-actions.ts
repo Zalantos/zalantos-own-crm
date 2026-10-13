@@ -11,16 +11,15 @@ import {
   isContextEntityType,
   type ContextEntityType,
 } from "@/lib/entity-context/types";
+import { requireCanApproveProposal } from "@/lib/agent/proposal-authorization";
 
 async function requirePendingProposal(
   db: Awaited<ReturnType<typeof requireOrgContext>>["db"],
   proposalId: string,
+  user: { id: string; role: string },
 ) {
-  const proposal = await db.cRMChangeProposal.findUnique({
-    where: { id: proposalId },
-    select: { status: true },
-  });
-  if (!proposal || proposal.status !== "pending") {
+  const proposal = await requireCanApproveProposal(db, proposalId, user);
+  if (!["pending", "partially_applied"].includes(proposal.status)) {
     throw new Error("La propuesta ya no se puede editar");
   }
 }
@@ -59,11 +58,18 @@ export async function setEnrichmentItemApproval(
       },
     },
   });
-  if (!item || item.proposal.status !== "pending") {
+  if (
+    !item ||
+    !["pending", "partially_applied"].includes(item.proposal.status)
+  ) {
     throw new Error("La propuesta ya no se puede editar");
   }
+  await requireCanApproveProposal(db, item.proposalId, user);
   const updated = await db.cRMChangeItem.updateMany({
-    where: { id: itemId, proposal: { status: "pending" } },
+    where: {
+      id: itemId,
+      proposal: { status: { in: ["pending", "partially_applied"] } },
+    },
     data: { approved, status: approved ? "approved" : "pending" },
   });
   if (updated.count !== 1)
@@ -94,12 +100,12 @@ export async function setAllEnrichmentItemsApproval(
 ) {
   const { user, org, db } = await requireOrgContext();
   if (!isContextEntityType(entityType)) throw new Error("entityType inválido");
-  await requirePendingProposal(db, proposalId);
+  await requirePendingProposal(db, proposalId, user);
 
   const { count } = await db.cRMChangeItem.updateMany({
     where: {
       proposalId,
-      proposal: { status: "pending" },
+      proposal: { status: { in: ["pending", "partially_applied"] } },
       status: { notIn: ["applied"] },
     },
     data: { approved, status: approved ? "approved" : "pending" },
@@ -138,7 +144,7 @@ export async function updateEnrichmentItemValue(
   entityId: string,
   afterValue: unknown,
 ): Promise<{ error?: string }> {
-  const { db } = await requireOrgContext();
+  const { user, db } = await requireOrgContext();
   if (!isContextEntityType(entityType)) {
     return { error: "entityType inválido" };
   }
@@ -148,6 +154,11 @@ export async function updateEnrichmentItemValue(
     include: { proposal: { select: { status: true } } },
   });
   if (!item) return { error: "El cambio no existe." };
+  try {
+    await requireCanApproveProposal(db, item.proposalId, user);
+  } catch (error) {
+    return { error: error instanceof Error ? error.message : "Sin permiso." };
+  }
   if (item.status === "applied") return { error: "El cambio ya fue aplicado." };
   if (
     ["applying", "applied", "partially_approved", "rejected"].includes(
@@ -168,7 +179,10 @@ export async function updateEnrichmentItemValue(
   }
 
   const updated = await db.cRMChangeItem.updateMany({
-    where: { id: itemId, proposal: { status: "pending" } },
+    where: {
+      id: itemId,
+      proposal: { status: { in: ["pending", "partially_applied"] } },
+    },
     data: {
       afterValue: parsed.data as Prisma.InputJsonValue,
       approved: true,
@@ -190,6 +204,7 @@ export async function applyEnrichmentProposalAction(
 ) {
   const { user, org, db } = await requireOrgContext();
   if (!isContextEntityType(entityType)) throw new Error("entityType inválido");
+  await requireCanApproveProposal(db, proposalId, user);
   await applyProposal(db, org.id, proposalId, user.id);
   await revalidateEntityPath(entityType, entityId);
 }
@@ -201,14 +216,30 @@ export async function rejectEnrichmentProposalAction(
 ) {
   const { user, org, db } = await requireOrgContext();
   if (!isContextEntityType(entityType)) throw new Error("entityType inválido");
+  await requireCanApproveProposal(db, proposalId, user);
 
+  const applied = await db.cRMChangeItem.count({
+    where: { proposalId, status: "applied" },
+  });
   const rejected = await db.cRMChangeProposal.updateMany({
-    where: { id: proposalId, status: "pending" },
-    data: { status: "rejected", reviewedBy: user.id, reviewedAt: new Date() },
+    where: {
+      id: proposalId,
+      status: { in: ["pending", "partially_applied"] },
+    },
+    data: {
+      status: applied > 0 ? "partially_approved" : "rejected",
+      reviewedBy: user.id,
+      reviewedAt: new Date(),
+      completedAt: new Date(),
+    },
   });
   if (rejected.count !== 1) {
     throw new Error("La propuesta ya no se puede rechazar");
   }
+  await db.cRMChangeItem.updateMany({
+    where: { proposalId, status: { notIn: ["applied", "reverted", "failed"] } },
+    data: { approved: false, status: "rejected" },
+  });
   const proposal = await db.cRMChangeProposal.findUniqueOrThrow({
     where: { id: proposalId },
     select: {

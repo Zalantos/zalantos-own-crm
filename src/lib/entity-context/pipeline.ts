@@ -14,6 +14,7 @@ import {
 } from "@/lib/entity-context/mapping";
 import { buildEntityContextSnapshot } from "@/lib/entity-context/snapshot";
 import { resolveContextEntity } from "@/lib/entity-context/resolve-entity";
+import { applyProposal } from "@/lib/meeting-intelligence/apply";
 import {
   isContextEntityType,
   type ContextEntityType,
@@ -58,9 +59,7 @@ async function upsertContextNote(
     data: {
       organizationId: params.organizationId,
       companyId:
-        params.entityType === "company"
-          ? params.entityId
-          : params.companyId,
+        params.entityType === "company" ? params.entityId : params.companyId,
       personId:
         params.entityType === "person" ? params.entityId : params.personId,
       opportunityId:
@@ -260,7 +259,7 @@ export async function runEntityContextPipeline(
     const primarySource = extracted[0].source;
     const batchLabel = describeBatch(extracted.map((item) => item.source));
 
-    await withOrgTransaction(organizationId, async (tx) => {
+    const proposalId = await withOrgTransaction(organizationId, async (tx) => {
       await tx.entityContextProfile.upsert({
         where: {
           organizationId_entityType_entityId: {
@@ -304,12 +303,14 @@ export async function runEntityContextPipeline(
         });
       }
 
-      // Enrichment proposals always stay pending (hybrid policy).
+      let createdProposalId: string | null = null;
       if (items.length > 0) {
-        await tx.cRMChangeProposal.create({
+        const proposal = await tx.cRMChangeProposal.create({
           data: {
             organizationId,
             source: "enrichment",
+            channel: "enrichment",
+            initiatedBy: primarySource.uploadedBy,
             companyId: resolved.companyId,
             opportunityId: resolved.opportunityId,
             personId: resolved.personId,
@@ -318,7 +319,7 @@ export async function runEntityContextPipeline(
             model,
             rawModelOutput: raw as unknown as Prisma.InputJsonValue,
             items: {
-              create: items.map((item) => ({
+              create: items.map((item, sequence) => ({
                 organizationId,
                 type: item.type,
                 entity: item.entity,
@@ -331,12 +332,14 @@ export async function runEntityContextPipeline(
                 explanation: item.explanation,
                 evidence: item.evidence || null,
                 duplicateOfId: item.duplicateOfId ?? null,
-                approved: false,
-                status: "pending",
+                approved: true,
+                status: "approved",
+                sequence,
               })),
             },
           },
         });
+        createdProposalId = proposal.id;
       }
 
       await tx.entityContextSource.updateMany({
@@ -357,7 +360,16 @@ export async function runEntityContextPipeline(
           actorId: primarySource.uploadedBy,
         });
       }
+      return createdProposalId;
     });
+    if (proposalId) {
+      await applyProposal(
+        db,
+        organizationId,
+        proposalId,
+        primarySource.uploadedBy,
+      );
+    }
   } catch (error) {
     await markSourcesFailed(db, batchIds, error);
     throw error;

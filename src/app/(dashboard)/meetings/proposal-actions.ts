@@ -6,6 +6,7 @@ import { requireOrgContext, type TenantClient } from "@/lib/tenant";
 import { applyProposal, revertItem } from "@/lib/meeting-intelligence/apply";
 import { appendTimelineEvent } from "@/lib/timeline";
 import { ITEM_AFTER_VALUE_SCHEMAS } from "@/lib/zod/proposal-item";
+import { requireCanApproveProposal } from "@/lib/agent/proposal-authorization";
 
 async function getMeetingContext(db: TenantClient, meetingId: string) {
   return db.meeting.findUniqueOrThrow({
@@ -14,12 +15,13 @@ async function getMeetingContext(db: TenantClient, meetingId: string) {
   });
 }
 
-async function requirePendingProposal(db: TenantClient, proposalId: string) {
-  const proposal = await db.cRMChangeProposal.findUnique({
-    where: { id: proposalId },
-    select: { status: true },
-  });
-  if (!proposal || proposal.status !== "pending") {
+async function requirePendingProposal(
+  db: TenantClient,
+  proposalId: string,
+  user: { id: string; role: string },
+) {
+  const proposal = await requireCanApproveProposal(db, proposalId, user);
+  if (!["pending", "partially_applied"].includes(proposal.status)) {
     throw new Error("La propuesta ya no se puede editar");
   }
 }
@@ -39,11 +41,18 @@ export async function setItemApproval(
       proposal: { select: { status: true } },
     },
   });
-  if (!item || item.proposal.status !== "pending") {
+  if (
+    !item ||
+    !["pending", "partially_applied"].includes(item.proposal.status)
+  ) {
     throw new Error("La propuesta ya no se puede editar");
   }
+  await requireCanApproveProposal(db, item.proposalId, user);
   const updated = await db.cRMChangeItem.updateMany({
-    where: { id: itemId, proposal: { status: "pending" } },
+    where: {
+      id: itemId,
+      proposal: { status: { in: ["pending", "partially_applied"] } },
+    },
     data: { approved, status: approved ? "approved" : "pending" },
   });
   if (updated.count !== 1)
@@ -72,11 +81,11 @@ export async function setAllItemsApproval(
   approved: boolean,
 ) {
   const { user, org, db } = await requireOrgContext();
-  await requirePendingProposal(db, proposalId);
+  await requirePendingProposal(db, proposalId, user);
   const { count } = await db.cRMChangeItem.updateMany({
     where: {
       proposalId,
-      proposal: { status: "pending" },
+      proposal: { status: { in: ["pending", "partially_applied"] } },
       status: { notIn: ["applied"] },
     },
     data: { approved, status: approved ? "approved" : "pending" },
@@ -111,6 +120,11 @@ export async function updateItemValue(
     include: { proposal: { select: { status: true } } },
   });
   if (!item) return { error: "El cambio no existe." };
+  try {
+    await requireCanApproveProposal(db, item.proposalId, user);
+  } catch (error) {
+    return { error: error instanceof Error ? error.message : "Sin permiso." };
+  }
   if (item.status === "applied") return { error: "El cambio ya fue aplicado." };
   if (
     ["applying", "applied", "partially_approved", "rejected"].includes(
@@ -132,7 +146,10 @@ export async function updateItemValue(
 
   // Editing implies accepting the corrected version, so the item is approved.
   const updated = await db.cRMChangeItem.updateMany({
-    where: { id: itemId, proposal: { status: "pending" } },
+    where: {
+      id: itemId,
+      proposal: { status: { in: ["pending", "partially_applied"] } },
+    },
     data: {
       afterValue: parsed.data as Prisma.InputJsonValue,
       approved: true,
@@ -166,6 +183,7 @@ export async function applyProposalAction(
   meetingId: string,
 ) {
   const { user, org, db } = await requireOrgContext();
+  await requireCanApproveProposal(db, proposalId, user);
   await applyProposal(db, org.id, proposalId, user.id);
   revalidatePath(`/meetings/${meetingId}`);
 }
@@ -191,11 +209,27 @@ export async function rejectProposalAction(
   meetingId: string,
 ) {
   const { user, org, db } = await requireOrgContext();
+  await requireCanApproveProposal(db, proposalId, user);
+  const applied = await db.cRMChangeItem.count({
+    where: { proposalId, status: "applied" },
+  });
   const { count } = await db.cRMChangeProposal.updateMany({
-    where: { id: proposalId, status: "pending" },
-    data: { status: "rejected", reviewedBy: user.id, reviewedAt: new Date() },
+    where: {
+      id: proposalId,
+      status: { in: ["pending", "partially_applied"] },
+    },
+    data: {
+      status: applied > 0 ? "partially_approved" : "rejected",
+      reviewedBy: user.id,
+      reviewedAt: new Date(),
+      completedAt: new Date(),
+    },
   });
   if (count !== 1) throw new Error("La propuesta ya no se puede rechazar");
+  await db.cRMChangeItem.updateMany({
+    where: { proposalId, status: { notIn: ["applied", "reverted", "failed"] } },
+    data: { approved: false, status: "rejected" },
+  });
 
   const meeting = await getMeetingContext(db, meetingId);
   await appendTimelineEvent(db, {

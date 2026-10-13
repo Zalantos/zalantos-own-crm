@@ -88,8 +88,11 @@ GAP: archivos de configuración Railway/Vercel no presentes en el repo.
 2. Páginas dashboard llaman `requireOrgContext()` → `forOrg(orgId)`.
 3. Mutaciones validadas con Zod (`src/lib/zod/`).
 4. Eventos de negocio pueden disparar workflows e integraciones.
-5. Meeting/agent/enrichment generan propuestas → revisión humana → apply.
-6. Tab Contexto en fichas: upload → perfil IA auto + propuestas de campos.
+5. Meeting/agent/enrichment/MCP persisten una bitácora y aplican cada mutación
+   no destructiva en una transacción tenant independiente.
+6. `/agent/proposals` muestra Actividad de IA org-wide y permite deshacer de
+   forma segura durante 90 días; eliminaciones/fusiones requieren aprobación.
+7. Tab Contexto en fichas: upload → perfil IA + cambios de campos inmediatos.
 
 ## Riesgos arquitectónicos
 

@@ -33,7 +33,9 @@ function summarizeItem(item: {
   const after = asRecord(item.afterValue);
   if (item.type === "create_task" && typeof after?.title === "string") {
     const due =
-      typeof after.dueInDays === "number" ? ` (vence en ${after.dueInDays} días)` : "";
+      typeof after.dueInDays === "number"
+        ? ` (vence en ${after.dueInDays} días)`
+        : "";
     return `Tarea: ${after.title}${due}`;
   }
   if (item.type === "stage_change" && typeof after?.value === "string") {
@@ -47,11 +49,17 @@ export function buildMeetingTools(ctx: AgentToolContext) {
   return {
     list_meetings: defineAgentTool({
       description:
-        "Lista las reuniones más recientes, opcionalmente de una empresa u oportunidad, con su titular de resumen y cuántas propuestas pendientes tienen.",
+        "Lista las reuniones más recientes, opcionalmente de una empresa u oportunidad, con su titular de resumen y cuántas acciones destructivas o propuestas legacy siguen pendientes.",
       inputSchema: z.object({
         companyId: z.string().optional(),
         opportunityId: z.string().optional(),
-        limit: z.number().int().min(1).max(20).optional().describe("Cantidad de reuniones (default 5)"),
+        limit: z
+          .number()
+          .int()
+          .min(1)
+          .max(20)
+          .optional()
+          .describe("Cantidad de reuniones (default 5)"),
       }),
       execute: async ({ companyId, opportunityId, limit }) => {
         const meetings = await db.meeting.findMany({
@@ -160,18 +168,27 @@ export function buildMeetingTools(ctx: AgentToolContext) {
           offset: start,
           totalChars: total,
           hasMore: start + TRANSCRIPT_PAGE_SIZE < total,
-          text: meeting.rawTranscript.slice(start, start + TRANSCRIPT_PAGE_SIZE),
+          text: meeting.rawTranscript.slice(
+            start,
+            start + TRANSCRIPT_PAGE_SIZE,
+          ),
         };
       },
     }),
 
     list_pending_proposals: defineAgentTool({
       description:
-        "Lista propuestas de cambios al CRM pendientes de revisión (de reuniones o del agente) con sus items, confianza y evidencia. Los items de reuniones se aprueban en la página de la reunión, no se recrean con create_task.",
+        "Lista acciones destructivas y propuestas legacy pendientes de aprobación, con sus ítems, confianza y evidencia. Los cambios no destructivos nuevos se ejecutan directamente y aparecen en Actividad de IA.",
       inputSchema: z.object({
         companyId: z.string().optional(),
         meetingId: z.string().optional(),
-        limit: z.number().int().min(1).max(10).optional().describe("Cantidad de propuestas (default 5)"),
+        limit: z
+          .number()
+          .int()
+          .min(1)
+          .max(10)
+          .optional()
+          .describe("Cantidad de propuestas (default 5)"),
       }),
       execute: async ({ companyId, meetingId, limit }) => {
         const proposals = await db.cRMChangeProposal.findMany({
@@ -179,8 +196,6 @@ export function buildMeetingTools(ctx: AgentToolContext) {
             status: "pending",
             // Sin items pendientes no hay nada que revisar: es ruido.
             items: { some: { status: "pending" } },
-            // Las propuestas de enrichment se revisan en la ficha, no en chat.
-            source: { in: ["meeting", "agent"] },
             ...(meetingId ? { meetingId } : {}),
             // companyId es denormalizado y puede faltar en filas legacy:
             // matchear también por la empresa de la reunión.
@@ -214,7 +229,9 @@ export function buildMeetingTools(ctx: AgentToolContext) {
               entity: item.entity,
               summary: summarizeItem(item),
               confidence: item.confidence,
-              evidence: item.evidence ? truncate(item.evidence, ITEM_TEXT_MAX_CHARS) : null,
+              evidence: item.evidence
+                ? truncate(item.evidence, ITEM_TEXT_MAX_CHARS)
+                : null,
             })),
             reviewUrl:
               proposal.source === "meeting" && proposal.meeting

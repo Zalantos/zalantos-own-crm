@@ -10,6 +10,8 @@ export type WorkflowEvent = {
   actorId?: string | null;
   before?: Record<string, unknown>;
   after: Record<string, unknown>;
+  changeProposalId?: string;
+  causedByItemId?: string;
 };
 
 export type Condition = {

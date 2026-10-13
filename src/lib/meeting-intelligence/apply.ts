@@ -1,4 +1,4 @@
-import type { Person, Prisma } from "@prisma/client";
+import { Prisma, type Person } from "@prisma/client";
 import { withOrgTransaction, type TenantClient } from "@/lib/tenant";
 import {
   findExistingPerson,
@@ -63,6 +63,8 @@ type ItemRecord = {
   approved: boolean;
   status: string;
 };
+
+const UNDO_WINDOW_MS = 90 * 24 * 60 * 60 * 1000;
 
 function asRecord(value: Prisma.JsonValue): Record<string, unknown> {
   return value && typeof value === "object" && !Array.isArray(value)
@@ -221,6 +223,11 @@ type RevertData = {
   // Cambio de estado aplicado por update_task, para disparar workflows
   // después de commitear.
   taskStatusChange?: { from: string; to: string };
+  activityUpdate?: {
+    activityId: string;
+    companyId: string;
+    previousCompanyLastContactAt: string | null;
+  };
 };
 
 type NormalizedContact = {
@@ -806,6 +813,130 @@ async function applyItem(
       };
     }
 
+    case "update_note": {
+      if (!item.entityId) throw new Error("Falta nota destino");
+      const note = await tx.note.update({
+        where: { id: item.entityId, organizationId: ctx.organizationId },
+        data: {
+          ...(Object.hasOwn(after, "title")
+            ? { title: optionalString(after.title) }
+            : {}),
+          ...(Object.hasOwn(after, "body")
+            ? { body: String(after.body ?? "") }
+            : {}),
+        },
+      });
+      await appendTimelineEvent(tx, {
+        ...timelineBase,
+        companyId: note.companyId,
+        opportunityId: note.opportunityId,
+        type: "note_updated",
+        title: `Nota actualizada: ${note.title ?? "Sin título"}`,
+      });
+      return null;
+    }
+
+    case "update_activity": {
+      if (!item.entityId) throw new Error("Falta actividad destino");
+      const companyId = String(after.companyId ?? "");
+      if (!companyId) throw new Error("La actividad debe tener una empresa");
+      const occurredAt = optionalDate(after.occurredAt);
+      if (!occurredAt) throw new Error("La actividad debe tener fecha");
+      const previousCompany = await tx.company.findUnique({
+        where: { id: companyId, organizationId: ctx.organizationId },
+        select: { lastContactAt: true },
+      });
+      const personIds = Array.isArray(after.personIds)
+        ? after.personIds.map(String)
+        : [];
+      const activity = await tx.activity.update({
+        where: { id: item.entityId, organizationId: ctx.organizationId },
+        data: {
+          companyId,
+          opportunityId: optionalString(after.opportunityId),
+          personId: personIds[0] ?? null,
+          type: String(after.type ?? "other"),
+          title: String(after.title ?? "Actividad"),
+          occurredAt,
+          completedAt: occurredAt,
+          durationMinutes:
+            after.durationMinutes == null
+              ? null
+              : Number(after.durationMinutes),
+          channel: optionalString(after.channel),
+          description: optionalString(after.description),
+          outcomes: optionalString(after.outcomes),
+          participants: {
+            deleteMany: {},
+            create: personIds.map((personId) => ({
+              organizationId: ctx.organizationId,
+              personId,
+            })),
+          },
+        },
+      });
+      if (occurredAt.getTime() <= Date.now()) {
+        await tx.company.updateMany({
+          where: {
+            id: companyId,
+            organizationId: ctx.organizationId,
+            OR: [
+              { lastContactAt: null },
+              { lastContactAt: { lt: occurredAt } },
+            ],
+          },
+          data: { lastContactAt: occurredAt },
+        });
+      }
+      await appendTimelineEvent(tx, {
+        ...timelineBase,
+        companyId,
+        opportunityId: activity.opportunityId,
+        type: "activity_updated",
+        title: `Actividad actualizada: ${activity.title}`,
+      });
+      return {
+        activityUpdate: {
+          activityId: activity.id,
+          companyId,
+          previousCompanyLastContactAt:
+            previousCompany?.lastContactAt?.toISOString() ?? null,
+        },
+      };
+    }
+
+    case "update_meeting": {
+      if (!item.entityId) throw new Error("Falta reunión destino");
+      const meeting = await tx.meeting.update({
+        where: { id: item.entityId, organizationId: ctx.organizationId },
+        data: {
+          companyId: String(after.companyId),
+          opportunityId: optionalString(after.opportunityId),
+          title: String(after.title),
+          meetingDate: new Date(String(after.meetingDate)),
+          meetingType: String(after.meetingType),
+          participants: (after.participants ?? []) as Prisma.InputJsonValue,
+          status: String(after.status),
+          ...(Object.hasOwn(after, "aiSummary")
+            ? {
+                aiSummary:
+                  after.aiSummary == null
+                    ? Prisma.JsonNull
+                    : (after.aiSummary as Prisma.InputJsonValue),
+              }
+            : {}),
+        },
+      });
+      await appendTimelineEvent(tx, {
+        ...timelineBase,
+        companyId: meeting.companyId,
+        opportunityId: meeting.opportunityId,
+        type: "meeting_updated",
+        title: `Reunión actualizada: ${meeting.title}`,
+      });
+      return null;
+    }
+
     default:
       throw new Error(`Tipo de cambio desconocido: ${item.type}`);
   }
@@ -893,13 +1024,241 @@ function appliedResult(items: { status: string }[]) {
   };
 }
 
+function jsonSnapshot(value: unknown): Prisma.InputJsonValue {
+  return JSON.parse(JSON.stringify(value)) as Prisma.InputJsonValue;
+}
+
+async function appliedFieldValue(
+  tx: Prisma.TransactionClient,
+  item: ItemRecord,
+  ctx: ApplyContext,
+  field: string,
+): Promise<unknown> {
+  const entity = asAgentEntity(item.entity);
+  const entityId =
+    item.entityId ?? (entity === "company" ? ctx.companyId : null);
+  if (!entityId) return null;
+  const fields = await getWritableFields(ctx.db, entity);
+  const spec = resolveField(fields, entity, field);
+  if (spec.customDefinition) {
+    const value = await tx.customFieldValue.findFirst({
+      where: {
+        organizationId: ctx.organizationId,
+        entityType: entity,
+        entityId,
+        fieldDefinitionId: spec.customDefinition.id,
+      },
+    });
+    if (!value) return null;
+    switch (spec.customDefinition.fieldType) {
+      case "text":
+      case "select":
+        return value.valueText;
+      case "number":
+        return value.valueNumber;
+      case "boolean":
+        return value.valueBoolean;
+      case "date":
+        return value.valueDate;
+      case "multiselect":
+        return value.valueJson;
+    }
+  }
+  if (entity === "opportunity" && field === "stage") {
+    const row = await tx.opportunity.findUnique({
+      where: { id: entityId, organizationId: ctx.organizationId },
+      select: { stage: { select: { key: true } } },
+    });
+    return row?.stage.key ?? null;
+  }
+  const row =
+    entity === "company"
+      ? await tx.company.findUnique({
+          where: { id: entityId, organizationId: ctx.organizationId },
+        })
+      : entity === "opportunity"
+        ? await tx.opportunity.findUnique({
+            where: { id: entityId, organizationId: ctx.organizationId },
+          })
+        : await tx.person.findUnique({
+            where: { id: entityId, organizationId: ctx.organizationId },
+          });
+  return row ? (row as unknown as Record<string, unknown>)[field] : null;
+}
+
+async function appliedSnapshotOf(
+  tx: Prisma.TransactionClient,
+  item: ItemRecord,
+  ctx: ApplyContext,
+  revertData: RevertData | null,
+): Promise<Prisma.InputJsonValue> {
+  const after = asRecord(item.afterValue);
+  if (item.type === "update_field") {
+    const field = String(after.field);
+    return jsonSnapshot({
+      field,
+      value: await appliedFieldValue(tx, item, ctx, field),
+    });
+  }
+  if (item.type === "stage_change") {
+    const row = await tx.opportunity.findUnique({
+      where: { id: item.entityId ?? "", organizationId: ctx.organizationId },
+      select: { stage: { select: { key: true } } },
+    });
+    return jsonSnapshot({ value: row?.stage.key ?? null });
+  }
+  if (item.type === "update_pain") {
+    const row = await tx.opportunity.findUnique({
+      where: { id: item.entityId ?? "", organizationId: ctx.organizationId },
+      select: { mainPain: true },
+    });
+    return jsonSnapshot({ value: row?.mainPain ?? null });
+  }
+  if (item.type === "update_next_step") {
+    const row = await tx.opportunity.findUnique({
+      where: { id: item.entityId ?? "", organizationId: ctx.organizationId },
+      select: { nextStep: true, nextStepDueDate: true },
+    });
+    return jsonSnapshot(row);
+  }
+  if (item.type === "update_note") {
+    const row = await tx.note.findUnique({
+      where: { id: item.entityId ?? "", organizationId: ctx.organizationId },
+      select: { title: true, body: true },
+    });
+    return jsonSnapshot(
+      Object.fromEntries(
+        Object.keys(after).map((field) => [
+          field,
+          (row as Record<string, unknown> | null)?.[field] ?? null,
+        ]),
+      ),
+    );
+  }
+  if (item.type === "update_task") {
+    const row = await tx.activity.findUnique({
+      where: { id: item.entityId ?? "", organizationId: ctx.organizationId },
+    });
+    return jsonSnapshot(
+      Object.fromEntries(
+        Object.keys(after)
+          .filter((field) => field !== "taskId")
+          .map((field) => [
+            field,
+            (row as unknown as Record<string, unknown> | null)?.[field] ?? null,
+          ]),
+      ),
+    );
+  }
+  if (item.type === "update_activity") {
+    const row = await tx.activity.findUnique({
+      where: { id: item.entityId ?? "", organizationId: ctx.organizationId },
+      include: { participants: { select: { personId: true } } },
+    });
+    return jsonSnapshot(
+      row
+        ? {
+            companyId: row.companyId,
+            opportunityId: row.opportunityId,
+            personIds: row.participants.map(({ personId }) => personId),
+            type: row.type,
+            title: row.title,
+            occurredAt: row.occurredAt,
+            durationMinutes: row.durationMinutes,
+            channel: row.channel,
+            description: row.description,
+            outcomes: row.outcomes,
+          }
+        : null,
+    );
+  }
+  if (item.type === "update_meeting") {
+    const row = await tx.meeting.findUnique({
+      where: { id: item.entityId ?? "", organizationId: ctx.organizationId },
+    });
+    return jsonSnapshot(
+      row
+        ? {
+            companyId: row.companyId,
+            opportunityId: row.opportunityId,
+            title: row.title,
+            meetingDate: row.meetingDate,
+            meetingType: row.meetingType,
+            participants: row.participants,
+            status: row.status,
+            aiSummary: row.aiSummary,
+          }
+        : null,
+    );
+  }
+  if (
+    (item.type === "link_contact" || item.type === "add_contact") &&
+    !revertData?.createdEntityId &&
+    (item.entityId || revertData?.personId)
+  ) {
+    const row = await tx.person.findUnique({
+      where: {
+        id: item.entityId ?? revertData?.personId ?? "",
+        organizationId: ctx.organizationId,
+      },
+    });
+    return jsonSnapshot(
+      row
+        ? {
+            ...after,
+            ...Object.fromEntries(
+              (revertData?.filledFields ?? []).map((field) => [
+                field,
+                (row as unknown as Record<string, unknown>)[field] ?? null,
+              ]),
+            ),
+          }
+        : after,
+    );
+  }
+
+  const createdEntityId = revertData?.createdEntityId;
+  let createdRecord: unknown = null;
+  if (createdEntityId) {
+    if (item.type === "add_company") {
+      createdRecord = await tx.company.findUnique({
+        where: { id: createdEntityId, organizationId: ctx.organizationId },
+      });
+    } else if (item.type === "add_opportunity") {
+      createdRecord = await tx.opportunity.findUnique({
+        where: { id: createdEntityId, organizationId: ctx.organizationId },
+      });
+    } else if (item.type === "add_contact") {
+      createdRecord = await tx.person.findUnique({
+        where: { id: createdEntityId, organizationId: ctx.organizationId },
+      });
+    } else if (item.type === "create_task" || item.type === "log_activity") {
+      createdRecord = await tx.activity.findUnique({
+        where: { id: createdEntityId, organizationId: ctx.organizationId },
+      });
+    } else if (item.type === "add_note") {
+      createdRecord = await tx.note.findUnique({
+        where: { id: createdEntityId, organizationId: ctx.organizationId },
+      });
+    } else if (item.type === "create_meeting") {
+      createdRecord = await tx.meeting.findUnique({
+        where: { id: createdEntityId, organizationId: ctx.organizationId },
+      });
+    }
+  }
+  return jsonSnapshot({
+    ...after,
+    ...(createdEntityId ? { createdEntityId, record: createdRecord } : {}),
+  });
+}
+
 export async function claimProposalForApply(
   db: TenantClient,
   proposalId: string,
 ): Promise<{ applied: number; failed: number } | null> {
   const now = new Date();
   const claimed = await db.cRMChangeProposal.updateMany({
-    where: { id: proposalId, status: "pending" },
+    where: { id: proposalId, status: { in: ["pending", "partially_applied"] } },
     data: { status: "applying", applyStartedAt: now },
   });
   if (claimed.count === 1) return null;
@@ -945,8 +1304,12 @@ export async function claimProposalForApply(
   }
   if (
     current.status === "applied" ||
+    current.status === "partially_applied" ||
+    current.status === "failed" ||
     current.status === "partially_approved" ||
-    current.status === "rejected"
+    current.status === "rejected" ||
+    current.status === "partially_reverted" ||
+    current.status === "reverted"
   ) {
     return appliedResult(current.items);
   }
@@ -990,27 +1353,44 @@ export async function applyProposal(
 
   let applied = 0;
   let failed = 0;
-  const stageChanges: { opportunityId: string; from: unknown; to: unknown }[] =
-    [];
+  const stageChanges: {
+    itemId: string;
+    opportunityId: string;
+    from: unknown;
+    to: unknown;
+  }[] = [];
   const taskStatusChanges: {
+    itemId: string;
     taskId: string;
     from: string;
     to: string;
   }[] = [];
 
   for (const item of proposal.items) {
-    if (!item.approved || item.status === "applied") continue;
+    if (!item.approved || !["pending", "approved"].includes(item.status)) {
+      continue;
+    }
     try {
       const revertData = await withOrgTransaction(
         organizationId,
         async (tx) => {
           const revertData = await applyItem(tx, item, ctx);
+          const appliedAt = new Date();
           await tx.cRMChangeItem.update({
             where: { id: item.id, organizationId },
             data: {
               status: "applied",
-              appliedAt: new Date(),
+              appliedAt,
+              appliedSnapshot: await appliedSnapshotOf(
+                tx,
+                item,
+                ctx,
+                revertData,
+              ),
+              undoExpiresAt: new Date(appliedAt.getTime() + UNDO_WINDOW_MS),
               revertData: (revertData ?? undefined) as Prisma.InputJsonValue,
+              failureCode: null,
+              failureMessage: null,
             },
           });
           return revertData;
@@ -1018,9 +1398,10 @@ export async function applyProposal(
       );
       applied += 1;
       const stageChange = stageChangeOf(item);
-      if (stageChange) stageChanges.push(stageChange);
+      if (stageChange) stageChanges.push({ itemId: item.id, ...stageChange });
       if (revertData?.taskUpdate && revertData.taskStatusChange) {
         taskStatusChanges.push({
+          itemId: item.id,
           taskId: revertData.taskUpdate.taskId,
           ...revertData.taskStatusChange,
         });
@@ -1029,16 +1410,47 @@ export async function applyProposal(
       failed += 1;
       await db.cRMChangeItem.update({
         where: { id: item.id },
-        data: { status: "failed" },
+        data: {
+          status: "failed",
+          failureCode: "apply_failed",
+          failureMessage:
+            error instanceof Error ? error.message : "Error inesperado",
+        },
       });
       console.error(`[apply] item ${item.id} falló`, error);
     }
   }
 
-  // Recompute proposal status and record the timeline event.
-  const hasRejected = proposal.items.some((i) => !i.approved);
+  const itemStates = await db.cRMChangeItem.findMany({
+    where: { proposalId },
+    select: { status: true },
+  });
+  const totalApplied = itemStates.filter(
+    (item) => item.status === "applied",
+  ).length;
+  const totalFailed = itemStates.filter(
+    (item) => item.status === "failed",
+  ).length;
+  const totalPending = itemStates.filter(
+    (item) => item.status === "pending" || item.status === "approved",
+  ).length;
+  const totalRejected = itemStates.filter(
+    (item) => item.status === "rejected",
+  ).length;
   const nextStatus =
-    failed > 0 || hasRejected ? "partially_approved" : "applied";
+    totalPending > 0
+      ? totalApplied > 0 || totalFailed > 0
+        ? "partially_applied"
+        : "pending"
+      : totalFailed > 0
+        ? totalApplied > 0
+          ? "partially_applied"
+          : "failed"
+        : totalRejected > 0
+          ? totalApplied > 0
+            ? "partially_approved"
+            : "rejected"
+          : "applied";
 
   const finalized = await db.cRMChangeProposal.updateMany({
     where: {
@@ -1051,6 +1463,7 @@ export async function applyProposal(
       applyStartedAt: null,
       reviewedBy: actorId,
       reviewedAt: new Date(),
+      completedAt: new Date(),
     },
   });
   if (finalized.count !== 1) {
@@ -1078,6 +1491,8 @@ export async function applyProposal(
       actorId,
       before: { stage: change.from },
       after: { stage: change.to },
+      changeProposalId: proposalId,
+      causedByItemId: change.itemId,
     });
   }
 
@@ -1090,6 +1505,8 @@ export async function applyProposal(
       actorId,
       before: { status: change.from },
       after: { status: change.to },
+      changeProposalId: proposalId,
+      causedByItemId: change.itemId,
     });
   }
 
@@ -1102,6 +1519,427 @@ function asRevertData(value: Prisma.JsonValue): RevertData {
     : {};
 }
 
+export class RevertConflictError extends Error {
+  constructor(
+    public readonly code:
+      | "undo_expired"
+      | "changed_after_apply"
+      | "dependencies"
+      | "missing_target",
+    message: string,
+    public readonly details: string[] = [],
+  ) {
+    super(message);
+    this.name = "RevertConflictError";
+  }
+}
+
+function comparable(value: unknown): unknown {
+  if (value instanceof Date) return value.toISOString();
+  if (value && typeof value === "object") {
+    return JSON.parse(JSON.stringify(value));
+  }
+  return value;
+}
+
+function sameValue(current: unknown, expected: unknown): boolean {
+  const left = comparable(current);
+  const right = comparable(expected);
+  if (
+    (left == null || typeof left !== "object") &&
+    (right == null || typeof right !== "object")
+  ) {
+    return left == null && right == null
+      ? true
+      : String(left) === String(right);
+  }
+  return JSON.stringify(left) === JSON.stringify(right);
+}
+
+async function currentFieldValue(
+  db: TenantClient,
+  item: ItemRecord,
+  ctx: ApplyContext,
+  field: string,
+): Promise<unknown> {
+  const entity = asAgentEntity(item.entity);
+  const entityId =
+    item.entityId ?? (entity === "company" ? ctx.companyId : null);
+  if (!entityId) return undefined;
+  const fields = await getWritableFields(db, entity);
+  const spec = resolveField(fields, entity, field);
+  if (spec.customDefinition) {
+    const value = await db.customFieldValue.findFirst({
+      where: {
+        entityType: entity,
+        entityId,
+        fieldDefinitionId: spec.customDefinition.id,
+      },
+    });
+    if (!value) return null;
+    switch (spec.customDefinition.fieldType) {
+      case "text":
+      case "select":
+        return value.valueText;
+      case "number":
+        return value.valueNumber;
+      case "boolean":
+        return value.valueBoolean;
+      case "date":
+        return value.valueDate;
+      case "multiselect":
+        return value.valueJson;
+    }
+  }
+  if (entity === "opportunity" && field === "stage") {
+    const row = await db.opportunity.findUnique({
+      where: { id: entityId },
+      select: { stage: { select: { key: true } } },
+    });
+    return row?.stage.key;
+  }
+  const row =
+    entity === "company"
+      ? await db.company.findUnique({ where: { id: entityId } })
+      : entity === "opportunity"
+        ? await db.opportunity.findUnique({ where: { id: entityId } })
+        : await db.person.findUnique({ where: { id: entityId } });
+  return row ? (row as unknown as Record<string, unknown>)[field] : undefined;
+}
+
+async function assertCreatedEntityRevertible(
+  db: TenantClient,
+  item: ItemRecord & {
+    appliedAt?: Date | null;
+    appliedSnapshot?: Prisma.JsonValue | null;
+  },
+  revert: RevertData,
+): Promise<void> {
+  const id = revert.createdEntityId;
+  if (!id) return;
+  const dependencies: string[] = [];
+  let updatedAt: Date | null = null;
+  let currentRecord: unknown = null;
+
+  if (item.type === "add_company") {
+    const [row, people, opportunities, activities, notes, meetings] =
+      await Promise.all([
+        db.company.findUnique({ where: { id } }),
+        db.person.count({ where: { companyId: id } }),
+        db.opportunity.count({ where: { companyId: id } }),
+        db.activity.count({ where: { companyId: id } }),
+        db.note.count({ where: { companyId: id } }),
+        db.meeting.count({ where: { companyId: id } }),
+      ]);
+    if (!row)
+      throw new RevertConflictError(
+        "missing_target",
+        "La empresa ya no existe.",
+      );
+    updatedAt = row.updatedAt;
+    currentRecord = row;
+    if (people) dependencies.push(`${people} contacto(s)`);
+    if (opportunities) dependencies.push(`${opportunities} oportunidad(es)`);
+    if (activities) dependencies.push(`${activities} actividad(es)`);
+    if (notes) dependencies.push(`${notes} nota(s)`);
+    if (meetings) dependencies.push(`${meetings} reunión(es)`);
+  } else if (item.type === "add_opportunity") {
+    const [row, activities, notes, meetings] = await Promise.all([
+      db.opportunity.findUnique({ where: { id } }),
+      db.activity.count({ where: { opportunityId: id } }),
+      db.note.count({ where: { opportunityId: id } }),
+      db.meeting.count({ where: { opportunityId: id } }),
+    ]);
+    if (!row)
+      throw new RevertConflictError(
+        "missing_target",
+        "La oportunidad ya no existe.",
+      );
+    updatedAt = row.updatedAt;
+    currentRecord = row;
+    if (activities) dependencies.push(`${activities} actividad(es)`);
+    if (notes) dependencies.push(`${notes} nota(s)`);
+    if (meetings) dependencies.push(`${meetings} reunión(es)`);
+  } else if (item.type === "add_contact") {
+    const [row, activities, participations, notes, decisions, sponsors] =
+      await Promise.all([
+        db.person.findUnique({ where: { id } }),
+        db.activity.count({ where: { personId: id } }),
+        db.activityPerson.count({ where: { personId: id } }),
+        db.note.count({ where: { personId: id } }),
+        db.opportunity.count({
+          where: {
+            decisionMakerId: id,
+            ...(revert.opportunityId
+              ? { id: { not: revert.opportunityId } }
+              : {}),
+          },
+        }),
+        db.opportunity.count({
+          where: {
+            sponsorId: id,
+            ...(revert.opportunityId
+              ? { id: { not: revert.opportunityId } }
+              : {}),
+          },
+        }),
+      ]);
+    if (!row)
+      throw new RevertConflictError(
+        "missing_target",
+        "El contacto ya no existe.",
+      );
+    updatedAt = row.updatedAt;
+    currentRecord = row;
+    if (activities + participations)
+      dependencies.push("actividades vinculadas");
+    if (notes) dependencies.push(`${notes} nota(s)`);
+    if (decisions + sponsors) dependencies.push("oportunidades vinculadas");
+  } else if (item.type === "create_task" || item.type === "log_activity") {
+    const row = await db.activity.findUnique({ where: { id } });
+    if (!row)
+      throw new RevertConflictError(
+        "missing_target",
+        "La actividad ya no existe.",
+      );
+    updatedAt = row.updatedAt;
+    currentRecord = row;
+  } else if (item.type === "add_note") {
+    const row = await db.note.findUnique({ where: { id } });
+    if (!row)
+      throw new RevertConflictError("missing_target", "La nota ya no existe.");
+    updatedAt = row.updatedAt;
+    currentRecord = row;
+  } else if (item.type === "create_meeting") {
+    const [row, evidence, proposals] = await Promise.all([
+      db.meeting.findUnique({ where: { id } }),
+      db.evidence.count({ where: { meetingId: id } }),
+      db.cRMChangeProposal.count({ where: { meetingId: id } }),
+    ]);
+    if (!row)
+      throw new RevertConflictError(
+        "missing_target",
+        "La reunión ya no existe.",
+      );
+    updatedAt = row.updatedAt;
+    currentRecord = row;
+    if (evidence) dependencies.push(`${evidence} evidencia(s)`);
+    if (proposals) dependencies.push(`${proposals} análisis asociado(s)`);
+  }
+
+  if (dependencies.length) {
+    throw new RevertConflictError(
+      "dependencies",
+      `No se puede eliminar porque tiene ${dependencies.join(", ")}.`,
+      dependencies,
+    );
+  }
+  const expectedRecord = asRecord(item.appliedSnapshot ?? null).record;
+  if (
+    expectedRecord &&
+    currentRecord &&
+    !sameValue(currentRecord, expectedRecord)
+  ) {
+    throw new RevertConflictError(
+      "changed_after_apply",
+      "El registro fue editado después de que la IA lo creó.",
+    );
+  }
+  if (
+    !expectedRecord &&
+    updatedAt &&
+    item.appliedAt &&
+    updatedAt.getTime() > item.appliedAt.getTime() + 1_000
+  ) {
+    throw new RevertConflictError(
+      "changed_after_apply",
+      "El registro fue editado después de que la IA lo creó.",
+    );
+  }
+}
+
+export async function preflightRevertItem(
+  db: TenantClient,
+  organizationId: string,
+  itemId: string,
+): Promise<void> {
+  const item = await db.cRMChangeItem.findFirst({
+    where: { id: itemId, organizationId },
+    include: { proposal: { select: { id: true, status: true } } },
+  });
+  if (!item) throw new Error("Cambio no encontrado");
+  if (item.status === "reverted") return;
+  if (item.status !== "applied") {
+    throw new Error("Solo se pueden deshacer cambios aplicados");
+  }
+  if (item.undoExpiresAt && item.undoExpiresAt.getTime() < Date.now()) {
+    throw new RevertConflictError(
+      "undo_expired",
+      "El plazo de 90 días para deshacer este cambio venció.",
+    );
+  }
+  const context = await getProposalContext(db, item.proposal.id);
+  const ctx: ApplyContext = {
+    db,
+    organizationId,
+    stages: stagesByKey(await getOrgStages(db)),
+    companyId: context.companyId,
+    defaultOpportunityId: context.opportunityId,
+    originLabel: context.originLabel,
+    source: context.source,
+    proposalId: item.proposal.id,
+    actorId: "preflight",
+  };
+  const before = asRecord(item.beforeValue);
+  const after = asRecord(item.appliedSnapshot ?? item.afterValue);
+  const record: ItemRecord & {
+    appliedAt?: Date | null;
+    appliedSnapshot?: Prisma.JsonValue | null;
+  } = {
+    id: item.id,
+    type: item.type,
+    entity: item.entity,
+    entityId: item.entityId,
+    beforeValue: item.beforeValue,
+    afterValue: item.afterValue,
+    approved: item.approved,
+    status: item.status,
+    appliedAt: item.appliedAt,
+    appliedSnapshot: item.appliedSnapshot,
+  };
+  const revert = asRevertData(item.revertData);
+  await assertCreatedEntityRevertible(db, record, revert);
+
+  let matches = true;
+  if (item.type === "update_field") {
+    matches = sameValue(
+      await currentFieldValue(db, record, ctx, String(after.field)),
+      after.value,
+    );
+  } else if (item.type === "stage_change") {
+    const current = await db.opportunity.findUnique({
+      where: { id: item.entityId ?? "" },
+      select: { stage: { select: { key: true } } },
+    });
+    matches = sameValue(current?.stage.key, after.value);
+  } else if (item.type === "update_pain") {
+    const current = await db.opportunity.findUnique({
+      where: { id: item.entityId ?? "" },
+      select: { mainPain: true },
+    });
+    matches = sameValue(current?.mainPain, after.value);
+  } else if (item.type === "update_next_step") {
+    const current = await db.opportunity.findUnique({
+      where: { id: item.entityId ?? "" },
+      select: { nextStep: true, nextStepDueDate: true },
+    });
+    matches =
+      sameValue(current?.nextStep, after.nextStep) &&
+      sameValue(current?.nextStepDueDate, after.nextStepDueDate);
+  } else if (item.type === "update_note") {
+    const current = await db.note.findUnique({
+      where: { id: item.entityId ?? "" },
+      select: { title: true, body: true },
+    });
+    matches =
+      current != null &&
+      (!Object.hasOwn(after, "title") ||
+        sameValue(current.title, after.title)) &&
+      (!Object.hasOwn(after, "body") || sameValue(current.body, after.body));
+  } else if (item.type === "update_task") {
+    const current = await db.activity.findUnique({
+      where: { id: item.entityId ?? "" },
+    });
+    matches = current != null;
+    for (const [field, expected] of Object.entries(after)) {
+      if (field === "taskId") continue;
+      if (
+        !sameValue(
+          (current as unknown as Record<string, unknown>)?.[field],
+          expected,
+        )
+      ) {
+        matches = false;
+        break;
+      }
+    }
+  } else if (item.type === "update_activity") {
+    const current = await db.activity.findUnique({
+      where: { id: item.entityId ?? "" },
+      include: { participants: { select: { personId: true } } },
+    });
+    const currentRecord = current
+      ? {
+          ...current,
+          occurredAt: current.occurredAt?.toISOString() ?? null,
+          personIds: current.participants.map(({ personId }) => personId),
+        }
+      : null;
+    matches = currentRecord != null;
+    for (const [field, expected] of Object.entries(after)) {
+      if (
+        !sameValue(
+          (currentRecord as Record<string, unknown> | null)?.[field],
+          expected,
+        )
+      ) {
+        matches = false;
+        break;
+      }
+    }
+  } else if (item.type === "update_meeting") {
+    const current = await db.meeting.findUnique({
+      where: { id: item.entityId ?? "" },
+    });
+    const currentRecord = current
+      ? { ...current, meetingDate: current.meetingDate.toISOString() }
+      : null;
+    matches = currentRecord != null;
+    for (const [field, expected] of Object.entries(after)) {
+      if (
+        !sameValue(
+          (currentRecord as Record<string, unknown> | null)?.[field],
+          expected,
+        )
+      ) {
+        matches = false;
+        break;
+      }
+    }
+  } else if (
+    (item.type === "link_contact" || item.type === "add_contact") &&
+    !revert.createdEntityId &&
+    (item.entityId || revert.personId)
+  ) {
+    const personId = item.entityId ?? revert.personId!;
+    const current = await db.person.findUnique({ where: { id: personId } });
+    if (!current) {
+      throw new RevertConflictError(
+        "missing_target",
+        "El contacto ya no existe.",
+      );
+    }
+    for (const field of revert.filledFields ?? []) {
+      if (
+        !sameValue(
+          (current as unknown as Record<string, unknown>)[field],
+          after[field],
+        )
+      ) {
+        matches = false;
+        break;
+      }
+    }
+  }
+  if (!matches) {
+    throw new RevertConflictError(
+      "changed_after_apply",
+      "El registro cambió después de la acción de IA; no se sobrescribió el trabajo posterior.",
+      Object.keys(before),
+    );
+  }
+}
+
 // Undoes a single applied item: restores prior field/stage/pain/next-step
 // values from beforeValue, or deletes entities that were created (contacts,
 // tasks, notes) and unwinds their opportunity links. Idempotent-guarded on
@@ -1111,6 +1949,12 @@ export async function revertItem(
   organizationId: string,
   itemId: string,
   actorId: string,
+  options: {
+    transaction?: Prisma.TransactionClient;
+    skipPreflight?: boolean;
+    includeEffects?: boolean;
+    skipStatusRecompute?: boolean;
+  } = {},
 ): Promise<void> {
   const item = await db.cRMChangeItem.findFirst({
     where: { id: itemId, organizationId },
@@ -1120,8 +1964,46 @@ export async function revertItem(
   if (item.proposal.status === "applying") {
     throw new Error("La propuesta todavía se está aplicando");
   }
+  if (item.status === "reverted") return;
   if (item.status !== "applied") {
     throw new Error("Solo se pueden deshacer cambios aplicados");
+  }
+  const effects =
+    options.includeEffects === false
+      ? []
+      : await db.cRMChangeItem.findMany({
+          where: { causedByItemId: item.id, status: "applied" },
+          orderBy: [{ sequence: "desc" }, { appliedAt: "desc" }],
+          select: { id: true },
+        });
+  if (!options.skipPreflight) {
+    for (const effect of effects) {
+      await preflightRevertItem(db, organizationId, effect.id);
+    }
+    await preflightRevertItem(db, organizationId, itemId);
+  }
+  if (effects.length > 0 && !options.transaction) {
+    await withOrgTransaction(organizationId, async (tx) => {
+      for (const effect of effects) {
+        await revertItem(db, organizationId, effect.id, actorId, {
+          transaction: tx,
+          skipPreflight: true,
+          includeEffects: false,
+          skipStatusRecompute: true,
+        });
+      }
+      await revertItem(db, organizationId, itemId, actorId, {
+        transaction: tx,
+        skipPreflight: true,
+        includeEffects: false,
+        skipStatusRecompute: true,
+      });
+    });
+    await recomputeProposalStatus(db, item.proposal.id);
+    return;
+  }
+  for (const effect of effects) {
+    await revertItem(db, organizationId, effect.id, actorId);
   }
 
   const context = await getProposalContext(db, item.proposal.id);
@@ -1151,13 +2033,7 @@ export async function revertItem(
     status: item.status,
   };
 
-  let stageReverted: {
-    opportunityId: string;
-    from: unknown;
-    to: unknown;
-  } | null = null;
-
-  await withOrgTransaction(organizationId, async (tx) => {
+  const mutate = async (tx: Prisma.TransactionClient) => {
     switch (item.type) {
       case "update_field": {
         const field = String(after.field);
@@ -1168,17 +2044,6 @@ export async function revertItem(
           field,
           before.value ?? null,
         );
-        if (
-          item.entity === "opportunity" &&
-          field === "stage" &&
-          item.entityId
-        ) {
-          stageReverted = {
-            opportunityId: item.entityId,
-            from: after.value,
-            to: before.value,
-          };
-        }
         break;
       }
       case "stage_change": {
@@ -1188,11 +2053,6 @@ export async function revertItem(
             where: { id: item.entityId, organizationId },
             data: { stageId: stage.id },
           });
-          stageReverted = {
-            opportunityId: item.entityId,
-            from: after.value,
-            to: before.value,
-          };
         }
         break;
       }
@@ -1298,17 +2158,113 @@ export async function revertItem(
         }
         break;
       }
+      case "update_note": {
+        if (item.entityId) {
+          await tx.note.update({
+            where: { id: item.entityId, organizationId },
+            data: {
+              ...(Object.hasOwn(before, "title")
+                ? { title: optionalString(before.title) }
+                : {}),
+              ...(Object.hasOwn(before, "body")
+                ? { body: String(before.body ?? "") }
+                : {}),
+            },
+          });
+        }
+        break;
+      }
+      case "update_activity": {
+        if (item.entityId) {
+          const personIds = Array.isArray(before.personIds)
+            ? before.personIds.map(String)
+            : [];
+          await tx.activity.update({
+            where: { id: item.entityId, organizationId },
+            data: {
+              companyId: optionalString(before.companyId),
+              opportunityId: optionalString(before.opportunityId),
+              personId: personIds[0] ?? null,
+              type: String(before.type),
+              title: String(before.title),
+              occurredAt: optionalDate(before.occurredAt),
+              completedAt: optionalDate(before.occurredAt),
+              durationMinutes:
+                before.durationMinutes == null
+                  ? null
+                  : Number(before.durationMinutes),
+              channel: optionalString(before.channel),
+              description: optionalString(before.description),
+              outcomes: optionalString(before.outcomes),
+              participants: {
+                deleteMany: {},
+                create: personIds.map((personId) => ({
+                  organizationId,
+                  personId,
+                })),
+              },
+            },
+          });
+          if (revert.activityUpdate) {
+            await tx.company.update({
+              where: {
+                id: revert.activityUpdate.companyId,
+                organizationId,
+              },
+              data: {
+                lastContactAt: revert.activityUpdate
+                  .previousCompanyLastContactAt
+                  ? new Date(revert.activityUpdate.previousCompanyLastContactAt)
+                  : null,
+              },
+            });
+          }
+        }
+        break;
+      }
+      case "update_meeting": {
+        if (item.entityId) {
+          await tx.meeting.update({
+            where: { id: item.entityId, organizationId },
+            data: {
+              companyId: String(before.companyId),
+              opportunityId: optionalString(before.opportunityId),
+              title: String(before.title),
+              meetingDate: new Date(String(before.meetingDate)),
+              meetingType: String(before.meetingType),
+              participants: (before.participants ??
+                []) as Prisma.InputJsonValue,
+              status: String(before.status),
+              aiSummary:
+                before.aiSummary == null
+                  ? Prisma.JsonNull
+                  : (before.aiSummary as Prisma.InputJsonValue),
+            },
+          });
+        }
+        break;
+      }
       default:
         throw new Error(`No se puede deshacer el tipo: ${item.type}`);
     }
 
     await tx.cRMChangeItem.update({
       where: { id: item.id, organizationId },
-      data: { status: "reverted", revertedAt: new Date() },
+      data: {
+        status: "reverted",
+        revertedAt: new Date(),
+        revertedBy: actorId,
+      },
     });
-  });
+  };
 
-  await appendTimelineEvent(db, {
+  if (options.transaction) {
+    await mutate(options.transaction);
+  } else {
+    await withOrgTransaction(organizationId, mutate);
+  }
+
+  await appendTimelineEvent(options.transaction ?? db, {
     organizationId,
     companyId: ctx.companyId,
     opportunityId:
@@ -1324,18 +2280,77 @@ export async function revertItem(
     metadata: { itemId: item.id, itemType: item.type },
   });
 
-  if (stageReverted) {
-    const change: { opportunityId: string; from: unknown; to: unknown } =
-      stageReverted;
-    await evaluateWorkflows(db, organizationId, {
-      entityType: "opportunity",
-      entityId: change.opportunityId,
-      eventName: "stage_changed",
-      actorId,
-      before: { stage: change.from },
-      after: { stage: change.to },
-    });
+  // Undo is compensating history, not a new business event: workflows are not
+  // fired again, otherwise reverting a stage could create fresh side effects.
+  if (!options.skipStatusRecompute) {
+    await recomputeProposalStatus(db, item.proposal.id);
   }
+}
+
+async function recomputeProposalStatus(
+  db: TenantClient,
+  proposalId: string,
+): Promise<void> {
+  const items = await db.cRMChangeItem.findMany({
+    where: { proposalId },
+    select: { status: true },
+  });
+  const reverted = items.filter((item) => item.status === "reverted").length;
+  if (!reverted) return;
+  await db.cRMChangeProposal.update({
+    where: { id: proposalId },
+    data: {
+      status: reverted < items.length ? "partially_reverted" : "reverted",
+      completedAt: new Date(),
+    },
+  });
+}
+
+export async function revertProposal(
+  db: TenantClient,
+  organizationId: string,
+  proposalId: string,
+  actorId: string,
+): Promise<{ reverted: number }> {
+  const proposal = await db.cRMChangeProposal.findFirst({
+    where: { id: proposalId, organizationId },
+    include: {
+      items: { orderBy: [{ sequence: "desc" }, { appliedAt: "desc" }] },
+    },
+  });
+  if (!proposal) throw new Error("Cambio no encontrado");
+  const appliedItems = proposal.items.filter(
+    (item) => item.status === "applied",
+  );
+  for (const item of appliedItems) {
+    await preflightRevertItem(db, organizationId, item.id);
+  }
+  if (!appliedItems.length) return { reverted: 0 };
+
+  await withOrgTransaction(organizationId, async (tx) => {
+    for (const item of appliedItems) {
+      await revertItem(db, organizationId, item.id, actorId, {
+        transaction: tx,
+        skipPreflight: true,
+        includeEffects: false,
+        skipStatusRecompute: true,
+      });
+    }
+    const alreadyReverted = proposal.items.filter(
+      (item) => item.status === "reverted",
+    ).length;
+    await tx.cRMChangeProposal.update({
+      where: { id: proposal.id, organizationId },
+      data: {
+        status:
+          alreadyReverted + appliedItems.length === proposal.items.length
+            ? "reverted"
+            : "partially_reverted",
+        completedAt: new Date(),
+      },
+    });
+  });
+  return { reverted: appliedItems.length };
 }
 
 // Restores an opportunity's decisionMaker/sponsor to the ids captured before an

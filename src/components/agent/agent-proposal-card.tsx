@@ -19,12 +19,16 @@ import {
   getAgentProposalState,
   rejectAgentProposal,
   revertAgentItem,
+  revertAgentProposal,
   setAgentItemApproval,
 } from "@/app/(dashboard)/agent/proposal-actions";
 
 type ProposalToolOutput = {
   status?: string;
   proposalId?: string;
+  channel?: string;
+  createdAt?: string | Date;
+  initiatorName?: string | null;
   items?: {
     id: string;
     label: string;
@@ -34,6 +38,10 @@ type ProposalToolOutput = {
     evidence?: string | null;
     confidence?: number;
     approved?: boolean;
+    status?: string;
+    undoExpiresAt?: string | Date | null;
+    undoExpired?: boolean;
+    failureMessage?: string | null;
   }[];
   error?: string;
 };
@@ -55,10 +63,28 @@ const STATUS_LABELS: Record<string, string> = {
   applying: "Aplicando…",
   applied: "Aprobada y ejecutada",
   partially_approved: "Aprobada parcialmente",
+  partially_applied: "Aplicada parcialmente",
+  failed: "Fallida",
+  partially_reverted: "Deshecha parcialmente",
+  reverted: "Deshecha",
   rejected: "Rechazada",
 };
 
-const CLOSED_STATUSES = new Set(["applied", "partially_approved", "rejected"]);
+const CLOSED_STATUSES = new Set([
+  "applied",
+  "failed",
+  "partially_approved",
+  "rejected",
+  "partially_reverted",
+  "reverted",
+]);
+
+function formatTimestamp(value: string | Date): string {
+  return new Intl.DateTimeFormat("es-CL", {
+    dateStyle: "medium",
+    timeStyle: "short",
+  }).format(new Date(value));
+}
 
 // Inline review card for an agent-generated CRMChangeProposal. The tool output
 // stored in the message is a snapshot; live status is re-read on mount so
@@ -69,14 +95,45 @@ export function AgentProposalCard({ part }: { part: ToolPart }) {
   const output = (part.output ?? {}) as ProposalToolOutput;
   const proposalId = output.proposalId;
 
-  const [status, setStatus] = useState<string>("pending");
-  const [approvals, setApprovals] = useState<Record<string, boolean>>({});
-  const [itemStatus, setItemStatus] = useState<Record<string, string>>({});
+  const [status, setStatus] = useState<string>(output.status ?? "pending");
+  const [approvals, setApprovals] = useState<Record<string, boolean>>(() =>
+    Object.fromEntries(
+      (output.items ?? []).map((item) => [item.id, item.approved ?? false]),
+    ),
+  );
+  const [itemStatus, setItemStatus] = useState<Record<string, string>>(() =>
+    Object.fromEntries(
+      (output.items ?? []).map((item) => [item.id, item.status ?? "pending"]),
+    ),
+  );
+  const [itemExpiry, setItemExpiry] = useState<
+    Record<string, string | Date | null>
+  >(() =>
+    Object.fromEntries(
+      (output.items ?? []).map((item) => [item.id, item.undoExpiresAt ?? null]),
+    ),
+  );
+  const [itemFailures, setItemFailures] = useState<
+    Record<string, string | null>
+  >(() =>
+    Object.fromEntries(
+      (output.items ?? []).map((item) => [
+        item.id,
+        item.failureMessage ?? null,
+      ]),
+    ),
+  );
   const [loaded, setLoaded] = useState(false);
 
   function syncState(state: {
     status: string;
-    items: { id: string; approved: boolean; status: string }[];
+    items: {
+      id: string;
+      approved: boolean;
+      status: string;
+      undoExpiresAt: Date | null;
+      failureMessage: string | null;
+    }[];
   }) {
     setStatus(state.status);
     setApprovals(
@@ -84,6 +141,16 @@ export function AgentProposalCard({ part }: { part: ToolPart }) {
     );
     setItemStatus(
       Object.fromEntries(state.items.map((item) => [item.id, item.status])),
+    );
+    setItemExpiry(
+      Object.fromEntries(
+        state.items.map((item) => [item.id, item.undoExpiresAt]),
+      ),
+    );
+    setItemFailures(
+      Object.fromEntries(
+        state.items.map((item) => [item.id, item.failureMessage]),
+      ),
     );
   }
 
@@ -127,7 +194,14 @@ export function AgentProposalCard({ part }: { part: ToolPart }) {
   const items = output.items ?? [];
   const closed = CLOSED_STATUSES.has(status);
   const applying = status === "applying";
-  const approvedCount = Object.values(approvals).filter(Boolean).length;
+  const pendingItemIds = Object.entries(itemStatus)
+    .filter(
+      ([, itemState]) => itemState === "pending" || itemState === "approved",
+    )
+    .map(([itemId]) => itemId);
+  const approvedCount = pendingItemIds.filter(
+    (itemId) => approvals[itemId],
+  ).length;
 
   function toggleItem(itemId: string, approved: boolean) {
     if (!proposalId) return;
@@ -192,11 +266,39 @@ export function AgentProposalCard({ part }: { part: ToolPart }) {
     });
   }
 
+  function revertBatch() {
+    if (!proposalId) return;
+    startTransition(async () => {
+      const res = await revertAgentProposal(proposalId);
+      if (res.error) {
+        toast.error(res.error);
+        return;
+      }
+      syncState(await getAgentProposalState(proposalId));
+      toast.success(`${res.reverted ?? 0} cambio(s) deshecho(s)`);
+      router.refresh();
+    });
+  }
+
   return (
     <div className="bg-card overflow-hidden rounded-lg border">
       <div className="bg-muted/50 flex items-center gap-2 border-b px-3 py-2 text-xs font-medium">
         <ClipboardListIcon className="size-3.5" />
-        Propuesta de cambios
+        <span>
+          Actividad de IA
+          {(output.channel || output.initiatorName) && (
+            <span className="text-muted-foreground ml-2 font-normal">
+              {[output.channel, output.initiatorName]
+                .filter(Boolean)
+                .join(" · ")}
+            </span>
+          )}
+          {output.createdAt && (
+            <span className="text-muted-foreground ml-2 font-normal">
+              {formatTimestamp(output.createdAt)}
+            </span>
+          )}
+        </span>
         {/* Chip de estado: siempre visible, no clickeable — informa, no decide. */}
         <span
           className={cn(
@@ -218,7 +320,7 @@ export function AgentProposalCard({ part }: { part: ToolPart }) {
       <div className="flex flex-col gap-2 p-3">
         {items.map((item) => (
           <div key={item.id} className="flex items-start gap-2 text-xs">
-            {!closed && !applying && (
+            {itemStatus[item.id] === "pending" && !applying && (
               <Checkbox
                 checked={approvals[item.id] ?? item.approved ?? false}
                 onCheckedChange={(checked) =>
@@ -245,6 +347,12 @@ export function AgentProposalCard({ part }: { part: ToolPart }) {
                     {Math.round(item.confidence * 100)}%
                   </span>
                 )}
+                {typeof item.confidence === "number" &&
+                  item.confidence < 0.8 && (
+                    <span className="rounded-full bg-amber-100 px-1.5 py-0.5 text-[10px] font-normal text-amber-700">
+                      Requiere atención
+                    </span>
+                  )}
               </p>
               <p className="text-muted-foreground flex flex-wrap items-center gap-1">
                 <span className="line-through decoration-1">
@@ -265,6 +373,12 @@ export function AgentProposalCard({ part }: { part: ToolPart }) {
                   “<LinkifiedText text={item.evidence} />”
                 </p>
               )}
+              {itemStatus[item.id] === "applied" && itemExpiry[item.id] && (
+                <p className="text-muted-foreground mt-0.5 text-[10px]">
+                  Deshacer disponible hasta{" "}
+                  {formatTimestamp(itemExpiry[item.id]!)}
+                </p>
+              )}
             </div>
             {itemStatus[item.id] === "applied" && (
               <Button
@@ -272,7 +386,9 @@ export function AgentProposalCard({ part }: { part: ToolPart }) {
                 size="sm"
                 className="h-6 shrink-0 px-2 text-xs"
                 onClick={() => revert(item.id)}
-                disabled={pending || !loaded || applying}
+                disabled={
+                  pending || !loaded || applying || item.undoExpired === true
+                }
               >
                 Deshacer
               </Button>
@@ -283,7 +399,10 @@ export function AgentProposalCard({ part }: { part: ToolPart }) {
               </span>
             )}
             {itemStatus[item.id] === "failed" && (
-              <span className="shrink-0 rounded-full bg-amber-100 px-1.5 py-0.5 text-[10px] text-amber-700">
+              <span
+                className="shrink-0 rounded-full bg-amber-100 px-1.5 py-0.5 text-[10px] text-amber-700"
+                title={itemFailures[item.id] ?? undefined}
+              >
                 Falló
               </span>
             )}
@@ -291,7 +410,7 @@ export function AgentProposalCard({ part }: { part: ToolPart }) {
         ))}
       </div>
 
-      {!closed && !applying && (
+      {!closed && !applying && pendingItemIds.length > 0 && (
         <div className="bg-muted/30 flex items-center justify-end gap-2 border-t px-3 py-2">
           <Button
             variant="ghost"
@@ -308,6 +427,18 @@ export function AgentProposalCard({ part }: { part: ToolPart }) {
           >
             {pending && <Loader2Icon className="size-3 animate-spin" />}
             Aplicar {approvedCount > 0 ? `(${approvedCount})` : ""}
+          </Button>
+        </div>
+      )}
+      {items.some((item) => itemStatus[item.id] === "applied") && (
+        <div className="bg-muted/30 flex items-center justify-end border-t px-3 py-2">
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={revertBatch}
+            disabled={pending || !loaded || applying}
+          >
+            Deshacer todo
           </Button>
         </div>
       )}

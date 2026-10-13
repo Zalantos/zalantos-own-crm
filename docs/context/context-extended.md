@@ -4,36 +4,36 @@
 
 ### `src/app/`
 
-| Ruta / área | Responsabilidad |
-|-------------|-----------------|
-| `/` | Landing pública de marketing; sin registro ni acceso a datos CRM |
-| `(dashboard)/` | CRM operativo: companies, people, opportunities, activities, meetings, audit-log |
-| `(dashboard)/admin/` | Configuración por organización |
-| `(superadmin)/` | Gestión de tenants |
-| `login`, `invite`, `reset-password` | Auth y provisioning |
-| `api/` | Route handlers (agent, telegram, crons, auth, evidence) |
-| `admin/settings/telegram` | Vinculación de chats Telegram |
+| Ruta / área                         | Responsabilidad                                                                  |
+| ----------------------------------- | -------------------------------------------------------------------------------- |
+| `/`                                 | Landing pública de marketing; sin registro ni acceso a datos CRM                 |
+| `(dashboard)/`                      | CRM operativo: companies, people, opportunities, activities, meetings, audit-log |
+| `(dashboard)/admin/`                | Configuración por organización                                                   |
+| `(superadmin)/`                     | Gestión de tenants                                                               |
+| `login`, `invite`, `reset-password` | Auth y provisioning                                                              |
+| `api/`                              | Route handlers (agent, telegram, crons, auth, evidence)                          |
+| `admin/settings/telegram`           | Vinculación de chats Telegram                                                    |
 
 Lista y tablero de oportunidades comparten las etapas ocultas en la cookie
 `opportunity-hidden-stages` del navegador.
 
 ### `src/lib/`
 
-| Módulo | Responsabilidad |
-|--------|-----------------|
-| `tenant.ts` | Cliente Prisma con scope de org + RLS |
-| `prisma.ts` | Clientes system y tenant base |
-| `auth.ts` / `auth.config.ts` | Auth.js credentials + middleware |
-| `session.ts` | Helpers de sesión |
-| `meeting-intelligence/` | Pipeline, extracción, transcripción, IA, R2 |
-| `entity-context/` | Enriquecimiento de fichas: sources, perfil IA, propuestas |
-| `agent/` | Copiloto: tools, executor, propuestas |
-| `telegram/` | Auth Bearer del canal n8n → CRM |
-| `integrations/` | Gateway webhook, plantillas email |
-| `workflows/` | Motor de workflows |
-| `crm/` | Políticas de propuestas, dedup de personas |
-| `crypto.ts` | Cifrado de secretos por org |
-| `observability/` | Reporte best-effort de costos IA |
+| Módulo                       | Responsabilidad                                           |
+| ---------------------------- | --------------------------------------------------------- |
+| `tenant.ts`                  | Cliente Prisma con scope de org + RLS                     |
+| `prisma.ts`                  | Clientes system y tenant base                             |
+| `auth.ts` / `auth.config.ts` | Auth.js credentials + middleware                          |
+| `session.ts`                 | Helpers de sesión                                         |
+| `meeting-intelligence/`      | Pipeline, extracción, transcripción, IA, R2               |
+| `entity-context/`            | Enriquecimiento de fichas: sources, perfil IA, propuestas |
+| `agent/`                     | Copiloto: tools, executor y bitácora de cambios           |
+| `telegram/`                  | Auth Bearer del canal n8n → CRM                           |
+| `integrations/`              | Gateway webhook, plantillas email                         |
+| `workflows/`                 | Motor de workflows                                        |
+| `crm/`                       | Políticas de propuestas, dedup de personas                |
+| `crypto.ts`                  | Cifrado de secretos por org                               |
+| `observability/`             | Reporte best-effort de costos IA                          |
 
 ## Flujo de datos
 
@@ -54,9 +54,9 @@ Upload evidence → R2 presign
        ↓
 POST /api/meetings/process (o cron catch-up)
        ↓
-runPipeline: extract → transcribe → analyze → CRMChangeProposal
+runPipeline: extract → transcribe → analyze → CRMChangeProposal/CRMChangeItem
        ↓
-Usuario revisa en UI → apply/reject items
+Aplicación inmediata por ítem → Actividad de IA → deshacer opcional
 ```
 
 ### Agente IA
@@ -64,18 +64,17 @@ Usuario revisa en UI → apply/reject items
 ```txt
 POST /api/agent/chat
        ↓
-AI SDK stream + tools (read CRM, write proposals)
+AI SDK stream + tools (read CRM, execute traced changes)
        ↓
-Propuestas en CRMChangeProposal (source=agent)
+Bitácora en CRMChangeProposal/CRMChangeItem (channel=web)
 ```
 
 El chat puede adjuntar documentos o texto manual; ambos se normalizan a
 `AgentAttachment.extractedText` y entran al prompt como contexto del thread.
 
-Tool `confirm_pending_proposal`: aplica o rechaza la propuesta `pending` más
-reciente del thread (`source=agent`). Límite
-`agentConfig.maxChatConfirmItems` (5); si hay más ítems, redirige a
-`/agent/proposals`.
+Tool `confirm_pending_proposal`: compatibilidad para propuestas legacy y futuras
+acciones destructivas. Una confirmación explícita puede aplicar el lote completo;
+no existe un límite por cantidad de ítems.
 
 ### Telegram ↔ Copiloto
 
@@ -88,6 +87,11 @@ Mismo executor del agente (sin streaming) → { output }
 ```
 
 Detalle de contrato: `docs/integrations/telegram-copiloto.md`.
+
+Las tareas pueden crearse o reasignarse desde cualquier canal con
+`create_task`, `update_task` o `assign_task`. El responsable se resuelve contra
+un `TeamMember` activo por id, usuario vinculado, email o nombre inequívoco;
+`list_team_members` permite desambiguar.
 
 ### Entity context enrichment
 
@@ -108,10 +112,10 @@ after(runEntityContextPipeline)
        ↓
 extract por archivo → UN análisis consolidado del lote
        → EntityContextProfile + Note (auto)
-       → UNA CRMChangeProposal (source=enrichment, pending)
-         con campos CRM, incluido perfil comercial estándar de Company
+       → UNA CRMChangeProposal (source=enrichment, channel=enrichment)
+         aplicada por ítem, con campos CRM incluido el perfil comercial de Company
        ↓
-Usuario revisa propuestas de campos en tab Contexto
+Usuario revisa trazabilidad o deshace en Actividad de IA
 ```
 
 El pipeline acepta varios archivos por corrida: si un archivo falla en
@@ -128,12 +132,12 @@ agrupa fuentes atascadas por entidad y las procesa en lote.
 
 Endpoints POST protegidos con `Authorization: Bearer <CRON_SECRET>`:
 
-| Endpoint | Función |
-|----------|---------|
-| `/api/cron/process-evidence` | Reprocesa meetings atascados en pipeline |
-| `/api/cron/process-entity-context` | Reprocesa fuentes de contexto atascadas |
-| `/api/cron/check-overdue` | Oportunidades/actividades vencidas |
-| `/api/cron/send-task-reminders` | Resumen de tareas abiertas del día (y vencidas) a las 18:00, por mail y Telegram |
+| Endpoint                           | Función                                                                          |
+| ---------------------------------- | -------------------------------------------------------------------------------- |
+| `/api/cron/process-evidence`       | Reprocesa meetings atascados en pipeline                                         |
+| `/api/cron/process-entity-context` | Reprocesa fuentes de contexto atascadas                                          |
+| `/api/cron/check-overdue`          | Oportunidades/actividades vencidas                                               |
+| `/api/cron/send-task-reminders`    | Resumen de tareas abiertas del día (y vencidas) a las 18:00, por mail y Telegram |
 
 GAP: configuración de schedule en Railway no versionada en el repo. Ese cron
 conviene invocarlo al menos una vez por hora: cada org envía solo si su hora

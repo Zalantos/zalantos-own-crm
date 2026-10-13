@@ -9,14 +9,14 @@ personas, oportunidades, actividades, notas y reuniones. Incluye:
   requiere login en `/login`.
 - **Pipeline configurable** por etapas (`PipelineStage`).
 - **Meeting Intelligence**: subir evidencia (audio, video, PDF, etc.), transcribir,
-  analizar con IA y generar propuestas de cambio al CRM para revisión humana.
+  analizar con IA y ejecutar cambios no destructivos con trazabilidad reversible.
 - **Enriquecimiento de contexto**: documentos en fichas de empresa/persona/
-  oportunidad → perfil IA (resumen + hechos) automático + propuestas de campos,
+  oportunidad → perfil IA (resumen + hechos) automático + cambios de campos,
   incluyendo perfil comercial estándar de empresas.
 - **Agente IA copiloto**: chat contextual con herramientas de lectura/escritura
-  del CRM y propuestas de cambio. Incluye consultas agregadas de pipeline,
+  directa y reversible del CRM. Incluye consultas agregadas de pipeline,
   timeline de registros, agenda del usuario y acceso a reuniones y sus
-  propuestas pendientes.
+  actividad de IA y acciones destructivas pendientes.
 - **Telegram ↔ copiloto**: canal entrante vía n8n (`/api/telegram/*`) con
   vinculación `telegram_chat_id` ↔ usuario y thread persistente.
 - **MCP ↔ copiloto**: servidor de tools en `/api/mcp` para clientes externos,
@@ -37,23 +37,23 @@ personas, oportunidades, actividades, notas y reuniones. Incluye:
 
 Unificar pipeline comercial, inteligencia de reuniones y automatización en una
 sola aplicación con aislamiento multi-tenant y trazabilidad de cambios
-propuestos por IA.
+ejecutados por IA.
 
 ## Usuarios principales
 
-| Rol | Capacidades |
-|-----|-------------|
-| MEMBER | CRM operativo (empresas, personas, oportunidades, reuniones, agente) |
-| ADMIN | + configuración (usuarios, equipo, campos, workflows, etapas, org) |
-| Super-admin | Gestión de organizaciones en `/superadmin` |
+| Rol         | Capacidades                                                          |
+| ----------- | -------------------------------------------------------------------- |
+| MEMBER      | CRM operativo (empresas, personas, oportunidades, reuniones, agente) |
+| ADMIN       | + configuración (usuarios, equipo, campos, workflows, etapas, org)   |
+| Super-admin | Gestión de organizaciones en `/superadmin`                           |
 
 ## Flujos principales
 
 1. **Pipeline comercial**: crear empresa → personas → oportunidad → actividades.
 2. **Reunión con IA**: crear meeting → subir evidencia → pipeline automático →
-   revisar propuesta → aplicar cambios al CRM.
+   aplicar cambios no destructivos → revisar o deshacer desde Actividad de IA.
 3. **Agente**: abrir chat en contexto de entidad → consultar/actualizar CRM →
-   revisar propuestas del agente (web) o confirmar/rechazar por chat (Telegram).
+   revisar trazabilidad o deshacer cambios en `/agent/proposals`.
 4. **Telegram**: vincular chat con código en Configuración → conversar con el
    copiloto desde el bot (n8n como cartero).
 5. **Workflows**: evento en entidad → evaluar condiciones → ejecutar acciones
@@ -77,15 +77,16 @@ Versión 0.1.0 en desarrollo activo. Funcional en local y desplegable en Railway
 
 - Modelo multi-tenant (`organizationId` en todas las entidades de tenant).
 - Doble barrera de aislamiento (filtro app + RLS opcional).
-- Flujo de propuestas CRM (revisión humana antes de aplicar).
+- Bitácora tenant de cambios IA y sus invariantes de reversión segura.
 - Separación `prismaSystem` vs cliente tenant (`forOrg`).
 - Migraciones ya aplicadas en producción.
 
 ## Decisiones clave
 
 - Etapas de pipeline como filas configurables, no enum fijo.
-- Propuestas de cambio (`CRMChangeProposal` / `CRMChangeItem`) con estados y
-  reversión.
+- Cambios IA (`CRMChangeProposal` / `CRMChangeItem`) con ejecución directa,
+  estados por ítem y reversión durante 90 días. Eliminaciones y fusiones siguen
+  requiriendo aprobación previa.
 - Gateway único externo para integraciones; el CRM conserva dedupe y auditoría.
 - Credenciales locales (email/password); sin OAuth social en v1.
 - Home pública en `/`; rutas CRM, admin y superadmin quedan detrás de Auth.js.

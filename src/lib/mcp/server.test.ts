@@ -60,6 +60,7 @@ const NEW_TOOLS: Record<string, string[]> = {
   create_activity: ["companyId", "type", "title", "date"],
   create_meeting: ["companyId", "title", "date"],
   update_task: ["taskId"],
+  assign_task: ["taskId"],
   complete_task: ["taskId"],
   list_tasks: [],
   list_companies: [],
@@ -70,6 +71,10 @@ const NEW_TOOLS: Record<string, string[]> = {
   list_activities: [],
   update_activity: ["activityId"],
   update_meeting: ["meetingId"],
+  list_ai_changes: [],
+  get_ai_change: ["changeBatchId"],
+  revert_ai_change_item: ["itemId"],
+  revert_ai_change_batch: ["changeBatchId"],
 };
 
 describe("MCP: herramientas nuevas", () => {
@@ -91,10 +96,16 @@ describe("MCP: herramientas nuevas", () => {
       "create_activity",
       "create_meeting",
       "update_task",
+      "assign_task",
       "complete_task",
       "update_note",
       "update_activity",
       "update_meeting",
+      "update_record_fields",
+      "change_stage",
+      "create_contact",
+      "create_opportunity",
+      "create_company",
     ]) {
       assert.match(
         byName.get(name)!.description,
@@ -103,15 +114,24 @@ describe("MCP: herramientas nuevas", () => {
     }
     const createTask = byName.get("create_task")!;
     assert.ok(createTask.inputSchema.properties?.assigneeEmail);
+    assert.ok(createTask.inputSchema.properties?.assigneeName);
     assert.ok(createTask.inputSchema.properties?.priority);
     assert.ok(createTask.inputSchema.properties?.plannedDate);
     assert.ok(createTask.inputSchema.properties?.blockedReason);
     assert.ok(createTask.inputSchema.properties?.completedById);
 
     const updateTask = byName.get("update_task")!;
+    assert.ok(updateTask.inputSchema.properties?.assigneeId);
+    assert.ok(updateTask.inputSchema.properties?.assigneeEmail);
+    assert.ok(updateTask.inputSchema.properties?.assigneeName);
     assert.ok(updateTask.inputSchema.properties?.plannedDate);
     assert.ok(updateTask.inputSchema.properties?.blockedReason);
     assert.ok(updateTask.inputSchema.properties?.completedById);
+
+    const assignTask = byName.get("assign_task")!;
+    assert.ok(assignTask.inputSchema.properties?.assigneeId);
+    assert.ok(assignTask.inputSchema.properties?.assigneeEmail);
+    assert.ok(assignTask.inputSchema.properties?.assigneeName);
 
     const createCompany = byName.get("create_company")!;
     assert.ok(createCompany.inputSchema.properties?.potentialValue);
@@ -154,6 +174,9 @@ describe("MCP: herramientas nuevas", () => {
       ["update_note", {}],
       ["update_activity", {}],
       ["update_meeting", {}],
+      ["get_ai_change", {}],
+      ["revert_ai_change_item", {}],
+      ["revert_ai_change_batch", {}],
       ["list_tasks", { status: ["cancelled"] }],
     ];
     for (const [name, args] of cases) {

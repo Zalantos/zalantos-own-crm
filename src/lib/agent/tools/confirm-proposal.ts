@@ -1,12 +1,11 @@
 import { defineAgentTool } from "@/lib/agent/tool-definition";
 import { z } from "zod";
 import type { AgentToolContext } from "@/lib/agent/executor";
-import { agentConfig } from "@/lib/agent/config";
-import { appUrl } from "@/lib/meeting-intelligence/config";
 import {
   applyProposal,
   getProposalContext,
 } from "@/lib/meeting-intelligence/apply";
+import { readMutationResult } from "@/lib/agent/proposals";
 import { appendTimelineEvent } from "@/lib/timeline";
 
 // Aplica o rechaza la propuesta pendiente más reciente del thread desde la
@@ -31,7 +30,7 @@ export function buildConfirmProposalTools(ctx: AgentToolContext) {
         // igual necesitan aplicarse.
         const proposal = await ctx.db.cRMChangeProposal.findFirst({
           where: {
-            status: "pending",
+            status: { in: ["pending", "partially_applied"] },
             source: "agent",
             chatThreadId: ctx.threadId,
           },
@@ -47,22 +46,14 @@ export function buildConfirmProposalTools(ctx: AgentToolContext) {
         }
 
         if (approve) {
-          // Propuestas grandes se revisan en la web (no aprobar a ciegas por chat).
-          if (proposal.items.length > agentConfig.maxChatConfirmItems) {
-            return {
-              status: "too_large" as const,
-              itemCount: proposal.items.length,
-              reviewUrl: `${appUrl()}/agent/proposals`,
-              message: `Esta propuesta tiene ${proposal.items.length} cambios. Es mejor revisarla en detalle en la web antes de aplicarla.`,
-            };
-          }
-
           // El usuario confirma toda la propuesta: aprobar los ítems no-terminales
           // antes de aplicar (applyProposal solo aplica los approved=true).
           await ctx.db.cRMChangeItem.updateMany({
             where: {
               proposalId: proposal.id,
-              proposal: { status: "pending" },
+              proposal: {
+                status: { in: ["pending", "partially_applied"] },
+              },
               status: { notIn: ["applied", "reverted", "failed"] },
             },
             data: { approved: true, status: "approved" },
@@ -75,19 +66,26 @@ export function buildConfirmProposalTools(ctx: AgentToolContext) {
             ctx.userId,
           );
           return {
-            status: "applied" as const,
+            ...(await readMutationResult(ctx.db, proposal.id)),
             applied: result.applied,
             failed: result.failed,
           };
         }
 
         // Rechazo: replica la lógica de rejectAgentProposal (no hay función core).
+        const applied = await ctx.db.cRMChangeItem.count({
+          where: { proposalId: proposal.id, status: "applied" },
+        });
         const rejected = await ctx.db.cRMChangeProposal.updateMany({
-          where: { id: proposal.id, status: "pending" },
+          where: {
+            id: proposal.id,
+            status: { in: ["pending", "partially_applied"] },
+          },
           data: {
-            status: "rejected",
+            status: applied > 0 ? "partially_approved" : "rejected",
             reviewedBy: ctx.userId,
             reviewedAt: new Date(),
+            completedAt: new Date(),
           },
         });
         if (rejected.count !== 1) {
@@ -112,7 +110,7 @@ export function buildConfirmProposalTools(ctx: AgentToolContext) {
           metadata: { proposalId: proposal.id, via: "agent" },
         });
 
-        return { status: "rejected" as const };
+        return readMutationResult(ctx.db, proposal.id);
       },
     }),
   };

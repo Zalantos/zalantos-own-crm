@@ -2,18 +2,18 @@
 
 ## Resumen
 
-| Servicio | Uso | Credenciales |
-|----------|-----|--------------|
-| PostgreSQL | Base de datos principal | `DATABASE_URL`, `TENANT_DATABASE_URL` |
-| Groq | Transcripción (Whisper) y razonamiento de reuniones/fichas | `GROQ_API_KEY` |
-| Anthropic | Modelo alternativo (agente/reuniones) | `ANTHROPIC_API_KEY` |
-| OpenAI | Agente copiloto (`gpt-6-luna` por defecto) | `OPENAI_API_KEY` |
-| Cloudflare R2 | Evidencia y adjuntos | `R2_*` |
-| Gateway webhook | Email, Slack, automaciones (saliente) | `INTEGRATION_GATEWAY_*` |
-| Telegram (vía n8n) | Canal entrante al copiloto IA | `INTEGRATION_GATEWAY_SECRET`, `NEXT_PUBLIC_TELEGRAM_BOT_USERNAME` |
-| Inbound Leads (vía n8n) | Bandeja de leads externos (`/leads`) | `INBOUND_LEADS_SECRET`, `INBOUND_LEADS_ORGANIZATION_SLUG` |
-| MCP | Tools CRM para Cursor u otros clientes | Token personal `zcrm_…` (solo hash en BD) |
-| Zalantos Observability | Reporte best-effort de costos/tokens de IA | `OBSERVABILITY_BASE_URL`, `OBSERVABILITY_API_KEY` |
+| Servicio                | Uso                                                        | Credenciales                                                      |
+| ----------------------- | ---------------------------------------------------------- | ----------------------------------------------------------------- |
+| PostgreSQL              | Base de datos principal                                    | `DATABASE_URL`, `TENANT_DATABASE_URL`                             |
+| Groq                    | Transcripción (Whisper) y razonamiento de reuniones/fichas | `GROQ_API_KEY`                                                    |
+| Anthropic               | Modelo alternativo (agente/reuniones)                      | `ANTHROPIC_API_KEY`                                               |
+| OpenAI                  | Agente copiloto (`gpt-6-luna` por defecto)                 | `OPENAI_API_KEY`                                                  |
+| Cloudflare R2           | Evidencia y adjuntos                                       | `R2_*`                                                            |
+| Gateway webhook         | Email, Slack, automaciones (saliente)                      | `INTEGRATION_GATEWAY_*`                                           |
+| Telegram (vía n8n)      | Canal entrante al copiloto IA                              | `INTEGRATION_GATEWAY_SECRET`, `NEXT_PUBLIC_TELEGRAM_BOT_USERNAME` |
+| Inbound Leads (vía n8n) | Bandeja de leads externos (`/leads`)                       | `INBOUND_LEADS_SECRET`, `INBOUND_LEADS_ORGANIZATION_SLUG`         |
+| MCP                     | Tools CRM para Cursor u otros clientes                     | Token personal `zcrm_…` (solo hash en BD)                         |
+| Zalantos Observability  | Reporte best-effort de costos/tokens de IA                 | `OBSERVABILITY_BASE_URL`, `OBSERVABILITY_API_KEY`                 |
 
 ## Gateway de integraciones
 
@@ -38,10 +38,10 @@ Estados de delivery: `pending` → `sent` | `failed`
 
 ## IA — Meeting Intelligence
 
-| Paso | Proveedor | Env |
-|------|-----------|-----|
-| Transcripción audio/video | Groq Whisper | `GROQ_TRANSCRIPTION_MODEL` |
-| Análisis y propuestas | Groq/Anthropic/OpenAI | `MEETING_REASONING_MODEL` |
+| Paso                      | Proveedor             | Env                        |
+| ------------------------- | --------------------- | -------------------------- |
+| Transcripción audio/video | Groq Whisper          | `GROQ_TRANSCRIPTION_MODEL` |
+| Análisis y propuestas     | Groq/Anthropic/OpenAI | `MEETING_REASONING_MODEL`  |
 
 Prompts en `src/lib/meeting-intelligence/prompts/*.md`.
 
@@ -61,15 +61,15 @@ resultado de la transcripción; no recibe audio, texto, usuario ni tenant.
 
 ## IA — Agente copiloto
 
-| Config | Env |
-|--------|-----|
-| Modelo | `AGENT_MODEL` (formato `proveedor/modelo`). Default: `openai/gpt-6-luna` |
-| Límite de pasos | Hardcoded: 8 (`src/lib/agent/config.ts`) |
-| Confirmación por chat | Máx. 1 ítem (`maxChatConfirmItems`) |
+| Config          | Env                                                                      |
+| --------------- | ------------------------------------------------------------------------ |
+| Modelo          | `AGENT_MODEL` (formato `proveedor/modelo`). Default: `openai/gpt-6-luna` |
+| Límite de pasos | Hardcoded: 8 (`src/lib/agent/config.ts`)                                 |
 
-Tools: lectura CRM, propuestas de escritura, adjuntos, y
-`confirm_pending_proposal` (aplicar/rechazar la propuesta pendiente del thread;
-pensado para Telegram, donde no hay UI de revisión).
+Tools: lectura CRM, escritura directa trazada, adjuntos y
+`confirm_pending_proposal` para propuestas legacy o acciones destructivas. Las
+mutaciones seguras se aplican aun con baja confianza y se pueden deshacer desde
+Actividad de IA.
 
 API web: `POST /api/agent/chat` (streaming).
 
@@ -82,31 +82,40 @@ exige `Authorization: Bearer <token personal>` en cada request.
 El lookup inicial del hash usa `prismaSystem`; después de resolver al usuario y
 su organización activa, todas las tools usan `forOrg(organizationId)`.
 
-| Entidad            | Crear                | Leer/localizar                                    | Editar                                 |
-| ------------------ | -------------------- | ------------------------------------------------- | -------------------------------------- |
-| Empresa            | `create_company`     | `list_companies`, `search_crm`, `get_record`      | `update_record_fields`                 |
-| Contacto           | `create_contact`     | `list_people`, `search_crm`, `get_record`         | `update_record_fields`                 |
-| Oportunidad        | `create_opportunity` | `search_crm`, `get_record`, `query_opportunities` | `update_record_fields`, `change_stage` |
-| Nota               | `create_note`        | `list_notes`                                      | `update_note`                          |
-| Tarea              | `create_task`        | `list_tasks`                                      | `update_task`, `complete_task`         |
-| Actividad ocurrida | `create_activity`    | `list_activities`                                 | `update_activity`                      |
-| Reunión            | `create_meeting`     | `list_meetings`, `get_meeting`                    | `update_meeting`                       |
+| Entidad            | Crear                | Leer/localizar                                    | Editar                                        |
+| ------------------ | -------------------- | ------------------------------------------------- | --------------------------------------------- |
+| Empresa            | `create_company`     | `list_companies`, `search_crm`, `get_record`      | `update_record_fields`                        |
+| Contacto           | `create_contact`     | `list_people`, `search_crm`, `get_record`         | `update_record_fields`                        |
+| Oportunidad        | `create_opportunity` | `search_crm`, `get_record`, `query_opportunities` | `update_record_fields`, `change_stage`        |
+| Nota               | `create_note`        | `list_notes`                                      | `update_note`                                 |
+| Tarea              | `create_task`        | `list_tasks`, `list_team_members`                 | `update_task`, `assign_task`, `complete_task` |
+| Actividad ocurrida | `create_activity`    | `list_activities`                                 | `update_activity`                             |
+| Reunión            | `create_meeting`     | `list_meetings`, `get_meeting`                    | `update_meeting`                              |
 
 `create_task`/`update_task` cubren tipo, estado, fecha planificada, vencimiento,
-responsable, quién la completó, motivo de bloqueo y prioridad. `create_company`,
+responsable, quién la completó, motivo de bloqueo y prioridad. `assign_task`
+expone asignación, reasignación y desasignación de forma explícita por id,
+email, nombre inequívoco o `me`; `list_team_members` resuelve ambigüedades y está
+disponible también en web y Telegram. `create_company`,
 `create_contact` y `create_opportunity` aceptan todos sus campos estándar; los
 campos custom se consultan con `list_writable_fields` y se escriben después con
 `update_record_fields`. `list_team_members` permite resolver responsables sin
 depender de la UI.
 
-Cada llamada MCP es su propio turno, así que las escrituras operativas directas
-se aplican al instante; en el chat del copiloto, a partir del segundo cambio de
-un turno caen en la propuesta del turno (ítems `log_activity`,
-`create_meeting`, `update_task`, aplicables y reversibles en `apply.ts`).
-Cambios de campos/etapa y altas de empresa/contacto/oportunidad crean propuestas
-`source=agent`, `model=mcp`, visibles en `/agent/proposals`.
-`confirm_proposal` opera por id: puede aplicar una propuesta de un ítem o
-derivar propuestas mayores a la bandeja web.
+Toda mutación MCP no destructiva se aplica de inmediato a través del ejecutor
+central y deja un `CRMChangeItem` en un lote `channel=mcp`. Las respuestas
+incluyen `status`, `changeBatchId`, el alias compatible `proposalId`, ítems
+aplicados/fallidos/pendientes, errores y `undoExpiresAt`.
+
+MCP expone `list_ai_changes`, `get_ai_change`, `revert_ai_change_item` y
+`revert_ai_change_batch`. `list_pending_proposals` y `confirm_proposal` se
+mantienen para propuestas históricas y acciones destructivas, sin límite por
+cantidad de ítems cuando la aprobación es explícita.
+
+Web, Telegram, MCP, Meeting Intelligence y enriquecimiento convergen en la
+misma bitácora. Las actividades creadas por workflows derivados quedan como
+ítems hijos; efectos externos como correos, mensajes o webhooks no se anuncian
+como reversibles.
 
 UI admin: `/admin/settings/mcp` (crear, copiar una vez y revocar tokens propios).
 La URL publicada se construye con `APP_URL`; MCP no agrega variables nuevas.
@@ -129,10 +138,10 @@ Detalle completo: `docs/integrations/telegram-copiloto.md`.
 
 n8n actúa de cartero (Telegram Trigger → HTTP al CRM). Endpoints:
 
-| Ruta | Propósito |
-|------|-----------|
-| `POST /api/telegram/link` | Handshake `/vincular <código>` |
-| `POST /api/telegram/context` | Gate: ¿chat vinculado? |
+| Ruta                         | Propósito                          |
+| ---------------------------- | ---------------------------------- |
+| `POST /api/telegram/link`    | Handshake `/vincular <código>`     |
+| `POST /api/telegram/context` | Gate: ¿chat vinculado?             |
 | `POST /api/telegram/message` | Turno del copiloto (sin streaming) |
 
 Auth: `Authorization: Bearer <INTEGRATION_GATEWAY_SECRET>` (timing-safe).
@@ -148,12 +157,12 @@ UI admin: `/admin/settings/telegram` (código efímero + lista de vínculos).
 Tras cada ejecución de IA (éxito o error) se envía un evento single a
 `POST {OBSERVABILITY_BASE_URL}/api/v1/ingest/ai-event` con header `X-Api-Key`.
 
-| Flujo | `usage_kind` | `flow_slug` |
-|-------|--------------|-------------|
-| Agente copiloto | `agent_run` | `agent-chat` |
-| Razonamiento de reuniones | `extraction` | `meeting-reasoning` |
-| Enriquecimiento de fichas | `extraction` | `entity-context` |
-| Transcripción Whisper | `transcription` | `meeting-transcription` |
+| Flujo                     | `usage_kind`    | `flow_slug`             |
+| ------------------------- | --------------- | ----------------------- |
+| Agente copiloto           | `agent_run`     | `agent-chat`            |
+| Razonamiento de reuniones | `extraction`    | `meeting-reasoning`     |
+| Enriquecimiento de fichas | `extraction`    | `entity-context`        |
+| Transcripción Whisper     | `transcription` | `meeting-transcription` |
 
 - `service_name`: `backend`
 - `service_slug`: `crm-zalantos`
@@ -179,12 +188,12 @@ Si R2 no está configurado, adjuntos de texto pueden funcionar sin storage.
 
 Endpoints internos que un scheduler debe llamar:
 
-| Ruta | Propósito |
-|------|-----------|
-| `POST /api/cron/process-evidence` | Catch-up pipeline meetings |
-| `POST /api/cron/process-entity-context` | Catch-up enriquecimiento de fichas |
-| `POST /api/cron/check-overdue` | Alertas de vencimiento |
-| `POST /api/cron/send-task-reminders` | Resumen diario de tareas vencidas (18:00, timezone de la org) por mail y Telegram |
+| Ruta                                    | Propósito                                                                         |
+| --------------------------------------- | --------------------------------------------------------------------------------- |
+| `POST /api/cron/process-evidence`       | Catch-up pipeline meetings                                                        |
+| `POST /api/cron/process-entity-context` | Catch-up enriquecimiento de fichas                                                |
+| `POST /api/cron/check-overdue`          | Alertas de vencimiento                                                            |
+| `POST /api/cron/send-task-reminders`    | Resumen diario de tareas vencidas (18:00, timezone de la org) por mail y Telegram |
 
 Autenticación: `Authorization: Bearer <CRON_SECRET>`
 
@@ -215,12 +224,12 @@ El campo `Meeting.sourceType` anticipa orígenes futuros.
 
 ## Entornos
 
-| Variable | Dev | Prod |
-|----------|-----|------|
-| `APP_URL` | `http://localhost:3000` | URL pública Railway |
-| Gateway | Local/staging n8n | Prod n8n |
-| R2 | Bucket dev | Bucket prod |
-| Groq | Misma API key (cuidado con costos) | Key de prod |
+| Variable  | Dev                                | Prod                |
+| --------- | ---------------------------------- | ------------------- |
+| `APP_URL` | `http://localhost:3000`            | URL pública Railway |
+| Gateway   | Local/staging n8n                  | Prod n8n            |
+| R2        | Bucket dev                         | Bucket prod         |
+| Groq      | Misma API key (cuidado con costos) | Key de prod         |
 
 ## Riesgos
 

@@ -10,6 +10,7 @@ import { forOrg } from "@/lib/tenant";
 import type { McpPrincipal } from "./auth";
 import { buildMcpConfirmProposalTool } from "./confirm-proposal";
 import { buildMcpRecordTools } from "./record-tools";
+import { buildMcpChangeTools } from "./change-tools";
 import { ensureMcpThread } from "./thread";
 
 const READ_TOOL_NAMES = [
@@ -42,13 +43,11 @@ const DIRECT_WRITE_TOOL_NAMES = [
   "create_activity",
   "create_meeting",
   "update_task",
+  "assign_task",
   "complete_task",
   "update_note",
   "update_activity",
   "update_meeting",
-] as const;
-
-const PROPOSAL_TOOL_NAMES = [
   "update_record_fields",
   "change_stage",
   "create_contact",
@@ -56,18 +55,21 @@ const PROPOSAL_TOOL_NAMES = [
   "create_company",
 ] as const;
 
+const CHANGE_TOOL_NAMES = [
+  "list_ai_changes",
+  "get_ai_change",
+  "revert_ai_change_item",
+  "revert_ai_change_batch",
+] as const;
+
 const SHARED_TOOL_NAMES = [
   ...READ_TOOL_NAMES,
   ...DIRECT_WRITE_TOOL_NAMES,
-  ...PROPOSAL_TOOL_NAMES,
+  ...CHANGE_TOOL_NAMES,
 ] as const;
 
 const DIRECT_WRITE_TOOLS = new Set<string>(DIRECT_WRITE_TOOL_NAMES);
-const PROPOSAL_TOOLS = new Set<string>(PROPOSAL_TOOL_NAMES);
-const THREAD_TOOLS = new Set<string>([
-  ...DIRECT_WRITE_TOOL_NAMES,
-  ...PROPOSAL_TOOL_NAMES,
-]);
+const THREAD_TOOLS = new Set<string>([...DIRECT_WRITE_TOOL_NAMES]);
 
 type RuntimeToolDefinition = {
   description: string;
@@ -84,6 +86,7 @@ function createToolContext(
     db: forOrg(principal.organizationId),
     userId: principal.userId,
     threadId,
+    channel: "mcp",
     proposalModel: "mcp",
     pageContext: null,
     turnState: { changeCount: 0, pendingInstant: null, proposalId: null },
@@ -94,6 +97,7 @@ function buildMcpToolDefinitions(ctx: AgentToolContext) {
   return {
     ...buildAgentToolDefinitions(ctx),
     ...buildMcpRecordTools(ctx),
+    ...buildMcpChangeTools(ctx),
   };
 }
 
@@ -104,9 +108,6 @@ function mcpDescription(name: string, base: string): string {
     : "Resolvé ids con search_crm cuando corresponda; nunca inventes un id.";
   if (DIRECT_WRITE_TOOLS.has(name)) {
     return `${base} En MCP esta acción queda escrita al instante. ${idRule}`.trim();
-  }
-  if (PROPOSAL_TOOLS.has(name)) {
-    return `${base} En MCP nunca aplica el cambio: devuelve una propuesta pendiente con proposalId. Solo llamá confirm_proposal si el usuario pidió explícitamente confirmar ese id; si devuelve too_large, compartí reviewUrl y no reintentes. ${idRule}`;
   }
   return `${base} ${idRule}`.trim();
 }

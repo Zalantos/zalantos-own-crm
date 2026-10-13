@@ -12,8 +12,8 @@ import {
   mapAnalysisToItems,
   type MappedChangeItem,
 } from "@/lib/meeting-intelligence/ai/mapping";
-import { approvalFromConfidence } from "@/lib/crm/proposal-policy";
 import { dedupeContactItems } from "@/lib/meeting-intelligence/dedup-items";
+import { applyProposal } from "@/lib/meeting-intelligence/apply";
 import type { Prisma } from "@prisma/client";
 
 // Orchestrates evidence → text → transcript → AI → proposal for one meeting.
@@ -117,43 +117,54 @@ export async function runPipeline(
     );
 
     // --- Persist proposal + items ---
-    await withOrgTransaction(organizationId, async (tx) => {
-      await tx.cRMChangeProposal.create({
-        data: {
-          organizationId,
-          meetingId,
-          confidence: analysis.confidence,
-          model,
-          rawModelOutput: raw as unknown as Prisma.InputJsonValue,
-          items: {
-            create: items.map((item) => ({
+    const proposalId = await withOrgTransaction(organizationId, async (tx) => {
+      const proposal = items.length
+        ? await tx.cRMChangeProposal.create({
+            data: {
               organizationId,
-              type: item.type,
-              entity: item.entity,
-              entityId: item.entityId,
-              beforeValue: (item.beforeValue ??
-                undefined) as Prisma.InputJsonValue,
-              afterValue: (item.afterValue ??
-                undefined) as Prisma.InputJsonValue,
-              confidence: item.confidence,
-              explanation: item.explanation,
-              evidence: item.evidence || null,
-              duplicateOfId: item.duplicateOfId ?? null,
-              // Pre-approve only high-confidence items; the rest need a tick.
-              ...approvalFromConfidence(item.confidence),
-            })),
-          },
-        },
-      });
+              meetingId,
+              channel: "meeting",
+              initiatedBy: meeting.createdBy,
+              confidence: analysis.confidence,
+              model,
+              rawModelOutput: raw as unknown as Prisma.InputJsonValue,
+              items: {
+                create: items.map((item, sequence) => ({
+                  organizationId,
+                  type: item.type,
+                  entity: item.entity,
+                  entityId: item.entityId,
+                  beforeValue: (item.beforeValue ??
+                    undefined) as Prisma.InputJsonValue,
+                  afterValue: (item.afterValue ??
+                    undefined) as Prisma.InputJsonValue,
+                  confidence: item.confidence,
+                  explanation: item.explanation,
+                  evidence: item.evidence || null,
+                  duplicateOfId: item.duplicateOfId ?? null,
+                  approved: true,
+                  status: "approved",
+                  sequence,
+                })),
+              },
+            },
+          })
+        : null;
 
       await tx.meeting.update({
         where: { id: meetingId, organizationId },
         data: {
           processingStatus: "ready",
-          aiSummary: buildAiSummary(analysis) as unknown as Prisma.InputJsonValue,
+          aiSummary: buildAiSummary(
+            analysis,
+          ) as unknown as Prisma.InputJsonValue,
         },
       });
+      return proposal?.id ?? null;
     });
+    if (proposalId) {
+      await applyProposal(db, organizationId, proposalId, meeting.createdBy);
+    }
   } catch (error) {
     await db.meeting.update({
       where: { id: meetingId },

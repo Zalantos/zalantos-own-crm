@@ -127,6 +127,7 @@ export async function POST(request: NextRequest) {
         db,
         userId: link.userId,
         threadId,
+        channel: "telegram",
         pageContext: null,
       }),
       stopWhen: stepCountIs(agentConfig.maxSteps),

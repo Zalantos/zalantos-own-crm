@@ -85,5 +85,5 @@ actualizar los docs correspondientes en `docs/` y marcar el checklist del PR.
 | Agente IA | `src/lib/agent/`, `src/app/api/agent/` |
 | Telegram | `src/lib/telegram/`, `src/app/api/telegram/` |
 | Integraciones | `src/lib/integrations/gateway.ts` |
-| Propuestas CRM | `src/lib/crm/proposal-policy.ts`, `src/lib/meeting-intelligence/apply.ts` |
+| Actividad IA | `src/lib/agent/proposals.ts`, `src/lib/meeting-intelligence/apply.ts` |
 | RLS | `scripts/sql/setup-roles.sql`, migración `enable_row_level_security` |

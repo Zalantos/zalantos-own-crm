@@ -2,14 +2,13 @@ import type { Prisma } from "@prisma/client";
 import { z } from "zod";
 import { defineAgentTool } from "@/lib/agent/tool-definition";
 import type { AgentToolContext } from "@/lib/agent/executor";
+import { registerProposalChange } from "@/lib/agent/proposals";
 import {
   LOGGED_ACTIVITY_TYPES,
   buildManualMeetingSummary,
   normalizeMeetingParticipants,
   type ManualMeetingInput,
 } from "@/lib/crm/activity-records";
-import { appendTimelineEvent } from "@/lib/timeline";
-import { withOrgTransaction } from "@/lib/tenant";
 import {
   assertCompany,
   assertOpportunityOfCompany,
@@ -194,50 +193,6 @@ export function buildMcpRecordTools(ctx: AgentToolContext) {
       }),
     }),
 
-    list_team_members: defineAgentTool({
-      description:
-        "Lista miembros del equipo y sus ids/emails para asignar tareas o registrar quién las completó.",
-      inputSchema: z.object({
-        query: z.string().optional(),
-        includeInactive: z.boolean().optional(),
-        limit: z.number().int().min(1).max(100).optional(),
-      }),
-      execute: async ({ query, includeInactive, limit }) => ({
-        teamMembers: await ctx.db.teamMember.findMany({
-          where: {
-            ...(includeInactive ? {} : { isActive: true }),
-            ...(query
-              ? {
-                  OR: [
-                    {
-                      name: {
-                        contains: query,
-                        mode: "insensitive" as const,
-                      },
-                    },
-                    {
-                      email: {
-                        contains: query,
-                        mode: "insensitive" as const,
-                      },
-                    },
-                  ],
-                }
-              : {}),
-          },
-          orderBy: { name: "asc" },
-          take: limit ?? 50,
-          select: {
-            id: true,
-            userId: true,
-            name: true,
-            email: true,
-            isActive: true,
-          },
-        }),
-      }),
-    }),
-
     list_notes: defineAgentTool({
       description:
         "Lista notas para localizar noteId y leer su contenido antes de usar update_note. Permite filtrar por empresa, persona u oportunidad.",
@@ -282,32 +237,40 @@ export function buildMcpRecordTools(ctx: AgentToolContext) {
             companyId: true,
             opportunityId: true,
             title: true,
+            body: true,
           },
         });
         if (!note) throw new Error(`Nota no encontrada: ${noteId}`);
 
-        return withOrgTransaction(ctx.organizationId, async (tx) => {
-          const updated = await tx.note.update({
-            where: { id: noteId, organizationId: ctx.organizationId },
-            data: {
-              ...(title !== undefined ? { title: emptyToNull(title) } : {}),
-              ...(body !== undefined ? { body } : {}),
+        const beforeValue = {
+          ...(title !== undefined ? { title: note.title } : {}),
+          ...(body !== undefined ? { body: note.body } : {}),
+        };
+        const afterValue = {
+          ...(title !== undefined ? { title: emptyToNull(title) } : {}),
+          ...(body !== undefined ? { body } : {}),
+        };
+        return registerProposalChange(
+          ctx,
+          { companyId: note.companyId, opportunityId: note.opportunityId },
+          [
+            {
+              type: "update_note",
+              entity: "note",
+              entityId: note.id,
+              beforeValue,
+              afterValue,
+              explanation: "Nota actualizada mediante MCP.",
+              confidence: 1,
+              label: `Nota: ${note.title ?? "Sin título"}`,
+              before: note.title ?? "Sin título",
+              after:
+                title === undefined
+                  ? (note.title ?? "Sin título")
+                  : (title ?? "Sin título"),
             },
-            select: { id: true, title: true, body: true, updatedAt: true },
-          });
-          await appendTimelineEvent(tx, {
-            organizationId: ctx.organizationId,
-            companyId: note.companyId,
-            opportunityId: note.opportunityId,
-            type: "note_updated",
-            title: `Nota actualizada: ${updated.title ?? note.title ?? "Sin título"}`,
-            refType: "note",
-            refId: noteId,
-            actorId: ctx.userId,
-            metadata: { via: "mcp" },
-          });
-          return { status: "updated" as const, note: updated };
-        });
+          ],
+        );
       },
     }),
 
@@ -399,6 +362,12 @@ export function buildMcpRecordTools(ctx: AgentToolContext) {
             companyId: true,
             opportunityId: true,
             occurredAt: true,
+            type: true,
+            title: true,
+            description: true,
+            durationMinutes: true,
+            channel: true,
+            outcomes: true,
             participants: { select: { personId: true } },
           },
         });
@@ -429,92 +398,56 @@ export function buildMcpRecordTools(ctx: AgentToolContext) {
           );
         }
 
-        return withOrgTransaction(ctx.organizationId, async (tx) => {
-          const updated = await tx.activity.update({
-            where: {
-              id: args.activityId,
-              organizationId: ctx.organizationId,
-            },
-            data: {
-              companyId,
-              opportunityId,
-              personId: personIds[0] ?? null,
-              ...(args.type !== undefined ? { type: args.type } : {}),
-              ...(args.title !== undefined ? { title: args.title } : {}),
-              ...(args.date !== undefined
-                ? { occurredAt, completedAt: occurredAt }
-                : {}),
-              ...(args.durationMinutes !== undefined
-                ? { durationMinutes: args.durationMinutes }
-                : {}),
-              ...(args.channel !== undefined
-                ? { channel: emptyToNull(args.channel) }
-                : {}),
-              ...(args.summary !== undefined
-                ? { description: emptyToNull(args.summary) }
-                : {}),
-              ...(args.outcomes !== undefined
-                ? { outcomes: emptyToNull(args.outcomes) }
-                : {}),
-              ...(args.personIds !== undefined
-                ? {
-                    participants: {
-                      deleteMany: {},
-                      create: personIds.map((personId) => ({
-                        organizationId: ctx.organizationId,
-                        personId,
-                      })),
-                    },
-                  }
-                : {}),
-            },
-            select: {
-              id: true,
-              companyId: true,
-              opportunityId: true,
-              type: true,
-              title: true,
-              occurredAt: true,
-              durationMinutes: true,
-              channel: true,
-              description: true,
-              outcomes: true,
-            },
-          });
-
-          if (occurredAt.getTime() <= Date.now()) {
-            await tx.company.updateMany({
-              where: {
-                id: companyId,
-                organizationId: ctx.organizationId,
-                OR: [
-                  { lastContactAt: null },
-                  { lastContactAt: { lt: occurredAt } },
-                ],
-              },
-              data: { lastContactAt: occurredAt },
-            });
-          }
-          await appendTimelineEvent(tx, {
-            organizationId: ctx.organizationId,
-            companyId,
-            opportunityId,
-            type: "activity_updated",
-            title: `Actividad actualizada: ${updated.title}`,
-            refType: "activity",
-            refId: updated.id,
-            actorId: ctx.userId,
-            metadata: { via: "mcp" },
-          });
-          return {
-            status: "updated" as const,
-            activity: {
-              ...updated,
-              personIds,
-              summary: updated.description,
-            },
-          };
-        });
+        const beforeValue = {
+          companyId: current.companyId,
+          opportunityId: current.opportunityId,
+          personIds: current.participants.map(({ personId }) => personId),
+          type: current.type,
+          title: current.title,
+          occurredAt: current.occurredAt.toISOString(),
+          durationMinutes: current.durationMinutes,
+          channel: current.channel,
+          description: current.description,
+          outcomes: current.outcomes,
+        };
+        const afterValue = {
+          companyId,
+          opportunityId,
+          personIds,
+          type: args.type ?? current.type,
+          title: args.title ?? current.title,
+          occurredAt: occurredAt.toISOString(),
+          durationMinutes:
+            args.durationMinutes === undefined
+              ? current.durationMinutes
+              : args.durationMinutes,
+          channel:
+            args.channel === undefined
+              ? current.channel
+              : emptyToNull(args.channel),
+          description:
+            args.summary === undefined
+              ? current.description
+              : emptyToNull(args.summary),
+          outcomes:
+            args.outcomes === undefined
+              ? current.outcomes
+              : emptyToNull(args.outcomes),
+        };
+        return registerProposalChange(ctx, { companyId, opportunityId }, [
+          {
+            type: "update_activity",
+            entity: "activity",
+            entityId: current.id,
+            beforeValue,
+            afterValue,
+            explanation: "Actividad actualizada mediante MCP.",
+            confidence: 1,
+            label: `Actividad: ${afterValue.title}`,
+            before: current.title,
+            after: afterValue.title,
+          },
+        ]);
       },
     }),
 
@@ -588,62 +521,47 @@ export function buildMcpRecordTools(ctx: AgentToolContext) {
           nextSteps: args.nextSteps ?? stringList(oldSummary.nextSteps),
         };
 
-        return withOrgTransaction(ctx.organizationId, async (tx) => {
-          const updated = await tx.meeting.update({
-            where: { id: args.meetingId, organizationId: ctx.organizationId },
-            data: {
-              companyId,
-              opportunityId,
-              ...(args.title !== undefined ? { title: args.title } : {}),
-              ...(args.date !== undefined
-                ? { meetingDate: new Date(args.date) }
-                : {}),
-              ...(args.meetingType !== undefined
-                ? { meetingType: args.meetingType }
-                : {}),
-              ...(args.participants !== undefined
-                ? {
-                    participants: normalizeMeetingParticipants(
-                      args.participants,
-                    ) as Prisma.InputJsonValue,
-                  }
-                : {}),
-              ...(args.status !== undefined ? { status: args.status } : {}),
-              ...(editsSummary
-                ? {
-                    aiSummary: buildManualMeetingSummary(
-                      summaryInput,
-                    ) as Prisma.InputJsonValue,
-                  }
-                : {}),
-            },
-            select: {
-              id: true,
-              companyId: true,
-              opportunityId: true,
-              title: true,
-              meetingType: true,
-              meetingDate: true,
-              participants: true,
-              status: true,
-              sourceType: true,
-              aiSummary: true,
-              updatedAt: true,
-            },
-          });
-          await appendTimelineEvent(tx, {
-            organizationId: ctx.organizationId,
-            companyId,
-            opportunityId,
-            type: "meeting_updated",
-            title: `Reunión actualizada: ${updated.title}`,
-            refType: "meeting",
-            refId: updated.id,
-            actorId: ctx.userId,
-            metadata: { via: "mcp" },
-          });
-          return { status: "updated" as const, meeting: updated };
-        });
+        const beforeValue = {
+          companyId: current.companyId,
+          opportunityId: current.opportunityId,
+          title: current.title,
+          meetingDate: current.meetingDate.toISOString(),
+          meetingType: current.meetingType,
+          participants: current.participants,
+          status: current.status,
+          aiSummary: current.aiSummary,
+        };
+        const afterValue = {
+          companyId,
+          opportunityId,
+          title: args.title ?? current.title,
+          meetingDate: args.date
+            ? new Date(args.date).toISOString()
+            : current.meetingDate.toISOString(),
+          meetingType: args.meetingType ?? current.meetingType,
+          participants:
+            args.participants === undefined
+              ? current.participants
+              : normalizeMeetingParticipants(args.participants),
+          status: args.status ?? current.status,
+          aiSummary: editsSummary
+            ? buildManualMeetingSummary(summaryInput)
+            : current.aiSummary,
+        };
+        return registerProposalChange(ctx, { companyId, opportunityId }, [
+          {
+            type: "update_meeting",
+            entity: "meeting",
+            entityId: current.id,
+            beforeValue: beforeValue as Prisma.InputJsonValue,
+            afterValue: afterValue as Prisma.InputJsonValue,
+            explanation: "Reunión actualizada mediante MCP.",
+            confidence: 1,
+            label: `Reunión: ${afterValue.title}`,
+            before: current.title,
+            after: afterValue.title,
+          },
+        ]);
       },
     }),
   };

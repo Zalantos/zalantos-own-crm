@@ -405,6 +405,24 @@ describe("create_task (responsable y prioridad)", () => {
     assert.equal(rows("activity")[0].assigneeId, "tm-1");
   });
 
+  it("asigna por nombre y permite usar 'me'", async () => {
+    const first = setup();
+    await first.safeTools.create_task.execute({
+      companyId: "co-1",
+      title: "Preparar propuesta",
+      assigneeName: "Carla",
+    });
+    assert.equal(first.rows("activity")[0].assigneeId, "tm-2");
+
+    const second = setup();
+    await second.safeTools.create_task.execute({
+      companyId: "co-1",
+      title: "Revisar propuesta",
+      assigneeId: "me",
+    });
+    assert.equal(second.rows("activity")[0].assigneeId, "tm-1");
+  });
+
   it("sin los campos nuevos se comporta como antes", async () => {
     const { safeTools, rows } = setup();
     await safeTools.create_task.execute({ companyId: "co-1", title: "Tarea" });
@@ -511,6 +529,22 @@ describe("update_task / complete_task", () => {
     const [task] = rows("activity");
     assert.equal(task.assigneeId, null);
     assert.equal(task.dueDate, null);
+  });
+
+  it("assign_task asigna y desasigna mediante una operación explícita", async () => {
+    const { activityTools, rows, ctx } = setup({ activity: [seededTask()] });
+    await activityTools.assign_task.execute({
+      taskId: "task-1",
+      assigneeName: "Carla",
+    });
+    assert.equal(rows("activity")[0].assigneeId, "tm-2");
+
+    ctx.turnState.changeCount = 0;
+    await activityTools.assign_task.execute({
+      taskId: "task-1",
+      assigneeId: null,
+    });
+    assert.equal(rows("activity")[0].assigneeId, null);
   });
 
   it("edita los campos operativos completos de una tarea", async () => {
