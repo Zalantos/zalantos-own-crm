@@ -1,6 +1,10 @@
 import type { CustomFieldDefinition, Prisma } from "@prisma/client";
 import { getFieldDefinitions } from "@/lib/custom-fields/merge";
 import { getOrgStages } from "@/lib/pipeline/stages";
+import {
+  LOSS_REASONS,
+  LOSS_REASON_LABELS,
+} from "@/lib/opportunities/loss-reason";
 import type { TenantClient } from "@/lib/tenant";
 
 // Single source of truth for which fields the agent (and proposal apply
@@ -23,7 +27,8 @@ export type FieldSpec = {
     | "boolean"
     | "date"
     | "enum"
-    | "personRef";
+    | "personRef"
+    | "userRef";
   label: string;
   enumValues?: readonly string[];
   enumLabels?: Record<string, string>;
@@ -76,7 +81,16 @@ const OPPORTUNITY_FIELDS = {
   nextStepDueDate: { type: "date", label: "Vencimiento del próximo paso" },
   expectedCloseDate: { type: "date", label: "Fecha estimada de cierre" },
   status: { type: "string", label: "Estado" },
-  lossReason: { type: "string", label: "Motivo de pérdida" },
+  lossReason: {
+    type: "enum",
+    label: "Motivo de pérdida",
+    enumValues: LOSS_REASONS,
+    enumLabels: LOSS_REASON_LABELS,
+  },
+  ownerId: {
+    type: "userRef",
+    label: "Responsable (userId de list_team_members)",
+  },
   decisionMakerId: { type: "personRef", label: "Decisor (id de persona)" },
   sponsorId: { type: "personRef", label: "Sponsor (id de persona)" },
 } satisfies Partial<
@@ -229,6 +243,7 @@ export function coerceFieldValue(
       return candidate;
     }
     case "personRef":
+    case "userRef":
       return String(value);
   }
 }

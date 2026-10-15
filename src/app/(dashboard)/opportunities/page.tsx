@@ -20,7 +20,10 @@ export default async function OpportunitiesKanbanPage() {
   const hiddenStageIds = knownHiddenStageIds(hiddenRaw, stages);
   const rows = await db.opportunity.findMany({
     where: opportunityStageWhere(hiddenStageIds),
-    include: { company: true },
+    include: {
+      company: true,
+      owner: { select: { name: true, email: true } },
+    },
     orderBy: { createdAt: "desc" },
   });
   const visibleStages = stages.filter(

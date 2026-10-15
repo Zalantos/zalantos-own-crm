@@ -12,6 +12,11 @@ import {
 } from "./actions";
 import type { StageOption } from "@/lib/pipeline/stages";
 import type { Company, Opportunity, Person } from "@prisma/client";
+import type { AssignableUser } from "@/lib/team";
+import {
+  LOSS_REASONS,
+  LOSS_REASON_LABELS,
+} from "@/lib/opportunities/loss-reason";
 
 type PersonWithCompanies = Person & {
   companyRelationships: Array<{ companyId: string }>;
@@ -25,6 +30,8 @@ export function OpportunityForm({
   companies,
   people,
   stages,
+  users,
+  currentUserId,
   defaultCompanyId,
   customFieldsSection,
 }: {
@@ -32,6 +39,8 @@ export function OpportunityForm({
   companies: Company[];
   people: PersonWithCompanies[];
   stages: StageOption[];
+  users: AssignableUser[];
+  currentUserId?: string;
   defaultCompanyId?: string;
   customFieldsSection?: React.ReactNode;
 }) {
@@ -43,6 +52,9 @@ export function OpportunityForm({
   const [selectedCompanyId, setSelectedCompanyId] = useState(
     opportunity?.companyId ?? defaultCompanyId ?? "",
   );
+  const ownerIsListed =
+    !opportunity?.ownerId ||
+    users.some((user) => user.id === opportunity.ownerId);
   const eligiblePeople = people.filter((person) =>
     person.companyRelationships.some(
       (relationship) => relationship.companyId === selectedCompanyId,
@@ -195,11 +207,48 @@ export function OpportunityForm({
           type="date"
           defaultValue={toDateInputValue(opportunity?.expectedCloseDate)}
         />
-        <Field
-          label="Motivo de pérdida"
-          name="lossReason"
-          defaultValue={opportunity?.lossReason ?? ""}
-        />
+        <div className="space-y-2">
+          <Label htmlFor="ownerId">Responsable</Label>
+          <select
+            id="ownerId"
+            name="ownerId"
+            defaultValue={opportunity?.ownerId ?? currentUserId ?? ""}
+            className="bg-background h-9 w-full rounded-md border px-3 text-sm"
+          >
+            <option value="">Sin responsable</option>
+            {ownerIsListed ? null : (
+              <option value={opportunity?.ownerId ?? ""}>
+                Usuario desactivado
+              </option>
+            )}
+            {users.map((user) => (
+              <option key={user.id} value={user.id}>
+                {user.name ?? user.email}
+              </option>
+            ))}
+          </select>
+        </div>
+        <div className="space-y-2">
+          <Label htmlFor="lossReason">Motivo de pérdida</Label>
+          <select
+            id="lossReason"
+            name="lossReason"
+            defaultValue={opportunity?.lossReason ?? ""}
+            className="bg-background h-9 w-full rounded-md border px-3 text-sm"
+          >
+            <option value="">Sin definir</option>
+            {LOSS_REASONS.map((reason) => (
+              <option key={reason} value={reason}>
+                {LOSS_REASON_LABELS[reason]}
+              </option>
+            ))}
+          </select>
+          {state?.fieldErrors?.lossReason && (
+            <p className="text-destructive text-xs">
+              {state.fieldErrors.lossReason[0]}
+            </p>
+          )}
+        </div>
       </div>
 
       <div className="space-y-2">

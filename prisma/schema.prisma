@@ -55,6 +55,18 @@ enum Role {
   MEMBER
 }
 
+enum LossReason {
+  PRICE
+  CHOSE_COMPETITOR
+  NO_BUDGET
+  DEPRIORITIZED
+  SOLVED_INTERNALLY
+  CONTACT_OR_ORG_CHANGE
+  NO_RESPONSE
+  NOT_QUALIFIED
+  OTHER
+}
+
 // ---------- Multi-tenancy ----------
 
 // Cada empresa cliente del SaaS. Los settings viven inline (pocos campos,
@@ -295,7 +307,9 @@ model Opportunity {
   nextStepDueDate   DateTime?
   expectedCloseDate DateTime?
   status            String        @default("open")
-  lossReason        String?
+  lossReason        LossReason?
+  ownerId           String?
+  owner             User?         @relation("OpportunityOwner", fields: [ownerId], references: [id], onDelete: SetNull)
   createdById       String?
   createdBy         User?         @relation(fields: [createdById], references: [id], onDelete: SetNull)
   createdVia        String        @default("manual")
@@ -313,6 +327,7 @@ model Opportunity {
   @@index([organizationId, status])
   @@index([companyId])
   @@index([createdById])
+  @@index([ownerId])
   @@index([nextStepDueDate])
   @@map("opportunities")
 }
@@ -849,6 +864,7 @@ model User {
   createdCompanies        Company[]
   createdPeople           Person[]
   createdOpportunities    Opportunity[]
+  ownedOpportunities      Opportunity[]        @relation("OpportunityOwner")
   createdActivities       Activity[]
   createdNotes            Note[]
   createdCommercialOffers CommercialOffer[]

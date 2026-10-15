@@ -1,5 +1,6 @@
 import { defineAgentTool } from "@/lib/agent/tool-definition";
 import { z } from "zod";
+import { LossReason } from "@prisma/client";
 import type { TenantClient } from "@/lib/tenant";
 import { getOrgStages, stagesByKey } from "@/lib/pipeline/stages";
 import {
@@ -486,7 +487,8 @@ export function buildProposalTools(ctx: AgentToolContext) {
         nextStepDueDate: optionalIsoDateSchema,
         expectedCloseDate: optionalIsoDateSchema,
         status: z.string().optional(),
-        lossReason: z.string().optional(),
+        lossReason: z.nativeEnum(LossReason).optional(),
+        ownerId: z.string().optional(),
         reason: z.string().min(1),
         confidence: confidenceSchema,
         evidence: evidenceSchema,
@@ -507,6 +509,7 @@ export function buildProposalTools(ctx: AgentToolContext) {
         expectedCloseDate,
         status,
         lossReason,
+        ownerId,
         reason,
         confidence,
         evidence,
@@ -556,6 +559,18 @@ export function buildProposalTools(ctx: AgentToolContext) {
           }
         }
 
+        if (ownerId) {
+          const owner = await ctx.db.user.findFirst({
+            where: { id: ownerId, isActive: true },
+            select: { id: true },
+          });
+          if (!owner) {
+            return {
+              error: `El usuario ${ownerId} no existe o no está activo; no puede ser responsable.`,
+            };
+          }
+        }
+
         const afterValue = {
           name,
           stage: target.key,
@@ -571,6 +586,7 @@ export function buildProposalTools(ctx: AgentToolContext) {
           expectedCloseDate: expectedCloseDate ?? null,
           status: status ?? "open",
           lossReason: lossReason ?? null,
+          ownerId: ownerId ?? null,
         };
 
         return registerProposalChange(ctx, { companyId }, [

@@ -11,7 +11,11 @@ Compará la evidencia contra el estado actual del CRM que recibís.
     `description`, `icpScore`, `fitScore`, `painScore`, `status`.
   - Opportunity: `name`, `mainPain`, `urgency`, `nextStep`, `nextStepDueDate`,
     `probability`, `estimatedValue`, `expectedCloseDate`, `status`, `lossReason`,
-    `source`, `decisionMakerId`, `sponsorId`.
+    `source`, `decisionMakerId`, `sponsorId`, `ownerId`.
+    `lossReason` solo admite: `PRICE`, `CHOSE_COMPETITOR`, `NO_BUDGET`, `DEPRIORITIZED`,
+    `SOLVED_INTERNALLY`, `CONTACT_OR_ORG_CHANGE`, `NO_RESPONSE`, `NOT_QUALIFIED`, `OTHER`
+    (y solo cuando `status` es `lost`). `ownerId` debe ser el id de un usuario activo
+    de la organización; no lo propongas si no lo conocés.
   - Person: `firstName`, `lastName`, `email`, `phone`, `roleTitle`, `linkedinUrl`,
     `notes`, `isDecisionMaker`, `isSponsor`.
 - **Los cambios de etapa NUNCA van en `updates`: van únicamente en `stage_change`.**

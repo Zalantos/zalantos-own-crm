@@ -177,6 +177,7 @@ export async function convertLeadTx(
       stageId: firstStage.id,
       source: lead.source,
       decisionMakerId: personId,
+      ownerId: ctx.actorId,
       createdById: ctx.actorId,
       createdVia: CREATED_VIA,
     },

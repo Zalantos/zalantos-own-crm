@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+- Oportunidades: responsable (`ownerId` → `User`) y motivo de pérdida como
+  enum `LossReason` (combo en el formulario, filtros en la lista, agente y
+  Meeting Intelligence). Migración `opportunity_owner_loss_reason`: el texto
+  libre previo de `lossReason` pasa a `OTHER` y `ownerId` se rellena con
+  `createdById`.
+
 - Tablero Kanban de tareas en `/activities?view=board` (por hacer / en curso
   / bloqueada / hecha), con fecha planeada además de la fecha límite, quién
   hizo la tarea (`completedBy`, distinto del responsable) y motivo de bloqueo.

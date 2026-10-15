@@ -15,3 +15,18 @@ export function getActiveTeamMembers(
     orderBy: { name: "asc" },
   });
 }
+
+export type AssignableUser = {
+  id: string;
+  name: string | null;
+  email: string;
+};
+
+// Usuarios activos de la org, usados como responsables de oportunidades.
+export function getActiveOrgUsers(db: TenantClient): Promise<AssignableUser[]> {
+  return db.user.findMany({
+    where: { isActive: true },
+    select: { id: true, name: true, email: true },
+    orderBy: { name: "asc" },
+  });
+}

@@ -20,6 +20,7 @@ import { StatCard } from "@/components/shared/stat-card";
 import { LinkifiedText } from "@/components/shared/linkified-text";
 import { createFormatters, formatCurrencyValue } from "@/lib/format";
 import { actorLabel, createdViaLabel } from "@/lib/traceability";
+import { LOSS_REASON_LABELS } from "@/lib/opportunities/loss-reason";
 import { OpportunityCommercialPartnersPanel } from "@/components/shared/commercial/opportunity-commercial-partners-panel";
 import { cloneCommercialOffer } from "@/app/(dashboard)/commercial/actions";
 
@@ -39,6 +40,7 @@ export default async function OpportunityDetailPage({
         decisionMaker: true,
         sponsor: true,
         createdBy: { select: { name: true, email: true } },
+        owner: { select: { name: true, email: true } },
         commercialPartners: {
           include: { commercialPartner: true },
           orderBy: { createdAt: "asc" },
@@ -67,6 +69,9 @@ export default async function OpportunityDetailPage({
   );
   const createdByLabel = actorLabel(opportunity.createdBy);
   const originLabel = createdViaLabel(opportunity.createdVia);
+  const ownerLabel = opportunity.owner
+    ? actorLabel(opportunity.owner)
+    : "Sin responsable";
 
   const isOverdue =
     opportunity.status === "open" &&
@@ -155,6 +160,24 @@ export default async function OpportunityDetailPage({
                 "—"
               )}
             </p>
+          </CardContent>
+        </Card>
+        <Card size="sm">
+          <CardContent>
+            <p className="text-muted-foreground text-xs">Responsable</p>
+            <p className="text-sm">{ownerLabel}</p>
+            {opportunity.status === "lost" && (
+              <>
+                <p className="text-muted-foreground mt-2 text-xs">
+                  Motivo de pérdida
+                </p>
+                <p className="text-sm">
+                  {opportunity.lossReason
+                    ? LOSS_REASON_LABELS[opportunity.lossReason]
+                    : "—"}
+                </p>
+              </>
+            )}
           </CardContent>
         </Card>
         <Card size="sm">

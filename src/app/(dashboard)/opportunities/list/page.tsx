@@ -21,11 +21,19 @@ import {
 import { readHiddenStageIds } from "@/lib/opportunities/read-hidden-stages";
 import { formatCurrencyValue } from "@/lib/format";
 import { Prisma } from "@prisma/client";
+import { actorLabel } from "@/lib/traceability";
+import { getActiveOrgUsers } from "@/lib/team";
+import {
+  LOSS_REASONS,
+  LOSS_REASON_LABELS,
+  isLossReason,
+} from "@/lib/opportunities/loss-reason";
 
 type OpportunityRow = Prisma.OpportunityGetPayload<{
   include: {
     company: true;
     stage: { select: { label: true; isWon: true; isLost: true } };
+    owner: { select: { name: true; email: true } };
     commercialPartners: {
       include: { commercialPartner: { select: { displayName: true } } };
     };
@@ -57,6 +65,8 @@ export default async function OpportunitiesListPage({
     partnerId?: string;
     offerStatus?: string;
     offerExpiry?: string;
+    ownerId?: string;
+    lossReason?: string;
   }>;
 }) {
   const {
@@ -67,9 +77,11 @@ export default async function OpportunitiesListPage({
     partnerId,
     offerStatus,
     offerExpiry,
+    ownerId,
+    lossReason,
   } = await searchParams;
-  const { org, db } = await requireOrgContext();
-  const [savedViews, stages, hiddenRaw, partners] = await Promise.all([
+  const { org, db, user } = await requireOrgContext();
+  const [savedViews, stages, hiddenRaw, partners, users] = await Promise.all([
     db.savedView.findMany({
       where: { entityType: "opportunity" },
       orderBy: { name: "asc" },
@@ -81,6 +93,7 @@ export default async function OpportunitiesListPage({
       orderBy: { displayName: "asc" },
       select: { id: true, displayName: true },
     }),
+    getActiveOrgUsers(db),
   ]);
   const hiddenStageIds = knownHiddenStageIds(hiddenRaw, stages);
 
@@ -89,6 +102,14 @@ export default async function OpportunitiesListPage({
       ...opportunityStageWhere(hiddenStageIds, stage),
       ...(urgency ? { urgency } : {}),
       ...(status ? { status } : {}),
+      ...(ownerId === "me"
+        ? { ownerId: user.id }
+        : ownerId === "none"
+          ? { ownerId: null }
+          : ownerId
+            ? { ownerId }
+            : {}),
+      ...(lossReason && isLossReason(lossReason) ? { lossReason } : {}),
       ...(overdue === "1"
         ? { nextStepDueDate: { lt: new Date() }, status: "open" }
         : {}),
@@ -98,6 +119,7 @@ export default async function OpportunitiesListPage({
     },
     include: {
       company: true,
+      owner: { select: { name: true, email: true } },
       stage: { select: { label: true, isWon: true, isLost: true } },
       commercialPartners: {
         include: { commercialPartner: { select: { displayName: true } } },
@@ -181,6 +203,34 @@ export default async function OpportunitiesListPage({
             <SelectItem value="lost">Perdida</SelectItem>
           </SelectContent>
         </Select>
+        <Select name="ownerId" defaultValue={ownerId ?? ""}>
+          <SelectTrigger className="w-48">
+            <SelectValue placeholder="Todo responsable" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="">Todo responsable</SelectItem>
+            <SelectItem value="me">Mis oportunidades</SelectItem>
+            <SelectItem value="none">Sin responsable</SelectItem>
+            {users.map((u) => (
+              <SelectItem key={u.id} value={u.id}>
+                {u.name ?? u.email}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+        <Select name="lossReason" defaultValue={lossReason ?? ""}>
+          <SelectTrigger className="w-56">
+            <SelectValue placeholder="Todo motivo de pérdida" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="">Todo motivo de pérdida</SelectItem>
+            {LOSS_REASONS.map((reason) => (
+              <SelectItem key={reason} value={reason}>
+                {LOSS_REASON_LABELS[reason]}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
         <label className="flex items-center gap-1.5 text-sm">
           <input
             type="checkbox"
@@ -248,6 +298,15 @@ export default async function OpportunitiesListPage({
         columns={[
           { header: "Nombre", cell: (row) => row.name },
           { header: "Empresa", cell: (row) => row.company.name },
+          {
+            header: "Responsable",
+            cell: (row) => (row.owner ? actorLabel(row.owner) : "—"),
+          },
+          {
+            header: "Motivo de pérdida",
+            cell: (row) =>
+              row.lossReason ? LOSS_REASON_LABELS[row.lossReason] : "—",
+          },
           {
             header: "Etapa",
             cell: (row) => <OpportunityStageBadge stage={row.stage} />,

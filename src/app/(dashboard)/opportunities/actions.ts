@@ -58,6 +58,19 @@ async function validateOpportunityPeople(
   return linked === ids.length;
 }
 
+// El responsable debe ser un usuario activo de la org (db está scopeado al
+// tenant, así que un id ajeno no aparece).
+async function isValidOwner(
+  db: TenantClient,
+  ownerId: string,
+): Promise<boolean> {
+  const owner = await db.user.findFirst({
+    where: { id: ownerId, isActive: true },
+    select: { id: true },
+  });
+  return Boolean(owner);
+}
+
 export async function createOpportunity(
   _prevState: FormState,
   formData: FormData,
@@ -93,10 +106,23 @@ export async function createOpportunity(
     };
   }
 
+  if (parsed.data.ownerId && !(await isValidOwner(db, parsed.data.ownerId))) {
+    return { error: "El responsable seleccionado no es válido." };
+  }
+  if (parsed.data.status === "lost" && !parsed.data.lossReason) {
+    return {
+      error: "Indica el motivo de pérdida.",
+      fieldErrors: { lossReason: ["El motivo de pérdida es obligatorio."] },
+    };
+  }
+
   const { stageId, ...data } = parsed.data;
   const opportunity = await db.opportunity.create({
     data: {
       ...data,
+      // El motivo solo aplica a oportunidades perdidas.
+      lossReason: data.status === "lost" ? data.lossReason : undefined,
+      ownerId: data.ownerId ?? user.id,
       organizationId: org.id,
       stageId: await resolveStageId(db, stageId),
       createdById: user.id,
@@ -162,12 +188,26 @@ export async function updateOpportunity(
     };
   }
 
+  if (data.ownerId && !(await isValidOwner(db, data.ownerId))) {
+    return { error: "El responsable seleccionado no es válido." };
+  }
+  const targetStatus = data.status ?? before.status;
+  if (targetStatus === "lost" && !(data.lossReason ?? before.lossReason)) {
+    return {
+      error: "Indica el motivo de pérdida.",
+      fieldErrors: { lossReason: ["El motivo de pérdida es obligatorio."] },
+    };
+  }
+
   let opportunity;
   try {
     opportunity = await db.opportunity.update({
       where: { id },
       data: {
         ...data,
+        // Un campo vacío llega como undefined: se limpia de forma explícita.
+        ...(targetStatus !== "lost" ? { lossReason: null } : {}),
+        ...(formData.has("ownerId") && !data.ownerId ? { ownerId: null } : {}),
         ...(stageId ? { stageId: await resolveStageId(db, stageId) } : {}),
       },
       include: { stage: { select: { id: true, key: true, label: true } } },

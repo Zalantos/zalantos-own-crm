@@ -129,7 +129,12 @@ usuario y organización, las tools operan con `forOrg(organizationId)`.
 ### Opportunity
 
 - Siempre ligada a una `Company` y un `PipelineStage`.
-- `status` string (ej. `open`); `lossReason` al perder.
+- `status` string (ej. `open`); `lossReason` (enum `LossReason`: PRICE,
+  CHOSE_COMPETITOR, NO_BUDGET, DEPRIORITIZED, SOLVED_INTERNALLY,
+  CONTACT_OR_ORG_CHANGE, NO_RESPONSE, NOT_QUALIFIED, OTHER) obligatorio al
+  perder y limpiado en otros estados.
+- `ownerId` → `User` (responsable, `onDelete: SetNull`); por defecto el
+  creador. Distinto de `createdById`, que es solo trazabilidad.
 - Ocultar etapas en lista y tablero es preferencia del navegador (cookie
   `opportunity-hidden-stages`), no un campo de la oportunidad. Un filtro
   explícito de etapa en la lista sigue mostrando esa etapa.

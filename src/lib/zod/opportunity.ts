@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { LossReason } from "@prisma/client";
 
 const emptyToUndefined = (val: unknown) =>
   typeof val === "string" && val.trim() === "" ? undefined : val;
@@ -19,7 +20,11 @@ export const opportunityCreateSchema = z.object({
   nextStepDueDate: z.preprocess(emptyToUndefined, z.coerce.date().optional()),
   expectedCloseDate: z.preprocess(emptyToUndefined, z.coerce.date().optional()),
   status: z.string().default("open"),
-  lossReason: z.preprocess(emptyToUndefined, z.string().optional()),
+  lossReason: z.preprocess(
+    emptyToUndefined,
+    z.nativeEnum(LossReason).optional(),
+  ),
+  ownerId: z.preprocess(emptyToUndefined, z.string().optional()),
 });
 
 export const opportunityUpdateSchema = opportunityCreateSchema

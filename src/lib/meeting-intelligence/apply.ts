@@ -19,6 +19,7 @@ import {
   type AgentEntity,
 } from "@/lib/agent/field-registry";
 import { upsertCustomFieldValue } from "@/lib/custom-fields/merge";
+import { LOSS_REASONS, isLossReason } from "@/lib/opportunities/loss-reason";
 import {
   applyTaskUpdate,
   insertLoggedActivity,
@@ -95,6 +96,23 @@ function asAgentEntity(entity: string): AgentEntity {
     return entity;
   }
   throw new Error(`Entidad no soportada: ${entity}`);
+}
+
+// El responsable propuesto debe ser un usuario activo de la org.
+async function assertActiveOrgUser(
+  tx: Prisma.TransactionClient,
+  ctx: ApplyContext,
+  userId: string,
+): Promise<void> {
+  const user = await tx.user.findFirst({
+    where: { id: userId, organizationId: ctx.organizationId, isActive: true },
+    select: { id: true },
+  });
+  if (!user) {
+    throw new Error(
+      `El usuario ${userId} no existe o no está activo en la organización`,
+    );
+  }
 }
 
 // Person refs proposed by the model must exist and belong to the company.
@@ -175,6 +193,10 @@ async function applyFieldUpdate(
 
   if (spec.type === "personRef" && coerced != null) {
     await assertPersonInCompany(tx, ctx, String(coerced));
+  }
+
+  if (spec.type === "userRef" && coerced != null) {
+    await assertActiveOrgUser(tx, ctx, String(coerced));
   }
 
   // "stage" en oportunidades viaja como key de PipelineStage y se persiste
@@ -668,6 +690,14 @@ async function applyItem(
       if (decisionMakerId)
         await assertPersonInCompany(tx, ctx, decisionMakerId);
       if (sponsorId) await assertPersonInCompany(tx, ctx, sponsorId);
+      const ownerId = optionalString(after.ownerId);
+      if (ownerId) await assertActiveOrgUser(tx, ctx, ownerId);
+      const lossReason = optionalString(after.lossReason);
+      if (lossReason && !isLossReason(lossReason)) {
+        throw new Error(
+          `Motivo de pérdida inválido "${lossReason}". Valores permitidos: ${LOSS_REASONS.join(", ")}`,
+        );
+      }
       const opportunity = await tx.opportunity.create({
         data: {
           organizationId: ctx.organizationId,
@@ -686,7 +716,9 @@ async function applyItem(
           nextStepDueDate: optionalDate(after.nextStepDueDate),
           expectedCloseDate: optionalDate(after.expectedCloseDate),
           status: optionalString(after.status) ?? "open",
-          lossReason: optionalString(after.lossReason),
+          lossReason:
+            lossReason && isLossReason(lossReason) ? lossReason : null,
+          ownerId: ownerId ?? ctx.actorId,
           createdById: ctx.actorId,
           createdVia,
         },

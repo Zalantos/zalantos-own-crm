@@ -11,6 +11,7 @@ import type { Opportunity, Company } from "@prisma/client";
 export type KanbanOpportunity = Omit<Opportunity, "estimatedValue"> & {
   estimatedValue: number | null;
   company: Company;
+  owner?: { name: string | null; email: string } | null;
 };
 
 export function KanbanCard({
@@ -51,6 +52,11 @@ export function KanbanCard({
         <p className="text-muted-foreground truncate text-xs">
           {opportunity.company.name}
         </p>
+        {opportunity.owner && (
+          <p className="text-muted-foreground truncate text-xs">
+            Resp.: {opportunity.owner.name ?? opportunity.owner.email}
+          </p>
+        )}
       </div>
 
       <div className="flex flex-wrap items-center gap-1.5">

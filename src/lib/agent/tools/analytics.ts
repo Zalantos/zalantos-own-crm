@@ -1,6 +1,6 @@
 import { defineAgentTool } from "@/lib/agent/tool-definition";
 import { z } from "zod";
-import { Prisma } from "@prisma/client";
+import { LossReason, Prisma } from "@prisma/client";
 import { getOrgStages, stagesById, stagesByKey } from "@/lib/pipeline/stages";
 import type { StageOption } from "@/lib/pipeline/stages";
 import type { AgentToolContext } from "@/lib/agent/executor";
@@ -16,6 +16,9 @@ const opportunityRowSelect = {
   estimatedValue: true,
   expectedCloseDate: true,
   createdAt: true,
+  lossReason: true,
+  ownerId: true,
+  owner: { select: { name: true, email: true } },
   stage: { select: { id: true, key: true, label: true } },
   company: { select: { name: true } },
 } satisfies Prisma.OpportunitySelect;
@@ -56,6 +59,9 @@ function formatItem(row: OpportunityRow, lastActivityAt?: Date) {
     stage: row.stage.key,
     stageLabel: row.stage.label,
     status: row.status,
+    lossReason: row.lossReason,
+    ownerId: row.ownerId,
+    ownerName: row.owner ? (row.owner.name ?? row.owner.email) : null,
     estimatedValue: row.estimatedValue?.toString() ?? null,
     expectedCloseDate: row.expectedCloseDate?.toISOString().slice(0, 10) ?? null,
     ...(lastActivityAt
@@ -105,6 +111,14 @@ export function buildAnalyticsTools(ctx: AgentToolContext) {
           .describe("Key de la etapa (p. ej. negociacion). Ver etapas válidas en list_writable_fields."),
         status: z.enum(["open", "won", "lost"]).optional(),
         companyId: z.string().optional(),
+        ownerId: z
+          .string()
+          .optional()
+          .describe("Id de usuario responsable (campo userId de list_team_members)"),
+        lossReason: z
+          .nativeEnum(LossReason)
+          .optional()
+          .describe("Motivo de pérdida"),
         minValue: z.number().optional().describe("Valor estimado mínimo"),
         maxValue: z.number().optional().describe("Valor estimado máximo"),
         closingAfter: z
@@ -130,6 +144,7 @@ export function buildAnalyticsTools(ctx: AgentToolContext) {
           ...rawInput,
           stage: emptyToUndefined(rawInput.stage),
           companyId: emptyToUndefined(rawInput.companyId),
+          ownerId: emptyToUndefined(rawInput.ownerId),
           minValue: rawInput.minValue || undefined,
           maxValue: rawInput.maxValue || undefined,
         };
@@ -158,6 +173,8 @@ export function buildAnalyticsTools(ctx: AgentToolContext) {
           ...(stage ? { stageId: stage.id } : {}),
           ...(input.status ? { status: input.status } : {}),
           ...(input.companyId ? { companyId: input.companyId } : {}),
+          ...(input.ownerId ? { ownerId: input.ownerId } : {}),
+          ...(input.lossReason ? { lossReason: input.lossReason } : {}),
           ...(input.minValue !== undefined || input.maxValue !== undefined
             ? {
                 estimatedValue: {

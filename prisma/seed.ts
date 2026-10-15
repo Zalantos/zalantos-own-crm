@@ -404,7 +404,7 @@ async function main() {
       mainPain: "Sin integración entre inventario y ventas.",
       urgency: "low",
       status: "lost",
-      lossReason: "Presupuesto asignado a otra prioridad este año",
+      lossReason: "NO_BUDGET",
     },
   });
 
