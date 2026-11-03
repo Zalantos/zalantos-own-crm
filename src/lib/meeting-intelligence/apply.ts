@@ -8,13 +8,28 @@ import {
 import { appendTimelineEvent } from "@/lib/timeline";
 import { evaluateWorkflows } from "@/lib/workflows/engine";
 import {
+  getAllOrgStages,
   getOrgStages,
+  LEGACY_STAGE_ACTIONS,
+  normalizeStageKey,
   stagesByKey,
   type StageOption,
 } from "@/lib/pipeline/stages";
+import { applyStageChangeTx } from "@/lib/commercial/opportunity-service";
+import { recordStageTransition } from "@/lib/commercial/history";
+import {
+  applyCommercialItem,
+  commercialSnapshot,
+  CommercialRevertConflict,
+  isCommercialItemType,
+  preflightCommercialRevert,
+  revertCommercialItem,
+  type CommercialRevertData,
+} from "@/lib/commercial/ai-items";
 import {
   coerceFieldValue,
   getWritableFields,
+  PROTECTED_OPPORTUNITY_FIELDS,
   resolveField,
   type AgentEntity,
 } from "@/lib/agent/field-registry";
@@ -74,9 +89,12 @@ function asRecord(value: Prisma.JsonValue): Record<string, unknown> {
 }
 
 function resolveStage(ctx: ApplyContext, value: unknown): StageOption {
-  const stage = ctx.stages.get(String(value));
+  const raw = String(value);
+  const stage = ctx.stages.get(raw) ?? ctx.stages.get(normalizeStageKey(raw));
   if (!stage) {
-    throw new Error(`Etapa inválida: ${String(value)}`);
+    // Adaptador de compatibilidad: las etapas legacy terminales o de
+    // prospección se traducen a la acción correcta en vez de fallar mudo.
+    throw new Error(LEGACY_STAGE_ACTIONS[raw.trim().toLowerCase()] ?? `Etapa inválida: ${raw}`);
   }
   return stage;
 }
@@ -159,8 +177,18 @@ async function applyFieldUpdate(
   ctx: ApplyContext,
   field: string,
   value: unknown,
+  options: { revert?: boolean } = {},
 ): Promise<void> {
   const entity = asAgentEntity(item.entity);
+  if (
+    entity === "opportunity" &&
+    PROTECTED_OPPORTUNITY_FIELDS.has(field) &&
+    !options.revert
+  ) {
+    throw new Error(
+      "El estado de la oportunidad se cambia con set_opportunity_status (pausada: motivo y reactivación; ganada: evidencia; perdida: motivo).",
+    );
+  }
   const fields = await getWritableFields(ctx.db, entity);
   const spec = resolveField(fields, entity, field);
   const coercedValue = coerceFieldValue(spec, field, value);
@@ -203,9 +231,14 @@ async function applyFieldUpdate(
   // como FK (stageId).
   if (entity === "opportunity" && field === "stage") {
     const stage = resolveStage(ctx, coerced);
-    await tx.opportunity.update({
-      where: { id: entityId, organizationId: ctx.organizationId },
-      data: { stageId: stage.id },
+    await applyStageChangeTx(tx, {
+      organizationId: ctx.organizationId,
+      opportunityId: entityId,
+      target: stage,
+      actorId: ctx.actorId,
+      source: options.revert ? "revert" : ctx.source,
+      skipGates: options.revert,
+      timelineBase: { refType: "proposal", refId: ctx.proposalId },
     });
     return;
   }
@@ -259,6 +292,8 @@ type RevertData = {
     companyId: string;
     previousCompanyLastContactAt: string | null;
   };
+  // Ítems del proceso comercial (ver commercial/ai-items).
+  commercial?: CommercialRevertData;
 };
 
 type NormalizedContact = {
@@ -476,6 +511,17 @@ async function applyItem(
     },
   };
 
+  if (isCommercialItemType(item.type)) {
+    return {
+      commercial: await applyCommercialItem(tx, item, {
+        organizationId: ctx.organizationId,
+        actorId: ctx.actorId,
+        createdVia,
+        timelineBase: { refType: "proposal", refId: ctx.proposalId },
+      }),
+    };
+  }
+
   switch (item.type) {
     case "update_field": {
       const field = String(after.field);
@@ -542,15 +588,23 @@ async function applyItem(
     case "stage_change": {
       if (!item.entityId) throw new Error("Falta oportunidad destino");
       const stage = resolveStage(ctx, after.value);
-      await tx.opportunity.update({
-        where: { id: item.entityId, organizationId: ctx.organizationId },
-        data: { stageId: stage.id },
-      });
-      await appendTimelineEvent(tx, {
-        ...timelineBase,
-        type: "stage_changed",
-        title: "Cambio de etapa",
-        summary: `${stageLabel(ctx, before.value)} → ${stage.label}`,
+      if (stage.isWon || stage.isLost) {
+        throw new Error(
+          "Para cerrar una oportunidad usá set_opportunity_status (ganada requiere evidencia; perdida, motivo).",
+        );
+      }
+      // Compuertas de avance + historial de etapas + timeline.
+      await applyStageChangeTx(tx, {
+        organizationId: ctx.organizationId,
+        opportunityId: item.entityId,
+        target: stage,
+        actorId: ctx.actorId,
+        source: ctx.source,
+        timelineBase: {
+          refType: timelineBase.refType,
+          refId: timelineBase.refId,
+          metadata: timelineBase.metadata,
+        },
       });
       return null;
     }
@@ -685,6 +739,13 @@ async function applyItem(
     case "add_opportunity": {
       if (!ctx.companyId) throw new Error("Falta empresa destino");
       const stage = resolveStage(ctx, after.stage);
+      if (stage.isWon || stage.isLost) {
+        throw new Error("Una oportunidad nueva entra en una etapa operativa; cerrala después con set_opportunity_status.");
+      }
+      const requestedStatus = optionalString(after.status) ?? "open";
+      if (requestedStatus !== "open") {
+        throw new Error("Una oportunidad nueva nace abierta; los estados pausada/ganada/perdida se registran con set_opportunity_status.");
+      }
       const decisionMakerId = optionalString(after.decisionMakerId);
       const sponsorId = optionalString(after.sponsorId);
       if (decisionMakerId)
@@ -715,13 +776,22 @@ async function applyItem(
           nextStep: optionalString(after.nextStep),
           nextStepDueDate: optionalDate(after.nextStepDueDate),
           expectedCloseDate: optionalDate(after.expectedCloseDate),
-          status: optionalString(after.status) ?? "open",
+          status: "open",
+          statusChangedAt: new Date(),
+          nextStepUpdatedAt: optionalString(after.nextStep) ? new Date() : null,
           lossReason:
             lossReason && isLossReason(lossReason) ? lossReason : null,
           ownerId: ownerId ?? ctx.actorId,
           createdById: ctx.actorId,
           createdVia,
         },
+      });
+      await recordStageTransition(tx, {
+        organizationId: ctx.organizationId,
+        opportunityId: opportunity.id,
+        stage,
+        actorId: ctx.actorId,
+        source: createdVia,
       });
       await appendTimelineEvent(tx, {
         ...timelineBase,
@@ -796,11 +866,33 @@ async function applyItem(
           "blockedReason solo se puede guardar con status blocked",
         );
       }
+      const commercialLeadId = optionalString(after.commercialLeadId);
+      const commercialPartnerId = optionalString(after.commercialPartnerId);
+      if (
+        commercialLeadId &&
+        !(await tx.commercialLead.findFirst({
+          where: { id: commercialLeadId, organizationId: ctx.organizationId },
+          select: { id: true },
+        }))
+      ) {
+        throw new Error(`Prospecto no encontrado: ${commercialLeadId}`);
+      }
+      if (
+        commercialPartnerId &&
+        !(await tx.commercialPartner.findFirst({
+          where: { id: commercialPartnerId, organizationId: ctx.organizationId },
+          select: { id: true },
+        }))
+      ) {
+        throw new Error(`Partner no encontrado: ${commercialPartnerId}`);
+      }
       const task = await tx.activity.create({
         data: {
           organizationId: ctx.organizationId,
           companyId: ctx.companyId,
           opportunityId: ctx.defaultOpportunityId,
+          commercialLeadId,
+          commercialPartnerId,
           personId: after.personId ? String(after.personId) : null,
           assigneeId,
           completedById:
@@ -1178,6 +1270,9 @@ async function appliedSnapshotOf(
   revertData: RevertData | null,
 ): Promise<Prisma.InputJsonValue> {
   const after = asRecord(item.afterValue);
+  if (revertData?.commercial) {
+    return commercialSnapshot(tx, ctx.organizationId, revertData.commercial);
+  }
   if (item.type === "update_field") {
     const field = String(after.field);
     return jsonSnapshot({
@@ -1450,6 +1545,12 @@ export async function applyProposal(
     from: string;
     to: string;
   }[] = [];
+  const opportunityStatusChanges: {
+    itemId: string;
+    opportunityId: string;
+    from: string;
+    to: string;
+  }[] = [];
 
   for (const item of proposal.items) {
     if (!item.approved || !["pending", "approved"].includes(item.status)) {
@@ -1484,6 +1585,17 @@ export async function applyProposal(
       applied += 1;
       const stageChange = stageChangeOf(item);
       if (stageChange) stageChanges.push({ itemId: item.id, ...stageChange });
+      if (
+        item.type === "status_change" &&
+        item.entityId &&
+        revertData?.commercial?.statusChange
+      ) {
+        opportunityStatusChanges.push({
+          itemId: item.id,
+          opportunityId: item.entityId,
+          ...revertData.commercial.statusChange,
+        });
+      }
       if (revertData?.taskUpdate && revertData.taskStatusChange) {
         taskStatusChanges.push({
           itemId: item.id,
@@ -1567,15 +1679,29 @@ export async function applyProposal(
     actorId,
   });
 
-  // Fire existing workflow engine for each applied stage change.
+  // Fire existing workflow engine for each applied stage change. Los items
+  // guardan keys; el motor acepta id o key en las condiciones.
   for (const change of stageChanges) {
     await evaluateWorkflows(db, organizationId, {
       entityType: "opportunity",
       entityId: change.opportunityId,
       eventName: "stage_changed",
       actorId,
-      before: { stage: change.from },
-      after: { stage: change.to },
+      before: { stage: change.from, stageKey: change.from },
+      after: { stage: change.to, stageKey: change.to },
+      changeProposalId: proposalId,
+      causedByItemId: change.itemId,
+    });
+  }
+
+  for (const change of opportunityStatusChanges) {
+    await evaluateWorkflows(db, organizationId, {
+      entityType: "opportunity",
+      entityId: change.opportunityId,
+      eventName: "status_changed",
+      actorId,
+      before: { status: change.from },
+      after: { status: change.to },
       changeProposalId: proposalId,
       causedByItemId: change.itemId,
     });
@@ -1867,7 +1993,7 @@ export async function preflightRevertItem(
   const ctx: ApplyContext = {
     db,
     organizationId,
-    stages: stagesByKey(await getOrgStages(db)),
+    stages: stagesByKey(await getAllOrgStages(db)),
     companyId: context.companyId,
     defaultOpportunityId: context.opportunityId,
     originLabel: context.originLabel,
@@ -1893,6 +2019,23 @@ export async function preflightRevertItem(
     appliedSnapshot: item.appliedSnapshot,
   };
   const revert = asRevertData(item.revertData);
+  if (revert.commercial) {
+    try {
+      await preflightCommercialRevert(
+        db,
+        organizationId,
+        item.type,
+        revert.commercial,
+        item.appliedSnapshot,
+      );
+    } catch (error) {
+      if (error instanceof CommercialRevertConflict) {
+        throw new RevertConflictError(error.code, error.message);
+      }
+      throw error;
+    }
+    return;
+  }
   await assertCreatedEntityRevertible(db, record, revert);
 
   let matches = true;
@@ -2095,7 +2238,7 @@ export async function revertItem(
   const ctx: ApplyContext = {
     db,
     organizationId,
-    stages: stagesByKey(await getOrgStages(db)),
+    stages: stagesByKey(await getAllOrgStages(db)),
     companyId: context.companyId,
     defaultOpportunityId: context.opportunityId,
     originLabel: context.originLabel,
@@ -2128,15 +2271,20 @@ export async function revertItem(
           ctx,
           field,
           before.value ?? null,
+          { revert: true },
         );
         break;
       }
       case "stage_change": {
         if (item.entityId && before.value != null) {
           const stage = resolveStage(ctx, before.value);
-          await tx.opportunity.update({
-            where: { id: item.entityId, organizationId },
-            data: { stageId: stage.id },
+          await applyStageChangeTx(tx, {
+            organizationId,
+            opportunityId: item.entityId,
+            target: stage,
+            actorId,
+            source: "revert",
+            skipGates: true,
           });
         }
         break;
@@ -2340,6 +2488,16 @@ export async function revertItem(
         break;
       }
       default:
+        if (isCommercialItemType(item.type) && revert.commercial) {
+          await revertCommercialItem(
+            tx,
+            organizationId,
+            item.type,
+            revert.commercial,
+            actorId,
+          );
+          break;
+        }
         throw new Error(`No se puede deshacer el tipo: ${item.type}`);
     }
 

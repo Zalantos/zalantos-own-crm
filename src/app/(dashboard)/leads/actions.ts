@@ -9,7 +9,7 @@ import { handleMutationError } from "@/lib/prisma-errors";
 
 export type ConvertLeadFormState =
   | { error: string; fieldErrors?: Record<string, string[] | undefined> }
-  | { success: true; opportunityId: string }
+  | { success: true; opportunityId: string | null; commercialLeadId: string }
   | undefined;
 
 function revalidateLead(id: string) {
@@ -71,7 +71,16 @@ export async function convertInboundLead(
       fieldErrors: parsed.error.flatten().fieldErrors,
     };
   }
-  const { id, companyId, companyName, opportunityName } = parsed.data;
+  const {
+    id,
+    companyId,
+    companyName,
+    opportunityName,
+    mode,
+    personId,
+    ownerId,
+    interestSignal,
+  } = parsed.data;
 
   const lead = await db.inboundLead.findUnique({ where: { id } });
   if (!lead) notFound();
@@ -85,14 +94,27 @@ export async function convertInboundLead(
         tx,
         { organizationId: org.id, actorId: user.id },
         lead,
-        { companyId, companyName, opportunityName },
+        {
+          companyId,
+          companyName,
+          opportunityName,
+          mode,
+          personId,
+          ownerId,
+          interestSignal,
+        },
       ),
     );
 
     revalidateLead(lead.id);
     revalidatePath("/opportunities");
+    revalidatePath("/prospecting");
     revalidatePath("/companies");
-    return { success: true, opportunityId: result.opportunityId };
+    return {
+      success: true,
+      opportunityId: result.opportunityId,
+      commercialLeadId: result.commercialLeadId,
+    };
   } catch (error) {
     return {
       error: error instanceof Error ? error.message : "No se pudo convertir el lead.",

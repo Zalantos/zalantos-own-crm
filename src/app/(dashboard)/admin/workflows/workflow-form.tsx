@@ -8,7 +8,12 @@ import { SubmitButton } from "@/components/shared/submit-button";
 import { createWorkflow, type WorkflowFormState } from "./actions";
 
 const ENTITY_TYPES = ["company", "person", "opportunity", "activity"];
-const TRIGGER_EVENTS = ["stage_changed", "field_overdue"];
+const TRIGGER_EVENTS = [
+  "stage_changed",
+  "status_changed",
+  "field_overdue",
+  "reactivation_due",
+];
 
 export function WorkflowForm() {
   const formRef = useRef<HTMLFormElement>(null);
@@ -64,7 +69,7 @@ export function WorkflowForm() {
       <div className="space-y-2">
         <Label htmlFor="conditionsJson">
           {
-            'Condiciones (JSON, ej: [{"field":"stage","op":"changed_to","value":"reunion_discovery"}])'
+            'Condiciones (JSON, ej: [{"field":"stage","op":"changed_to","value":"propuesta_principal"}] o [{"field":"status","op":"changed_to","value":"won"}])'
           }
         </Label>
         <Textarea

@@ -27,6 +27,9 @@ function createFakeTx(seed?: {
   const notes: Record<string, unknown>[] = [];
   const timelineEvents: Record<string, unknown>[] = [];
   const leadUpdates: Record<string, unknown>[] = [];
+  const commercialLeads: Array<Record<string, unknown> & { id: string }> = [];
+  const statusChanges: Record<string, unknown>[] = [];
+  const stageHistory: Record<string, unknown>[] = [];
   const relationships: Array<{
     id: string;
     personId: string;
@@ -131,13 +134,51 @@ function createFakeTx(seed?: {
       },
     },
     pipelineStage: {
-      findFirst: async () => ({ id: "stage-1", label: "Lead identificado" }),
+      findFirst: async () => ({
+        id: "stage-1",
+        key: "reunion_discovery",
+        label: "Discovery / Sprint 0",
+      }),
     },
     opportunity: {
       create: async ({ data }: { data: Record<string, unknown> }) => {
         const row: FakeOpportunity = { id: genId("opportunity"), ...data };
         opportunities.push(row);
         return row;
+      },
+      update: async ({ data }: { data: Record<string, unknown> }) => data,
+    },
+    commercialLead: {
+      findFirst: async ({ where }: { where: { personId?: string; status?: { in: string[] } } }) =>
+        commercialLeads.find(
+          (lead) =>
+            lead.personId === where.personId &&
+            (where.status?.in ?? []).includes(String(lead.status)),
+        ) ?? null,
+      create: async ({ data }: { data: Record<string, unknown> }) => {
+        const row = { id: genId("commercial-lead"), ...data };
+        commercialLeads.push(row);
+        return row;
+      },
+      update: async ({ where, data }: { where: { id: string }; data: Record<string, unknown> }) => {
+        const lead = commercialLeads.find((row) => row.id === where.id);
+        if (!lead) throw new Error("lead not found");
+        Object.assign(lead, data);
+        return lead;
+      },
+    },
+    commercialStatusChange: {
+      create: async ({ data }: { data: Record<string, unknown> }) => {
+        statusChanges.push(data);
+        return data;
+      },
+    },
+    opportunityStageHistory: {
+      findFirst: async () => null,
+      updateMany: async () => ({ count: 0 }),
+      create: async ({ data }: { data: Record<string, unknown> }) => {
+        stageHistory.push(data);
+        return data;
       },
     },
     note: {
@@ -169,6 +210,9 @@ function createFakeTx(seed?: {
     notes,
     timelineEvents,
     leadUpdates,
+    commercialLeads,
+    statusChanges,
+    stageHistory,
   };
 }
 
@@ -276,5 +320,41 @@ describe("convertLeadTx", () => {
     assert.equal(update.convertedPersonId, result.personId);
     assert.equal(update.convertedOpportunityId, result.opportunityId);
     assert.equal(update.reviewedById, ctx.actorId);
+  });
+
+  it("traza inbound → lead comercial → oportunidad compartiendo el primer toque", async () => {
+    const { tx, commercialLeads, opportunities, stageHistory, leadUpdates } = createFakeTx();
+    const lead = makeLead({ attributionId: "attr-1" });
+
+    const result = await convertLeadTx(tx, ctx, lead, {
+      companyName: lead.company ?? undefined,
+      opportunityName: "Acme · Inbound",
+    });
+
+    assert.equal(commercialLeads.length, 1);
+    const commercialLead = commercialLeads[0]!;
+    assert.equal(commercialLead.inboundLeadId, lead.id);
+    assert.equal(commercialLead.firstTouchAttributionId, "attr-1");
+    assert.equal(commercialLead.status, "converted");
+    assert.equal(opportunities[0]!.commercialLeadId, commercialLead.id);
+    assert.equal(opportunities[0]!.firstTouchAttributionId, "attr-1");
+    assert.equal(stageHistory.length, 1);
+    assert.equal(result.commercialLeadId, commercialLead.id);
+    assert.equal(leadUpdates[0]!.convertedOpportunityId, result.opportunityId);
+  });
+
+  it("modo lead: incorpora a prospección sin crear oportunidad", async () => {
+    const { tx, commercialLeads, opportunities } = createFakeTx();
+    const lead = makeLead();
+
+    const result = await convertLeadTx(tx, ctx, lead, {
+      companyName: lead.company ?? undefined,
+      mode: "lead",
+    });
+
+    assert.equal(opportunities.length, 0);
+    assert.equal(result.opportunityId, null);
+    assert.equal(commercialLeads[0]!.status, "lead");
+    assert.match(String(commercialLeads[0]!.interestSignal), /automatizar/);
   });
 });

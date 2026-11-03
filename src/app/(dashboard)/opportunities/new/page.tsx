@@ -1,5 +1,5 @@
 import { requireOrgContext } from "@/lib/tenant";
-import { getOrgStages } from "@/lib/pipeline/stages";
+import { boardStages, getOrgStages } from "@/lib/pipeline/stages";
 import { getActiveOrgUsers } from "@/lib/team";
 import { PageHeader } from "@/components/shared/page-header";
 import { CustomFieldsFormSection } from "@/components/shared/custom-fields/custom-fields-form-section";
@@ -12,7 +12,7 @@ export default async function NewOpportunityPage({
 }) {
   const { companyId } = await searchParams;
   const { db, user } = await requireOrgContext();
-  const [companies, people, stages, users] = await Promise.all([
+  const [companies, people, stages, users, campaigns, partners] = await Promise.all([
     db.company.findMany({ orderBy: { name: "asc" } }),
     db.person.findMany({
       include: {
@@ -25,6 +25,16 @@ export default async function NewOpportunityPage({
     }),
     getOrgStages(db),
     getActiveOrgUsers(db),
+    db.campaign.findMany({
+      where: { isActive: true },
+      orderBy: { name: "asc" },
+      select: { id: true, name: true },
+    }),
+    db.commercialPartner.findMany({
+      where: { isActive: true },
+      orderBy: { displayName: "asc" },
+      select: { id: true, displayName: true },
+    }),
   ]);
 
   return (
@@ -33,7 +43,9 @@ export default async function NewOpportunityPage({
       <OpportunityForm
         companies={companies}
         people={people}
-        stages={stages}
+        stages={boardStages(stages)}
+        campaigns={campaigns}
+        partners={partners}
         users={users}
         currentUserId={user.id}
         defaultCompanyId={companyId}

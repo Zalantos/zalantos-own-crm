@@ -1,6 +1,6 @@
 import { notFound } from "next/navigation";
 import { requireOrgContext } from "@/lib/tenant";
-import { getOrgStages } from "@/lib/pipeline/stages";
+import { boardStages, getOrgStages } from "@/lib/pipeline/stages";
 import { getActiveOrgUsers } from "@/lib/team";
 import { PageHeader } from "@/components/shared/page-header";
 import { CustomFieldsFormSection } from "@/components/shared/custom-fields/custom-fields-form-section";
@@ -16,7 +16,10 @@ export default async function EditOpportunityPage({
   const { id } = await params;
   const { db, user } = await requireOrgContext();
   const [opportunity, companies, people, stages, users] = await Promise.all([
-    db.opportunity.findUnique({ where: { id } }),
+    db.opportunity.findUnique({
+      where: { id },
+      include: { stage: { select: { id: true, label: true, isActive: true } } },
+    }),
     db.company.findMany({ orderBy: { name: "asc" } }),
     db.person.findMany({
       include: {
@@ -37,9 +40,10 @@ export default async function EditOpportunityPage({
       <PageHeader title={`Editar ${opportunity.name}`} />
       <OpportunityForm
         opportunity={opportunity}
+        currentStage={opportunity.stage}
         companies={companies}
         people={people}
-        stages={stages}
+        stages={boardStages(stages)}
         users={users}
         currentUserId={user.id}
         customFieldsSection={

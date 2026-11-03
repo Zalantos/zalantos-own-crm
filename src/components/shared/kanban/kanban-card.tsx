@@ -4,15 +4,27 @@ import Link from "next/link";
 import { useDraggable } from "@dnd-kit/core";
 import { CSS } from "@dnd-kit/utilities";
 import { Badge } from "@/components/ui/badge";
-import { LinkifiedText } from "@/components/shared/linkified-text";
 import { formatCurrencyValue } from "@/lib/format";
-import type { Opportunity, Company } from "@prisma/client";
 
-export type KanbanOpportunity = Omit<Opportunity, "estimatedValue"> & {
+// Datos mínimos de la tarjeta: el detalle completo vive en la ficha.
+export type KanbanOpportunity = {
+  id: string;
+  name: string;
+  stageId: string;
   estimatedValue: number | null;
-  company: Company;
+  probability: number | null;
+  nextStep: string | null;
+  nextStepDueDate: Date | null;
+  company: { name: string };
   owner?: { name: string | null; email: string } | null;
 };
+
+function shortDate(date: Date) {
+  return new Date(date).toLocaleDateString("es-CL", {
+    day: "2-digit",
+    month: "short",
+  });
+}
 
 export function KanbanCard({
   opportunity,
@@ -26,8 +38,13 @@ export function KanbanCard({
   const { attributes, listeners, setNodeRef, transform, isDragging } =
     useDraggable({ id: opportunity.id });
 
-  const isOverdue =
-    opportunity.nextStepDueDate && opportunity.nextStepDueDate < new Date();
+  const due = opportunity.nextStepDueDate
+    ? new Date(opportunity.nextStepDueDate)
+    : null;
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const isOverdue = Boolean(due && due < today);
+  const missingNext = !opportunity.nextStep || !due;
 
   return (
     <div
@@ -35,46 +52,46 @@ export function KanbanCard({
       style={{ transform: CSS.Translate.toString(transform) }}
       {...listeners}
       {...attributes}
-      className={`group/card ring-foreground/10 bg-card min-w-0 cursor-grab space-y-3 rounded-xl p-3 text-sm shadow-sm ring-1 transition-shadow active:cursor-grabbing ${
+      className={`ring-foreground/10 bg-card min-w-0 cursor-grab space-y-1.5 rounded-lg p-2.5 text-sm shadow-sm ring-1 transition-shadow active:cursor-grabbing ${
         isDragging ? "opacity-50 shadow-md" : "hover:shadow-md"
       }`}
     >
-      <div className="min-w-0 space-y-1">
-        <Link
-          href={`/opportunities/${opportunity.id}`}
-          className="line-clamp-2 leading-snug font-medium hover:underline"
-          onClick={(event) => {
-            if (isDragging) event.preventDefault();
-          }}
-        >
-          {opportunity.name}
-        </Link>
-        <p className="text-muted-foreground truncate text-xs">
-          {opportunity.company.name}
-        </p>
-        {opportunity.owner && (
-          <p className="text-muted-foreground truncate text-xs">
-            Resp.: {opportunity.owner.name ?? opportunity.owner.email}
-          </p>
-        )}
-      </div>
-
-      <div className="flex flex-wrap items-center gap-1.5">
+      <Link
+        href={`/opportunities/${opportunity.id}`}
+        className="line-clamp-2 leading-snug font-medium hover:underline"
+        onClick={(event) => {
+          if (isDragging) event.preventDefault();
+        }}
+      >
+        {opportunity.name}
+      </Link>
+      <p className="text-muted-foreground truncate text-xs">
+        {opportunity.company.name}
+        {opportunity.owner
+          ? ` · ${opportunity.owner.name ?? opportunity.owner.email}`
+          : ""}
+      </p>
+      <div className="flex flex-wrap items-center gap-1">
         {opportunity.estimatedValue !== null && (
           <Badge variant="outline" className="max-w-full truncate">
             {formatCurrencyValue(opportunity.estimatedValue, currency, locale)}
           </Badge>
         )}
-        {isOverdue && <Badge variant="destructive">Próximo paso vencido</Badge>}
+        {opportunity.probability !== null && (
+          <Badge variant="outline">{opportunity.probability}%</Badge>
+        )}
       </div>
-
-      {opportunity.nextStep && (
-        <div className="bg-muted/40 rounded-md px-2 py-1.5">
-          <p className="text-muted-foreground line-clamp-2 text-xs">
-            <span className="text-foreground font-medium">Próximo:</span>{" "}
-            <LinkifiedText text={opportunity.nextStep} />
-          </p>
-        </div>
+      {missingNext ? (
+        <p className="text-xs text-amber-600 dark:text-amber-400">
+          Sin próxima acción fechada
+        </p>
+      ) : (
+        <p
+          className={`line-clamp-2 text-xs ${isOverdue ? "text-destructive" : "text-muted-foreground"}`}
+        >
+          <span className="font-medium">{shortDate(due as Date)}</span> ·{" "}
+          {opportunity.nextStep}
+        </p>
       )}
     </div>
   );

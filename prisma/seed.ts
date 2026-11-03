@@ -289,7 +289,10 @@ async function main() {
       urgency: "high",
       decisionMakerId: apvDecisionMaker.id,
       sponsorId: apvSponsor.id,
-      nextStep: "Enviar propuesta ajustada con precios por volumen",
+      proposalDecisionAt: daysFromNow(-12),
+      proposalSentAt: daysFromNow(-9),
+      nextStep: "Llamar al decisor para confirmar recepción de la propuesta",
+      nextStepChannel: "call",
       nextStepDueDate: daysFromNow(-2),
       expectedCloseDate: daysFromNow(20),
       status: "open",
@@ -337,6 +340,9 @@ async function main() {
       mainPain: "Procesos logísticos manuales entre planta y despacho.",
       urgency: "medium",
       decisionMakerId: polpaicoDecisionMaker.id,
+      proposalDecisionAt: daysFromNow(-20),
+      proposalSentAt: daysFromNow(-14),
+      sprint0Status: "accepted",
       nextStep: "Negociar condiciones de pago del Sprint 0",
       nextStepDueDate: daysFromNow(7),
       expectedCloseDate: daysFromNow(15),
@@ -344,25 +350,36 @@ async function main() {
     },
   });
 
-  await prisma.opportunity.upsert({
-    where: { id: "seed-opp-repopack-lead" },
+  // Prospección: un prospecto no es una oportunidad.
+  const eventAttribution = await prisma.commercialAttribution.upsert({
+    where: { id: "seed-attribution-repopack" },
     update: {},
     create: {
-      id: "seed-opp-repopack-lead",
+      id: "seed-attribution-repopack",
       organizationId,
+      sourceChannel: "event",
+      sourceDetail: "Feria de retail 2026",
+      method: "manual",
+    },
+  });
+  await prisma.commercialLead.upsert({
+    where: { id: "seed-lead-repopack" },
+    update: {},
+    create: {
+      id: "seed-lead-repopack",
+      organizationId,
+      title: "Repopack · Tienda online",
       companyId: repopack.id,
-      name: "Tienda online Repopack",
-      stageId: stageId("lead_identificado"),
-      estimatedValue: 3000000,
-      probability: 10,
-      source: "evento",
-      createdVia: "seed",
-      mainPain: "No tienen canal de venta online, todo es por WhatsApp.",
-      urgency: "low",
-      decisionMakerId: repopackDecisionMaker.id,
+      personId: repopackDecisionMaker.id,
+      status: "prospect",
+      priority: "medium",
+      description: "No tienen canal de venta online, todo es por WhatsApp.",
       nextStep: "Agendar primer contacto",
+      nextStepChannel: "whatsapp",
       nextStepDueDate: daysFromNow(10),
-      status: "open",
+      firstTouchAttributionId: eventAttribution.id,
+      lastTouchAttributionId: eventAttribution.id,
+      createdVia: "seed",
     },
   });
 
@@ -374,7 +391,7 @@ async function main() {
       organizationId,
       companyId: repopack.id,
       name: "Rediseño catálogo digital Repopack",
-      stageId: stageId("ganado"),
+      stageId: stageId("negociacion"),
       estimatedValue: 2200000,
       probability: 100,
       source: "referido",
@@ -385,6 +402,8 @@ async function main() {
       nextStep: "Kickoff de implementación",
       expectedCloseDate: daysFromNow(-5),
       status: "won",
+      wonAt: daysFromNow(-5),
+      wonEvidence: "Orden de compra recibida por email",
     },
   });
 
@@ -396,7 +415,7 @@ async function main() {
       organizationId,
       companyId: repopack.id,
       name: "Integración ERP Repopack",
-      stageId: stageId("perdido"),
+      stageId: stageId("reunion_discovery"),
       estimatedValue: 6000000,
       probability: 0,
       source: "outbound",
@@ -404,9 +423,30 @@ async function main() {
       mainPain: "Sin integración entre inventario y ventas.",
       urgency: "low",
       status: "lost",
+      lostAt: daysFromNow(-20),
       lossReason: "NO_BUDGET",
     },
   });
+
+  // Período inicial de etapa para los datos demo (la app lo registra al crear).
+  const withoutHistory = await prisma.opportunity.findMany({
+    where: { organizationId, stageHistory: { none: {} } },
+    include: { stage: { select: { id: true, key: true, label: true } } },
+  });
+  for (const opportunity of withoutHistory) {
+    await prisma.opportunityStageHistory.create({
+      data: {
+        organizationId,
+        opportunityId: opportunity.id,
+        stageId: opportunity.stage.id,
+        stageKey: opportunity.stage.key,
+        stageLabel: opportunity.stage.label,
+        enteredAt: opportunity.createdAt,
+        exitedAt: opportunity.status === "open" ? null : (opportunity.wonAt ?? opportunity.lostAt),
+        source: "seed",
+      },
+    });
+  }
 
   // ---------- Activities ----------
   await prisma.activity.upsert({

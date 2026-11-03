@@ -7,6 +7,9 @@ import { LeadStatusBadge } from "@/components/shared/leads/lead-status-badge";
 import { LeadActions } from "@/components/shared/leads/lead-actions";
 import { createFormatters } from "@/lib/format";
 import { actorLabel } from "@/lib/traceability";
+import { attributionSummarySelect } from "@/lib/commercial/attribution";
+import { leadStatusLabel } from "@/lib/commercial/leads";
+import { AttributionDetails } from "@/components/shared/commercial/attribution-details";
 
 export default async function InboundLeadDetailPage({
   params,
@@ -23,6 +26,8 @@ export default async function InboundLeadDetailPage({
       convertedCompany: { select: { id: true, name: true } },
       convertedPerson: { select: { id: true, firstName: true, lastName: true } },
       convertedOpportunity: { select: { id: true, name: true } },
+      commercialLead: { select: { id: true, title: true, status: true } },
+      attribution: { select: attributionSummarySelect },
     },
   });
   if (!lead) notFound();
@@ -36,6 +41,19 @@ export default async function InboundLeadDetailPage({
         select: { id: true, name: true },
         take: 5,
         orderBy: { name: "asc" },
+      })
+    : [];
+
+  const matchingPeople = lead.email
+    ? await db.person.findMany({
+        where: { email: { equals: lead.email, mode: "insensitive" } },
+        select: {
+          id: true,
+          firstName: true,
+          lastName: true,
+          company: { select: { name: true } },
+        },
+        take: 3,
       })
     : [];
 
@@ -54,10 +72,22 @@ export default async function InboundLeadDetailPage({
               <p className="text-muted-foreground text-xs">Email</p>
               <p>{lead.email ?? "—"}</p>
             </div>
+            {lead.phone && (
+              <div>
+                <p className="text-muted-foreground text-xs">Teléfono</p>
+                <p>{lead.phone}</p>
+              </div>
+            )}
             <div>
               <p className="text-muted-foreground text-xs">Origen</p>
               <p>{lead.source}</p>
             </div>
+            {lead.attribution && (
+              <div>
+                <p className="text-muted-foreground text-xs">Atribución</p>
+                <AttributionDetails attribution={lead.attribution} />
+              </div>
+            )}
             {lead.page && (
               <div>
                 <p className="text-muted-foreground text-xs">Página</p>
@@ -81,6 +111,18 @@ export default async function InboundLeadDetailPage({
                   {formatters.dateTime(lead.reviewedAt)} ·{" "}
                   {actorLabel(lead.reviewedBy)}
                 </p>
+              </div>
+            )}
+            {lead.commercialLead && (
+              <div>
+                <p className="text-muted-foreground text-xs">Lead comercial</p>
+                <Link
+                  href={`/prospecting/${lead.commercialLead.id}`}
+                  className="text-primary hover:underline"
+                >
+                  {lead.commercialLead.title} ·{" "}
+                  {leadStatusLabel(lead.commercialLead.status)}
+                </Link>
               </div>
             )}
             {lead.status === "converted" && (
@@ -125,6 +167,10 @@ export default async function InboundLeadDetailPage({
           }
           matchingCompanies={matchingCompanies}
           defaultCompanyName={lead.company ?? ""}
+          matchingPeople={matchingPeople.map((person) => ({
+            id: person.id,
+            label: `${person.firstName} ${person.lastName}${person.company ? ` · ${person.company.name}` : ""}`,
+          }))}
         />
       </div>
     </div>

@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { requireOrgContext } from "@/lib/tenant";
-import { getOrgStages } from "@/lib/pipeline/stages";
+import { boardStages, getOrgStages } from "@/lib/pipeline/stages";
 import { getActiveTeamMembers } from "@/lib/team";
 import { getActivityFeed } from "@/lib/timeline";
 import { PageHeader } from "@/components/shared/page-header";
@@ -32,6 +32,9 @@ export default async function DashboardPage() {
     teamMembers,
     newLeadCount,
     recentNewLeads,
+    activeLeadCounts,
+    withoutNextAction,
+    pausedDue,
   ] = await Promise.all([
     db.company.count(),
     db.opportunity.aggregate({
@@ -40,7 +43,11 @@ export default async function DashboardPage() {
       _sum: { estimatedValue: true },
     }),
     db.activity.count({
-      where: { status: { in: ACTIVITY_OPEN_STATUSES }, dueDate: { lt: now } },
+      where: {
+        occurredAt: null,
+        status: { in: ACTIVITY_OPEN_STATUSES },
+        dueDate: { lt: now },
+      },
     }),
     db.meeting.count(),
     db.meeting.count({ where: { processingStatus: "ready" } }),
@@ -79,14 +86,25 @@ export default async function DashboardPage() {
       take: 3,
       select: { id: true, firstName: true, lastName: true, company: true, createdAt: true },
     }),
+    db.commercialLead.groupBy({
+      by: ["status"],
+      where: { status: { in: ["prospect", "contacted", "lead"] } },
+      _count: { _all: true },
+    }),
+    db.opportunity.count({
+      where: { status: "open", OR: [{ nextStep: null }, { nextStepDueDate: null }] },
+    }),
+    db.opportunity.count({ where: { status: "paused", reactivateAt: { lte: now } } }),
   ]);
+  const leadCount = (status: string) =>
+    activeLeadCounts.find((row) => row.status === status)?._count._all ?? 0;
 
   const countByStageId = new Map(
     stageCounts.map((row) => [row.stageId, row._count]),
   );
-  // Embudo: excluye "perdido" y usa conteo acumulado (etapa actual + posteriores)
-  // para que el ancho refleje retención real del pipeline, no solo stock por etapa.
-  const funnelStages = stages.filter((stage) => !stage.isLost);
+  // Stock actual de oportunidades abiertas por etapa operativa. El funnel
+  // analítico (cohortes, conversiones) vive en /analytics.
+  const funnelStages = boardStages(stages);
   const chartColors = [
     "var(--color-chart-1)",
     "var(--color-chart-2)",
@@ -131,6 +149,21 @@ export default async function DashboardPage() {
           currency={org.currency}
           locale={org.locale}
         />
+      </div>
+
+      <div className="mb-4 grid grid-cols-2 gap-2 lg:grid-cols-5">
+        {[
+          { href: "/prospecting?status=prospect", label: "Prospectos", value: leadCount("prospect") },
+          { href: "/prospecting?status=contacted", label: "Contactados", value: leadCount("contacted") },
+          { href: "/prospecting?status=lead", label: "Leads", value: leadCount("lead") },
+          { href: "/opportunities/list?noNext=1", label: "Oportunidades sin próxima acción", value: withoutNextAction },
+          { href: "/opportunities/list?status=paused", label: "Pausadas por reactivar", value: pausedDue },
+        ].map((item) => (
+          <Link key={item.href} href={item.href} className="hover:bg-muted rounded-md border p-3">
+            <p className="text-muted-foreground text-xs">{item.label}</p>
+            <p className="text-xl font-semibold">{item.value}</p>
+          </Link>
+        ))}
       </div>
 
       <div className="mb-4">
@@ -187,7 +220,12 @@ export default async function DashboardPage() {
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-5">
         <Card className="lg:col-span-3">
           <CardHeader>
-            <CardTitle>Embudo de oportunidades</CardTitle>
+            <CardTitle>
+              Pipeline abierto por etapa{" "}
+              <Link href="/analytics" className="text-muted-foreground text-xs font-normal hover:underline">
+                Ver funnel comercial
+              </Link>
+            </CardTitle>
           </CardHeader>
           <CardContent>
             <PipelineChart data={pipelineData} />

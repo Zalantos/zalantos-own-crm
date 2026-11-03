@@ -152,7 +152,16 @@ export function ActivityRow({
         {isOverdue && <Badge variant="destructive">Vencida</Badge>}
         <TaskStatusSelect
           status={isActivityStatus(activity.status) ? activity.status : "todo"}
-          onChange={(next) => void updateActivityStatus(activity.id, next)}
+          onChange={(next) => {
+              // Resultado opcional al completar (queda en outcomes).
+              const outcomes =
+                next === "done"
+                  ? window.prompt("Resultado de la tarea (opcional)")
+                  : null;
+              void updateActivityStatus(activity.id, next, {
+                outcomes: outcomes ?? null,
+              });
+            }}
         />
         <TeamMemberSelect
           teamMembers={teamMembers}

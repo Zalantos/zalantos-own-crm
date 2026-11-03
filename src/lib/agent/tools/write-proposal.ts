@@ -2,10 +2,16 @@ import { defineAgentTool } from "@/lib/agent/tool-definition";
 import { z } from "zod";
 import { LossReason } from "@prisma/client";
 import type { TenantClient } from "@/lib/tenant";
-import { getOrgStages, stagesByKey } from "@/lib/pipeline/stages";
+import {
+  boardStages,
+  getOrgStages,
+  LEGACY_STAGE_ACTIONS,
+  resolveStage,
+} from "@/lib/pipeline/stages";
 import {
   coerceFieldValue,
   getWritableFields,
+  PROTECTED_OPPORTUNITY_FIELDS,
   type AgentEntity,
 } from "@/lib/agent/field-registry";
 import { snapshotCustomFields } from "@/lib/agent/snapshot";
@@ -202,6 +208,15 @@ export function buildProposalTools(ctx: AgentToolContext) {
 
         const items = [];
         for (const update of updates) {
+          if (
+            entity === "opportunity" &&
+            PROTECTED_OPPORTUNITY_FIELDS.has(update.field)
+          ) {
+            return {
+              error:
+                "El estado no se edita como campo: usá set_opportunity_status (pausada, ganada, perdida o reabierta) con su motivo o evidencia.",
+            };
+          }
           const spec = fields[update.field];
           if (!spec) {
             return {
@@ -253,7 +268,7 @@ export function buildProposalTools(ctx: AgentToolContext) {
 
     change_stage: defineAgentTool({
       description:
-        "Cambia la etapa de una oportunidad al instante y registra el cambio para deshacer. El valor de `stage` es el key de una etapa según list_writable_fields.",
+        "Cambia la etapa operativa de una oportunidad abierta (reunion_discovery = Discovery / Sprint 0, calificada, propuesta_principal = Propuesta enviada, negociacion). Avanzar exige requisitos: Pain para Calificada; decisión y envío real para Propuesta enviada; interacción posterior al envío para Negociación. Ganada/perdida/pausada NO son etapas: usá set_opportunity_status. Se aplica al instante y queda para deshacer.",
       inputSchema: z.object({
         opportunityId: z.string().min(1),
         stage: z.string().min(1),
@@ -281,11 +296,13 @@ export function buildProposalTools(ctx: AgentToolContext) {
           return { error: `Oportunidad no encontrada: ${opportunityId}` };
         }
 
-        const stages = stagesByKey(await getOrgStages(ctx.db));
-        const target = stages.get(stage);
+        const stageList = boardStages(await getOrgStages(ctx.db));
+        const target = resolveStage(stageList, stage);
         if (!target) {
           return {
-            error: `Etapa inválida "${stage}". Etapas válidas: ${[...stages.keys()].join(", ")}`,
+            error:
+              LEGACY_STAGE_ACTIONS[stage.trim().toLowerCase()] ??
+              `Etapa inválida "${stage}". Etapas válidas: ${stageList.map((s) => s.key).join(", ")}`,
           };
         }
 
@@ -466,7 +483,7 @@ export function buildProposalTools(ctx: AgentToolContext) {
 
     create_opportunity: defineAgentTool({
       description:
-        "Crea una oportunidad nueva en una empresa al instante y registra el cambio para deshacer.",
+        "Crea una oportunidad nueva (proyecto/necesidad concreta) en una empresa, en una etapa operativa (default Discovery / Sprint 0). Si viene de un lead de prospección usá convert_lead_to_opportunity para conservar el origen. Se aplica al instante y queda para deshacer.",
       inputSchema: z.object({
         companyId: z.string().min(1),
         name: z.string().min(1),
@@ -486,7 +503,10 @@ export function buildProposalTools(ctx: AgentToolContext) {
         nextStep: z.string().optional(),
         nextStepDueDate: optionalIsoDateSchema,
         expectedCloseDate: optionalIsoDateSchema,
-        status: z.string().optional(),
+        status: z
+          .string()
+          .optional()
+          .describe("Siempre nace open; para cerrar usá set_opportunity_status"),
         lossReason: z.nativeEnum(LossReason).optional(),
         ownerId: z.string().optional(),
         reason: z.string().min(1),
@@ -522,8 +542,8 @@ export function buildProposalTools(ctx: AgentToolContext) {
           return { error: `Empresa no encontrada: ${companyId}` };
         }
 
-        const stages = await getOrgStages(ctx.db);
-        const target = stage ? stagesByKey(stages).get(stage) : stages[0];
+        const stages = boardStages(await getOrgStages(ctx.db));
+        const target = stage ? resolveStage(stages, stage) : stages[0];
         if (!target) {
           return {
             error: stage

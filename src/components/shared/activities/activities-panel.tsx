@@ -7,16 +7,26 @@ export async function ActivitiesPanel({
   companyId,
   personId,
   opportunityId,
+  commercialLeadId,
+  commercialPartnerId,
 }: {
   companyId?: string;
   personId?: string;
   opportunityId?: string;
+  commercialLeadId?: string;
+  commercialPartnerId?: string;
 }) {
   const { db } = await requireOrgContext();
 
   const [activitiesUnsorted, teamMembers] = await Promise.all([
     db.activity.findMany({
-      where: { companyId, personId, opportunityId },
+      where: {
+        companyId,
+        personId,
+        opportunityId,
+        commercialLeadId,
+        commercialPartnerId,
+      },
       include: {
         assignee: { select: { id: true, name: true } },
         createdBy: { select: { name: true, email: true } },
@@ -46,6 +56,8 @@ export async function ActivitiesPanel({
       companyId={companyId}
       personId={personId}
       opportunityId={opportunityId}
+      commercialLeadId={commercialLeadId}
+      commercialPartnerId={commercialPartnerId}
     />
   );
 }

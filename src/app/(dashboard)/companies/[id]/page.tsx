@@ -18,7 +18,11 @@ import {
   toExternalHref,
 } from "@/components/shared/linkified-text";
 import { CompanyStatusBadge } from "@/components/shared/companies/status-badge";
-import { OpportunityStageBadge } from "@/components/shared/opportunities/status-badge";
+import {
+  OpportunityStageBadge,
+  OpportunityStatusBadge,
+} from "@/components/shared/opportunities/status-badge";
+import { leadStatusLabel } from "@/lib/commercial/leads";
 import { createFormatters } from "@/lib/format";
 import { actorLabel, createdViaLabel } from "@/lib/traceability";
 import { deleteCompany } from "../actions";
@@ -53,6 +57,10 @@ export default async function CompanyDetailPage({
         where: { isActive: true },
         include: { commercialPartner: true },
         orderBy: { createdAt: "asc" },
+      },
+      commercialLeads: {
+        orderBy: { identifiedAt: "desc" },
+        select: { id: true, title: true, status: true },
       },
     },
   });
@@ -319,15 +327,40 @@ export default async function CompanyDetailPage({
         </TabsContent>
 
         <TabsContent value="opportunities" className="space-y-3 pt-4">
-          <Button
-            size="sm"
-            variant="secondary"
-            render={
-              <Link href={`/opportunities/new?companyId=${company.id}`} />
-            }
-          >
-            Nueva oportunidad
-          </Button>
+          <div className="flex flex-wrap gap-2">
+            <Button
+              size="sm"
+              variant="secondary"
+              render={
+                <Link href={`/opportunities/new?companyId=${company.id}`} />
+              }
+            >
+              Nueva oportunidad
+            </Button>
+            <Button
+              size="sm"
+              variant="ghost"
+              render={
+                <Link href={`/prospecting/new?companyId=${company.id}`} />
+              }
+            >
+              Nuevo prospecto
+            </Button>
+          </div>
+          {company.commercialLeads.length > 0 && (
+            <div className="flex flex-wrap gap-2 text-sm">
+              <span className="text-muted-foreground">Prospección:</span>
+              {company.commercialLeads.map((lead) => (
+                <Link
+                  key={lead.id}
+                  href={`/prospecting/${lead.id}`}
+                  className="text-primary hover:underline"
+                >
+                  {lead.title} ({leadStatusLabel(lead.status)})
+                </Link>
+              ))}
+            </div>
+          )}
           {company.opportunities.length === 0 ? (
             <p className="text-muted-foreground text-sm">
               Sin oportunidades registradas.
@@ -341,7 +374,10 @@ export default async function CompanyDetailPage({
                   className="hover:bg-muted/50 flex items-center justify-between rounded-md border p-3 text-sm"
                 >
                   <span>{opportunity.name}</span>
-                  <OpportunityStageBadge stage={opportunity.stage} />
+                  <span className="flex items-center gap-2">
+                    <OpportunityStageBadge stage={opportunity.stage} />
+                    <OpportunityStatusBadge status={opportunity.status} />
+                  </span>
                 </Link>
               ))}
             </div>

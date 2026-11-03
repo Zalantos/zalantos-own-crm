@@ -20,10 +20,14 @@ export type TaskActivity = Activity & {
   opportunity: Opportunity | null;
   assignee: { id: string; name: string } | null;
   completedBy?: { id: string; name: string } | null;
+  commercialLead?: { id: string; title: string } | null;
+  commercialPartner?: { id: string; displayName: string } | null;
 };
 
 function parentLabel(task: TaskActivity) {
   if (task.opportunity) return task.opportunity.name;
+  if (task.commercialLead) return `Prospecto: ${task.commercialLead.title}`;
+  if (task.commercialPartner) return `Alianza: ${task.commercialPartner.displayName}`;
   if (task.company) return task.company.name;
   if (task.person) return `${task.person.firstName} ${task.person.lastName}`;
   return null;
@@ -77,7 +81,16 @@ export function TaskKanbanCard({
           >
             <TaskStatusSelect
               status={isActivityStatus(task.status) ? task.status : "todo"}
-              onChange={(next) => void updateActivityStatus(task.id, next)}
+              onChange={(next) => {
+              // Resultado opcional al completar (queda en outcomes).
+              const outcomes =
+                next === "done"
+                  ? window.prompt("Resultado de la tarea (opcional)")
+                  : null;
+              void updateActivityStatus(task.id, next, {
+                outcomes: outcomes ?? null,
+              });
+            }}
             />
           </span>
           {isOverdue && <Badge variant="destructive">Vencida</Badge>}
@@ -85,6 +98,9 @@ export function TaskKanbanCard({
             <Badge variant="outline">
               Planeada {formatShortDate(task.plannedDate)}
             </Badge>
+          )}
+          {task.priority === "high" && (
+            <Badge variant="destructive">Prioridad alta</Badge>
           )}
           {task.dueDate && (
             <Badge variant="outline">

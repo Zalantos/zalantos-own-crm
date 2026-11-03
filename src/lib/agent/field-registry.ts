@@ -6,6 +6,12 @@ import {
   LOSS_REASON_LABELS,
 } from "@/lib/opportunities/loss-reason";
 import type { TenantClient } from "@/lib/tenant";
+import { SPRINT0_STATUSES, SPRINT0_STATUS_LABELS } from "@/lib/zod/opportunity";
+
+// Campos que existen (para deshacer cambios históricos) pero que el agente
+// no puede escribir directo: el estado exige motivo/evidencia y va por
+// set_opportunity_status.
+export const PROTECTED_OPPORTUNITY_FIELDS = new Set(["status", "lossReason"]);
 
 // Single source of truth for which fields the agent (and proposal apply
 // engine) may write, per entity. Derived instead of hard-coded:
@@ -91,6 +97,26 @@ const OPPORTUNITY_FIELDS = {
     type: "userRef",
     label: "Responsable (userId de list_team_members)",
   },
+  recurringValue: { type: "decimal", label: "Recurrente mensual estimado" },
+  situation: { type: "text", label: "SPICED Situation" },
+  impact: { type: "text", label: "SPICED Impact / hipótesis de impacto" },
+  criticalEvent: { type: "text", label: "SPICED Critical Event" },
+  criticalEventDate: { type: "date", label: "Fecha del evento crítico" },
+  decisionProcess: { type: "text", label: "SPICED Decision (quién y cómo decide)" },
+  sprint0Status: {
+    type: "enum",
+    label: "Sprint 0",
+    enumValues: SPRINT0_STATUSES,
+    enumLabels: SPRINT0_STATUS_LABELS,
+  },
+  sprint0ScheduledAt: { type: "date", label: "Sprint 0 agendado" },
+  sprint0CompletedAt: { type: "date", label: "Sprint 0 realizado" },
+  diagnosisDeliveredAt: { type: "date", label: "Diagnóstico entregado" },
+  proposalDecisionAt: { type: "date", label: "Decisión de preparar/enviar propuesta" },
+  proposalSentAt: { type: "date", label: "Propuesta enviada (fecha real de envío)" },
+  expectedResponseAt: { type: "date", label: "Respuesta esperada de la propuesta" },
+  nextStepChannel: { type: "string", label: "Canal de la próxima acción" },
+  nextStepContext: { type: "text", label: "Motivo/contexto de la próxima acción" },
   decisionMakerId: { type: "personRef", label: "Decisor (id de persona)" },
   sponsorId: { type: "personRef", label: "Sponsor (id de persona)" },
 } satisfies Partial<
@@ -155,7 +181,9 @@ export async function getWritableFields(
   // La etapa dejó de ser un enum global: se resuelve contra las etapas
   // configuradas por la organización (el valor es el `key` de la etapa).
   if (entity === "opportunity") {
-    const stages = await getOrgStages(db);
+    const stages = (await getOrgStages(db)).filter(
+      (stage) => !stage.isWon && !stage.isLost,
+    );
     fields.stage = {
       type: "enum",
       label: "Etapa",
@@ -264,6 +292,7 @@ export async function describeFieldsForModel(
 ): Promise<string> {
   const fields = await getWritableFields(db, entity);
   return Object.entries(fields)
+    .filter(([name]) => !(entity === "opportunity" && PROTECTED_OPPORTUNITY_FIELDS.has(name)))
     .map(([name, spec]) => {
       const parts = [`${name} (${spec.type}) — ${spec.label}`];
       if (spec.enumValues?.length) {

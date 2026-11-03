@@ -28,6 +28,12 @@
 - [ ] `TENANT_DATABASE_URL` con rol `crm_app` (NOBYPASSRLS) en producción.
 - [ ] `DATABASE_URL` / system role solo para migraciones y auth.
 - [ ] No ejecutar `prisma:seed` en producción.
+- [ ] Ids vinculados recibidos del cliente (empresa, persona, oportunidad,
+      prospecto, partner) se validan contra la org antes de escribir
+      (`resolveRecordLinks`): las FKs de Postgres no distinguen tenants.
+- [ ] Canales entrantes nuevos (`/api/integrations/activities`,
+      `/api/integrations/rumbo/handoff-status`) usan secretos dedicados y la
+      org la fija el servidor, nunca el payload.
 
 ## Storage (R2)
 

@@ -5,17 +5,9 @@ import { requireOrgContext } from "@/lib/tenant";
 import { noteCreateSchema, noteUpdateSchema } from "@/lib/zod/note";
 import { handleMutationError } from "@/lib/prisma-errors";
 import { appendTimelineEvent } from "@/lib/timeline";
+import { recordParentPath, resolveRecordLinks } from "@/lib/commercial/links";
 
-function parentPath(entity: {
-  companyId?: string | null;
-  personId?: string | null;
-  opportunityId?: string | null;
-}) {
-  if (entity.opportunityId) return `/opportunities/${entity.opportunityId}`;
-  if (entity.personId) return `/people/${entity.personId}`;
-  if (entity.companyId) return `/companies/${entity.companyId}`;
-  return "/companies";
-}
+const parentPath = recordParentPath;
 
 export type NoteFormState = { error: string } | undefined;
 
@@ -30,22 +22,9 @@ export async function createNote(
     return { error: "La nota no pudo guardarse. Revisa los campos." };
   }
 
-  const linkedCompanyId =
-    parsed.data.companyId ??
-    (
-      parsed.data.opportunityId
-        ? await db.opportunity.findUnique({
-            where: { id: parsed.data.opportunityId },
-            select: { companyId: true },
-          })
-        : parsed.data.personId
-          ? await db.person.findUnique({
-              where: { id: parsed.data.personId },
-              select: { companyId: true },
-            })
-          : null
-    )?.companyId ??
-    null;
+  const links = await resolveRecordLinks(db, parsed.data);
+  if (!links.ok) return { error: links.error };
+  const linkedCompanyId = links.companyId;
 
   const note = await db.note.create({
     data: {

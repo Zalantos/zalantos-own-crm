@@ -59,12 +59,16 @@ export function ActivitiesList({
   companyId,
   personId,
   opportunityId,
+  commercialLeadId,
+  commercialPartnerId,
 }: {
   activities: ActivityWithAssignee[];
   teamMembers: AssignableTeamMember[];
   companyId?: string;
   personId?: string;
   opportunityId?: string;
+  commercialLeadId?: string;
+  commercialPartnerId?: string;
 }) {
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
   const [assigneeFilter, setAssigneeFilter] = useState("all");
@@ -133,6 +137,8 @@ export function ActivitiesList({
             companyId={companyId}
             personId={personId}
             opportunityId={opportunityId}
+            commercialLeadId={commercialLeadId}
+            commercialPartnerId={commercialPartnerId}
             teamMembers={teamMembers}
           />
         </div>

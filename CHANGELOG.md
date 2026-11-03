@@ -2,6 +2,20 @@
 
 ## Unreleased
 
+- Rediseño del proceso comercial (HU-CRM-02): Prospección
+  (`CommercialLead`: prospecto → contactado → lead), pipeline de 4 etapas
+  operativas con compuertas de avance y estados `open/paused/won/lost`,
+  historial de etapas, atribución comercial (`CommercialAttribution`,
+  `Campaign`, UTM desde inbound), pipeline de alianzas sobre
+  `CommercialPartner`, próxima mejor acción (reglas + IA bajo demanda),
+  interacciones omnicanal, analítica por cohortes (`/analytics`), traspaso a
+  Rumbo con confirmación explícita, herramientas nuevas del agente/MCP y
+  workflows `status_changed`/`reactivation_due`. Migraciones
+  `commercial_process_structure` (aditiva) y `commercial_process_backfill`
+  (determinística, validada); backfill controlado
+  `scripts/backfill-commercial-process.ts`. Ver
+  `docs/operations/commercial-process-migration.md`.
+
 - Oportunidades: responsable (`ownerId` → `User`) y motivo de pérdida como
   enum `LossReason` (combo en el formulario, filtros en la lista, agente y
   Meeting Intelligence). Migración `opportunity_owner_loss_reason`: el texto

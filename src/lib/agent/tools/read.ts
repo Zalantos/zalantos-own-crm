@@ -15,7 +15,7 @@ export function buildReadTools(ctx: AgentToolContext) {
   return {
     search_crm: defineAgentTool({
       description:
-        "Busca empresas, personas y oportunidades por nombre o email. Usala para resolver nombres a ids antes de actuar sobre un registro. Para conteos, sumas o filtros de pipeline usá query_opportunities.",
+        "Busca empresas, personas y oportunidades por nombre o email. Usala para resolver nombres a ids antes de actuar sobre un registro. Para prospectos/leads usá list_commercial_leads; para conteos, sumas o filtros de pipeline usá query_opportunities.",
       inputSchema: z.object({
         query: z.string().min(1).describe("Texto a buscar (nombre o email)"),
         entity: entitySchema
@@ -90,6 +90,7 @@ export function buildReadTools(ctx: AgentToolContext) {
                 select: {
                   id: true,
                   name: true,
+                  status: true,
                   stage: { select: { key: true, label: true } },
                   companyId: true,
                   company: { select: { name: true } },

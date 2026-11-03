@@ -1,7 +1,7 @@
 import { defineAgentTool } from "@/lib/agent/tool-definition";
 import { z } from "zod";
 import { LossReason, Prisma } from "@prisma/client";
-import { getOrgStages, stagesById, stagesByKey } from "@/lib/pipeline/stages";
+import { getAllOrgStages, resolveStage, stagesById } from "@/lib/pipeline/stages";
 import type { StageOption } from "@/lib/pipeline/stages";
 import type { AgentToolContext } from "@/lib/agent/executor";
 
@@ -109,7 +109,7 @@ export function buildAnalyticsTools(ctx: AgentToolContext) {
           .string()
           .optional()
           .describe("Key de la etapa (p. ej. negociacion). Ver etapas válidas en list_writable_fields."),
-        status: z.enum(["open", "won", "lost"]).optional(),
+        status: z.enum(["open", "paused", "won", "lost", "archived"]).optional(),
         companyId: z.string().optional(),
         ownerId: z
           .string()
@@ -159,9 +159,9 @@ export function buildAnalyticsTools(ctx: AgentToolContext) {
         }
 
         let stage: StageOption | undefined;
-        const stages = await getOrgStages(db);
+        const stages = await getAllOrgStages(db);
         if (input.stage) {
-          stage = stagesByKey(stages).get(input.stage);
+          stage = resolveStage(stages, input.stage);
           if (!stage) {
             return {
               error: `Etapa desconocida: "${input.stage}". Etapas válidas: ${stages.map((s) => s.key).join(", ")}`,

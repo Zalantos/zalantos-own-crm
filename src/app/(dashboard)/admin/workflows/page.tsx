@@ -55,6 +55,12 @@ export default async function WorkflowsAdminPage() {
                   </div>
                 </div>
 
+                {workflow.configWarning && (
+                  <p className="rounded-md border border-amber-500/40 bg-amber-500/10 px-2 py-1.5 text-xs">
+                    {workflow.configWarning}
+                  </p>
+                )}
+
                 {workflow.logs.length > 0 && (
                   <div className="space-y-1 border-t pt-2">
                     <p className="text-muted-foreground text-xs font-medium">

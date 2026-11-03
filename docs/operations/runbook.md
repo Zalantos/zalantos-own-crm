@@ -140,6 +140,19 @@ curl -X POST "$APP_URL/api/cron/process-entity-context" \
 4. Si 401: secret incorrecto o ausente.
 5. Contrato: `docs/integrations/telegram-copiloto.md`.
 
+## Proceso comercial (HU-CRM-02)
+
+- Migración y backfill: `docs/operations/commercial-process-migration.md`.
+- Validación: `npm run validate:commercial-process` (solo lectura).
+- Backfill controlado de prospección: `npm run backfill:commercial-process -- --organization-id <id> --dry-run --output manifest.json`.
+- Cron diario recomendado: `POST /api/cron/commercial-follow-ups`.
+- Oportunidad que "desapareció" del tablero: revisar `status` (pausadas,
+  ganadas y perdidas solo salen en la lista) o si su etapa está retirada
+  (`/opportunities/list?review=1`).
+- Workflow que dejó de dispararse: ver `configWarning` en `/admin/workflows`.
+- Traspaso Rumbo en `sent` indefinidamente: Rumbo no llamó al callback; ver
+  `docs/integrations/rumbo-handoff.md`.
+
 ## Scripts útiles
 
 | Script | Uso |

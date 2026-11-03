@@ -6,14 +6,24 @@ export async function NotesPanel({
   companyId,
   personId,
   opportunityId,
+  commercialLeadId,
+  commercialPartnerId,
 }: {
   companyId?: string;
   personId?: string;
   opportunityId?: string;
+  commercialLeadId?: string;
+  commercialPartnerId?: string;
 }) {
   const { db } = await requireOrgContext();
   const notes = await db.note.findMany({
-    where: { companyId, personId, opportunityId },
+    where: {
+      companyId,
+      personId,
+      opportunityId,
+      commercialLeadId,
+      commercialPartnerId,
+    },
     include: { createdBy: { select: { name: true, email: true } } },
     orderBy: { createdAt: "desc" },
   });
@@ -24,6 +34,8 @@ export async function NotesPanel({
         companyId={companyId}
         personId={personId}
         opportunityId={opportunityId}
+        commercialLeadId={commercialLeadId}
+        commercialPartnerId={commercialPartnerId}
       />
       <div className="space-y-3">
         {notes.length === 0 ? (

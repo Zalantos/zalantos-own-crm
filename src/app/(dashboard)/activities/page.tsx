@@ -20,6 +20,15 @@ type SearchParams = {
   filter?: string;
   assignee?: string;
   view?: string;
+  scope?: string;
+  priority?: string;
+  due?: string;
+};
+
+const SCOPES: Record<string, { label: string; where: Prisma.ActivityWhereInput }> = {
+  opportunity: { label: "Oportunidades", where: { opportunityId: { not: null } } },
+  lead: { label: "Prospección", where: { commercialLeadId: { not: null } } },
+  partner: { label: "Alianzas", where: { commercialPartnerId: { not: null } } },
 };
 
 function buildQuery(params: SearchParams, overrides: Partial<SearchParams>) {
@@ -51,6 +60,30 @@ export default async function ActivitiesPage({
         ? { status: { in: ACTIVITY_OPEN_STATUSES }, dueDate: { lt: now } }
         : { status: { in: ACTIVITY_OPEN_STATUSES } };
 
+  const startOfToday = new Date(now);
+  startOfToday.setHours(0, 0, 0, 0);
+  const endOfWeek = new Date(startOfToday.getTime() + 7 * 86_400_000);
+  // Solo tareas: las interacciones registradas (occurredAt) no son
+  // pendientes y viven en el historial de contactos de cada ficha.
+  const extraWhere: Prisma.ActivityWhereInput = {
+    occurredAt: null,
+    ...(params.scope && SCOPES[params.scope] ? SCOPES[params.scope].where : {}),
+    ...(params.priority === "none"
+      ? { priority: null }
+      : params.priority
+        ? { priority: params.priority }
+        : {}),
+    ...(params.due === "overdue"
+      ? { dueDate: { lt: startOfToday } }
+      : params.due === "today"
+        ? { dueDate: { gte: startOfToday, lt: new Date(startOfToday.getTime() + 86_400_000) } }
+        : params.due === "week"
+          ? { dueDate: { gte: startOfToday, lt: endOfWeek } }
+          : params.due === "none"
+            ? { dueDate: null }
+            : {}),
+  };
+
   const assigneeWhere: Prisma.ActivityWhereInput =
     assignee === "me"
       ? { assignee: { userId: user.id } }
@@ -63,11 +96,13 @@ export default async function ActivitiesPage({
   const [activities, boardActivities, teamMembers] = await Promise.all([
     view === "list"
       ? db.activity.findMany({
-          where: { ...statusWhere, ...assigneeWhere },
+          where: { ...statusWhere, ...assigneeWhere, ...extraWhere },
           include: {
             company: true,
             person: true,
             opportunity: true,
+            commercialLead: { select: { id: true, title: true } },
+            commercialPartner: { select: { id: true, displayName: true } },
             assignee: { select: { id: true, name: true } },
           },
           orderBy:
@@ -78,11 +113,13 @@ export default async function ActivitiesPage({
       : Promise.resolve([]),
     view === "board"
       ? db.activity.findMany({
-          where: { ...assigneeWhere },
+          where: { ...assigneeWhere, ...extraWhere },
           include: {
             company: true,
             person: true,
             opportunity: true,
+            commercialLead: { select: { id: true, title: true } },
+            commercialPartner: { select: { id: true, displayName: true } },
             assignee: { select: { id: true, name: true } },
             completedBy: { select: { id: true, name: true } },
           },
@@ -98,7 +135,7 @@ export default async function ActivitiesPage({
     <div>
       <PageHeader
         title="Actividades"
-        description="Tareas y recordatorios vinculados a empresas, personas y oportunidades"
+        description="Tareas comerciales: oportunidades, prospección y alianzas. Las tareas de ejecución de proyectos viven en Rumbo."
       />
 
       <div className="mb-4 flex flex-wrap items-center gap-2">
@@ -124,8 +161,31 @@ export default async function ActivitiesPage({
         >
           {view === "board" ? "Ver como lista" : "Ver como tablero"}
         </Button>
-        <form className="flex items-center gap-2">
+        <form className="flex flex-wrap items-center gap-2">
           <input type="hidden" name="filter" value={filter} />
+          {view === "board" && <input type="hidden" name="view" value="board" />}
+          <select name="scope" defaultValue={params.scope ?? ""} className="bg-background h-9 rounded-md border px-2 text-sm">
+            <option value="">Todo vínculo</option>
+            {Object.entries(SCOPES).map(([value, scope]) => (
+              <option key={value} value={value}>
+                {scope.label}
+              </option>
+            ))}
+          </select>
+          <select name="priority" defaultValue={params.priority ?? ""} className="bg-background h-9 rounded-md border px-2 text-sm">
+            <option value="">Toda prioridad</option>
+            <option value="high">Alta</option>
+            <option value="medium">Media</option>
+            <option value="low">Baja</option>
+            <option value="none">Sin prioridad</option>
+          </select>
+          <select name="due" defaultValue={params.due ?? ""} className="bg-background h-9 rounded-md border px-2 text-sm">
+            <option value="">Todo vencimiento</option>
+            <option value="overdue">Vencidas</option>
+            <option value="today">Vencen hoy</option>
+            <option value="week">Próximos 7 días</option>
+            <option value="none">Sin fecha</option>
+          </select>
           <Select name="assignee" defaultValue={isMine ? "" : (assignee ?? "")}>
             <SelectTrigger className="w-48">
               <SelectValue placeholder="Todos los responsables" />
@@ -213,6 +273,22 @@ export default async function ActivitiesPage({
                         className="hover:underline"
                       >
                         {activity.opportunity.name}
+                      </Link>
+                    )}
+                    {activity.commercialLead && (
+                      <Link
+                        href={`/prospecting/${activity.commercialLead.id}`}
+                        className="hover:underline"
+                      >
+                        Prospecto: {activity.commercialLead.title}
+                      </Link>
+                    )}
+                    {activity.commercialPartner && (
+                      <Link
+                        href={`/partners/${activity.commercialPartner.id}`}
+                        className="hover:underline"
+                      >
+                        Alianza: {activity.commercialPartner.displayName}
                       </Link>
                     )}
                   </p>

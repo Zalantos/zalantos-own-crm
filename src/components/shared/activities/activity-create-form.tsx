@@ -19,18 +19,26 @@ import {
   type ActivityFormState,
 } from "@/app/(dashboard)/activities/actions";
 import { ACTIVITY_TYPES, ACTIVITY_TYPE_LABELS } from "@/lib/activity-types";
+import {
+  ACTIVITY_PRIORITIES,
+  ACTIVITY_PRIORITY_LABELS,
+} from "@/lib/activity-priority";
 import type { AssignableTeamMember } from "@/lib/team";
 
 function ActivityCreateDialogForm({
   companyId,
   personId,
   opportunityId,
+  commercialLeadId,
+  commercialPartnerId,
   teamMembers,
   onCreated,
 }: {
   companyId?: string;
   personId?: string;
   opportunityId?: string;
+  commercialLeadId?: string;
+  commercialPartnerId?: string;
   teamMembers: AssignableTeamMember[];
   onCreated: () => void;
 }) {
@@ -63,9 +71,19 @@ function ActivityCreateDialogForm({
       {opportunityId && (
         <input type="hidden" name="opportunityId" value={opportunityId} />
       )}
+      {commercialLeadId && (
+        <input type="hidden" name="commercialLeadId" value={commercialLeadId} />
+      )}
+      {commercialPartnerId && (
+        <input
+          type="hidden"
+          name="commercialPartnerId"
+          value={commercialPartnerId}
+        />
+      )}
       <label className="block space-y-1 text-xs">
         <span className="text-muted-foreground">Título</span>
-        <Input name="title" placeholder="Título de la actividad" required />
+        <Input name="title" placeholder="Título de la tarea" required />
       </label>
       <label className="block space-y-1 text-xs">
         <span className="text-muted-foreground">Tipo</span>
@@ -89,6 +107,21 @@ function ActivityCreateDialogForm({
           className="w-full text-sm"
         />
       </label>
+      <label className="block space-y-1 text-xs">
+        <span className="text-muted-foreground">Prioridad</span>
+        <select
+          name="priority"
+          defaultValue=""
+          className="bg-background h-8 w-full rounded-md border px-2 text-sm"
+        >
+          <option value="">Sin prioridad</option>
+          {ACTIVITY_PRIORITIES.map((priority) => (
+            <option key={priority} value={priority}>
+              {ACTIVITY_PRIORITY_LABELS[priority]}
+            </option>
+          ))}
+        </select>
+      </label>
       <div className="grid grid-cols-2 gap-2">
         <label className="space-y-1 text-xs">
           <span className="text-muted-foreground">Fecha planeada</span>
@@ -111,9 +144,7 @@ function ActivityCreateDialogForm({
         <p className="text-destructive text-xs">{state.error}</p>
       )}
       <DialogFooter>
-        <SubmitButton pendingText="Agregando...">
-          Agregar actividad
-        </SubmitButton>
+        <SubmitButton pendingText="Agregando...">Agregar tarea</SubmitButton>
       </DialogFooter>
     </form>
   );
@@ -123,12 +154,18 @@ export function ActivityCreateForm({
   companyId,
   personId,
   opportunityId,
+  commercialLeadId,
+  commercialPartnerId,
   teamMembers,
+  triggerLabel = "Agregar tarea",
 }: {
   companyId?: string;
   personId?: string;
   opportunityId?: string;
+  commercialLeadId?: string;
+  commercialPartnerId?: string;
   teamMembers: AssignableTeamMember[];
+  triggerLabel?: string;
 }) {
   const [open, setOpen] = useState(false);
   // El form sigue montado mientras el diálogo cierra. Desmontarlo en el
@@ -143,14 +180,15 @@ export function ActivityCreateForm({
   return (
     <>
       <Button type="button" onClick={() => handleOpenChange(true)}>
-        Agregar actividad
+        {triggerLabel}
       </Button>
       <Dialog open={open} onOpenChange={handleOpenChange}>
         <DialogContent className="sm:max-w-lg">
           <DialogHeader>
-            <DialogTitle>Agregar actividad</DialogTitle>
+            <DialogTitle>Nueva tarea</DialogTitle>
             <DialogDescription>
-              Tipo, fechas y responsable de la actividad.
+              Algo que todavía debe hacerse: tipo, fechas, prioridad y
+              responsable.
             </DialogDescription>
           </DialogHeader>
           <ActivityCreateDialogForm
@@ -158,6 +196,8 @@ export function ActivityCreateForm({
             companyId={companyId}
             personId={personId}
             opportunityId={opportunityId}
+            commercialLeadId={commercialLeadId}
+            commercialPartnerId={commercialPartnerId}
             teamMembers={teamMembers}
             onCreated={() => setOpen(false)}
           />

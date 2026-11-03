@@ -52,6 +52,25 @@ Body (snake_case, igual que lo manda el nodo HTTP de n8n):
 Solo `source` y `external_id` son obligatorios. `email`, si viene, debe ser un
 email válido; se normaliza (`trim` + minúsculas) antes de guardarse.
 
+#### Campos de atribución (HU-CRM-02, opcionales y retrocompatibles)
+
+| Campo | Uso |
+| --- | --- |
+| `phone` | Teléfono del contacto |
+| `source_channel` | `referral \| campaign \| web \| linkedin_organic \| outbound \| event \| partner \| other` (si falta se deduce: campaña si llega `campaign_id`/`utm_campaign`, si no `web`) |
+| `campaign_id` | Key o id de la campaña en el CRM (`/admin/settings/campaigns`) |
+| `utm_source`, `utm_medium`, `utm_campaign`, `utm_content`, `utm_term` | UTM tal como llegaron a la landing |
+| `landing_page` | Página de aterrizaje (default: `page`) |
+| `referrer` | `document.referrer` |
+| `first_touch_at` | Fecha ISO del primer toque si la web la conoce |
+
+La web debe enviar los UTM capturados en la primera visita (por ejemplo
+persistidos en `sessionStorage`) junto al formulario. El CRM no reconstruye
+analítica web: guarda solo el toque que originó el contacto. Una
+`utm_campaign`/`campaign_id` desconocida crea la campaña con
+`createdVia=inbound`. La atribución se crea una sola vez por lead (los
+reintentos no la duplican).
+
 Respuestas:
 
 ```json
@@ -129,3 +148,18 @@ Todas las entidades creadas llevan `createdVia: "inbound_lead"`.
   el CRM no notifica nada al recibir el lead.
 - GAP: scoring, enriquecimiento automático o asignación de vendedor no
   implementados — conversión 100% manual.
+
+## Incorporación al proceso comercial (HU-CRM-02)
+
+Desde `/leads/[id]`:
+
+- **Descartar** / **Marcar revisado** (sin cambios).
+- **Incorporar al proceso comercial** → "Solo lead" crea un `CommercialLead`
+  (`status=lead`, `inboundLeadId`, primer toque = atribución del inbound) o
+  "Lead + oportunidad" además crea la oportunidad en Discovery / Sprint 0.
+  Se puede elegir una persona existente que coincida por email; empresa y
+  persona se reutilizan con el dedup estándar. Si la persona ya tenía un lead
+  activo, el inbound pasa a ser su toque más reciente (no se sobrescribe el
+  origen inicial).
+- Traza completa: `InboundLead.commercialLead` → `CommercialLead.opportunities`
+  → `Opportunity.firstTouchAttribution`.

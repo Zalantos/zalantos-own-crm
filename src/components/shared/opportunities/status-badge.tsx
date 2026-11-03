@@ -6,8 +6,10 @@ const OPPORTUNITY_STATUS_CONFIG: Record<
   { label: string; variant: VariantProps<typeof badgeVariants>["variant"] }
 > = {
   open: { label: "Abierta", variant: "default" },
+  paused: { label: "Pausada", variant: "outline" },
   won: { label: "Ganada", variant: "success" },
   lost: { label: "Perdida", variant: "destructive" },
+  archived: { label: "Archivada", variant: "outline" },
 };
 
 export function OpportunityStatusBadge({ status }: { status: string }) {

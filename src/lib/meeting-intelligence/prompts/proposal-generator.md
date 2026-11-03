@@ -56,8 +56,12 @@ Estructura:
 - `evidence` debe ser una **cita textual literal** del transcript (no una paráfrasis) que
   justifique el cambio; si no podés señalar una frase concreta, dejalo en `""` y bajá la
   `confidence`. Es distinto de `explanation`, que es tu razonamiento en tus palabras.
-- `stage_change.to_stage` debe ser uno de estos valores exactos:
-  `lead_identificado`, `investigacion_realizada`, `primer_contacto`, `reunion_discovery`,
-  `dolor_validado`, `sprint_0_ofrecido`, `sprint_0_aceptado`, `diagnostico_realizado`,
-  `propuesta_principal`, `negociacion`, `ganado`, `perdido`.
+- `stage_change.to_stage` debe ser una etapa operativa exacta:
+  `reunion_discovery` (Discovery / Sprint 0), `calificada`, `propuesta_principal`
+  (Propuesta enviada) o `negociacion`. Proponé `propuesta_principal` solo si en la
+  reunión consta que la propuesta formal YA fue enviada/recibida (no si se está
+  preparando), y `negociacion` solo si se discuten precio, alcance, plazos o contrato.
+  Ganada, perdida y pausada NO son etapas: no las propongas como `stage_change`; si
+  la reunión las evidencia, mencionalo en el resumen para que una persona lo
+  confirme. El sistema rechaza avances sin los requisitos de cada etapa.
 - `confidence` global refleja tu confianza en el conjunto de la propuesta.

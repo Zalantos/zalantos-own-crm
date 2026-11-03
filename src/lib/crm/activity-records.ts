@@ -30,7 +30,8 @@ function truncate(text: string, max: number): string {
 
 export type WriteBase = {
   organizationId: string;
-  actorId: string;
+  // Null para ingestas de integraciones sin usuario humano.
+  actorId: string | null;
   // agent | meeting | enrichment | manual: mismo vocabulario que createdVia.
   createdVia: string;
   // Extra para los eventos de timeline (via, proposalId...).
@@ -45,6 +46,8 @@ export const LOGGED_ACTIVITY_TYPES = [
   "meeting",
   "call",
   "email",
+  "whatsapp",
+  "linkedin",
   "visit",
   "other",
 ] as const;
@@ -52,8 +55,14 @@ export const LOGGED_ACTIVITY_TYPES = [
 export type LoggedActivityType = (typeof LOGGED_ACTIVITY_TYPES)[number];
 
 export type LoggedActivityInput = {
-  companyId: string;
+  // Null para interacciones con un prospecto/partner sin empresa vinculada.
+  companyId: string | null;
   opportunityId: string | null;
+  commercialLeadId?: string | null;
+  commercialPartnerId?: string | null;
+  // Ingesta idempotente desde integraciones (email/WhatsApp vía n8n).
+  externalSource?: string | null;
+  externalId?: string | null;
   personIds: string[];
   type: LoggedActivityType;
   title: string;
@@ -83,6 +92,10 @@ export async function insertLoggedActivity(
       organizationId: base.organizationId,
       companyId: input.companyId,
       opportunityId: input.opportunityId,
+      commercialLeadId: input.commercialLeadId ?? null,
+      commercialPartnerId: input.commercialPartnerId ?? null,
+      externalSource: input.externalSource ?? null,
+      externalId: input.externalId ?? null,
       // La UI muestra una sola persona: la primera es la principal.
       personId: personIds[0] ?? null,
       type: input.type,
@@ -111,18 +124,36 @@ export async function insertLoggedActivity(
 
   // lastContactAt solo avanza: registrar una llamada vieja no pisa un
   // contacto más reciente, y una fecha futura no cuenta como contacto.
-  const company = await tx.company.findFirst({
-    where: { id: input.companyId, organizationId: base.organizationId },
-    select: { lastContactAt: true },
-  });
+  const company = input.companyId
+    ? await tx.company.findFirst({
+        where: { id: input.companyId, organizationId: base.organizationId },
+        select: { lastContactAt: true },
+      })
+    : null;
   const prev = company?.lastContactAt ?? null;
   const lastContactUpdated =
+    Boolean(input.companyId) &&
     input.occurredAt.getTime() <= Date.now() &&
     (!prev || input.occurredAt > prev);
-  if (lastContactUpdated) {
+  if (lastContactUpdated && input.companyId) {
     await tx.company.updateMany({
       where: { id: input.companyId, organizationId: base.organizationId },
       data: { lastContactAt: input.occurredAt },
+    });
+  }
+
+  // Última interacción del prospecto: solo avanza y nunca con fecha futura.
+  if (input.commercialLeadId && input.occurredAt.getTime() <= Date.now()) {
+    await tx.commercialLead.updateMany({
+      where: {
+        id: input.commercialLeadId,
+        organizationId: base.organizationId,
+        OR: [
+          { lastInteractionAt: null },
+          { lastInteractionAt: { lt: input.occurredAt } },
+        ],
+      },
+      data: { lastInteractionAt: input.occurredAt },
     });
   }
 
@@ -270,7 +301,7 @@ export async function insertManualMeeting(
       // No hay nada que procesar: el resumen llega cargado a mano.
       processingStatus: "ready",
       aiSummary: buildManualMeetingSummary(input) as Prisma.InputJsonValue,
-      createdBy: base.actorId,
+      createdBy: base.actorId ?? "system",
     },
     select: { id: true },
   });
@@ -707,6 +738,8 @@ export function loggedActivityToJson(
   return {
     companyId: input.companyId,
     opportunityId: input.opportunityId,
+    ...(input.commercialLeadId ? { commercialLeadId: input.commercialLeadId } : {}),
+    ...(input.commercialPartnerId ? { commercialPartnerId: input.commercialPartnerId } : {}),
     personIds: input.personIds,
     activityType: input.type,
     title: input.title,
@@ -723,11 +756,17 @@ export function loggedActivityFromJson(
   fallbackCompanyId: string | null,
 ): LoggedActivityInput {
   const companyId = str(after.companyId) ?? fallbackCompanyId;
-  if (!companyId) throw new Error("Actividad sin empresa");
+  const commercialLeadId = str(after.commercialLeadId);
+  const commercialPartnerId = str(after.commercialPartnerId);
+  if (!companyId && !commercialLeadId && !commercialPartnerId) {
+    throw new Error("Actividad sin empresa, prospecto ni partner");
+  }
   const duration = Number(after.durationMinutes);
   return {
     companyId,
     opportunityId: str(after.opportunityId),
+    ...(commercialLeadId ? { commercialLeadId } : {}),
+    ...(commercialPartnerId ? { commercialPartnerId } : {}),
     personIds: strList(after.personIds),
     type: isLoggedActivityType(after.activityType)
       ? after.activityType

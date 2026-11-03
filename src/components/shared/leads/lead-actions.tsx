@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import {
   ConvertLeadDialog,
   type CompanyMatch,
+  type PersonMatch,
 } from "@/components/shared/leads/convert-lead-dialog";
 import { markLeadReviewed, discardLead } from "@/app/(dashboard)/leads/actions";
 
@@ -14,12 +15,14 @@ export function LeadActions({
   suggestedOpportunityName,
   matchingCompanies,
   defaultCompanyName,
+  matchingPeople,
 }: {
   leadId: string;
   status: string;
   suggestedOpportunityName: string;
   matchingCompanies: CompanyMatch[];
   defaultCompanyName: string;
+  matchingPeople?: PersonMatch[];
 }) {
   const [convertOpen, setConvertOpen] = useState(false);
   const [isPending, startTransition] = useTransition();
@@ -55,7 +58,7 @@ export function LeadActions({
           </Button>
         )}
         <Button type="button" onClick={() => setConvertOpen(true)}>
-          Convertir a CRM
+          Incorporar al proceso comercial
         </Button>
       </div>
 
@@ -64,6 +67,7 @@ export function LeadActions({
         suggestedOpportunityName={suggestedOpportunityName}
         matchingCompanies={matchingCompanies}
         defaultCompanyName={defaultCompanyName}
+        matchingPeople={matchingPeople}
         open={convertOpen}
         onOpenChange={setConvertOpen}
       />

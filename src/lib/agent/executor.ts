@@ -17,6 +17,7 @@ import { buildAttachmentTools } from "./tools/attachments";
 import { buildContextSourceTools } from "./tools/context-sources";
 import { buildWebSearchTools } from "./tools/web-search";
 import { buildTeamMemberTools } from "./tools/team-members";
+import { buildCommercialTools } from "./tools/commercial";
 
 // Estado mutable compartido por todas las tools de UN turno (mismo
 // buildAgentTools). No sobrevive entre turnos: se recrea en cada request.
@@ -75,6 +76,7 @@ export function buildAgentToolDefinitions(ctx: AgentToolContext) {
     ...buildActivityWriteTools(ctx),
     ...buildTaskTools(ctx),
     ...buildProposalTools(ctx),
+    ...buildCommercialTools(ctx),
     ...buildConfirmProposalTools(ctx),
     ...buildAttachmentTools(ctx),
     ...buildContextSourceTools(ctx),

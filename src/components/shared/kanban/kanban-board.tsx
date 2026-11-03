@@ -43,7 +43,6 @@ export function KanbanBoard({
   locale: string;
 }) {
   const [items, setItems] = useState(opportunities);
-  const [expandedEmptyStages, setExpandedEmptyStages] = useState<string[]>([]);
   const mounted = useMounted();
   const sensors = useSensors(
     useSensor(PointerSensor, {
@@ -67,7 +66,7 @@ export function KanbanBoard({
       ),
     );
 
-    updateOpportunityStage(opportunityId, newStageId).catch(() => {
+    const rollback = (message: string) => {
       setItems((prev) =>
         prev.map((item) =>
           item.id === opportunityId
@@ -75,8 +74,13 @@ export function KanbanBoard({
             : item,
         ),
       );
-      toast.error("No se pudo mover la oportunidad. Intenta de nuevo.");
-    });
+      toast.error(message);
+    };
+    updateOpportunityStage(opportunityId, newStageId)
+      .then((result) => {
+        if (!result.ok) rollback(result.error);
+      })
+      .catch(() => rollback("No se pudo mover la oportunidad. Intenta de nuevo."));
   }
 
   const columns = stages.map((stage) => ({
@@ -84,27 +88,17 @@ export function KanbanBoard({
     opportunities: items.filter((item) => item.stageId === stage.id),
   }));
 
-  const visibleColumns = columns.filter(
-    ({ stage, opportunities: columnOpportunities }) =>
-      columnOpportunities.length > 0 || expandedEmptyStages.includes(stage.id),
-  );
-  const emptyStages = columns.filter(
-    ({ stage, opportunities: columnOpportunities }) =>
-      columnOpportunities.length === 0 &&
-      !expandedEmptyStages.includes(stage.id),
-  );
-
-  function expandEmptyStage(stageId: string) {
-    setExpandedEmptyStages((prev) =>
-      prev.includes(stageId) ? prev : [...prev, stageId],
-    );
-  }
-
-  const board = (
-    <div className="space-y-4">
-      {visibleColumns.length > 0 ? (
-        <div className="grid grid-cols-1 gap-4 pb-2 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">
-          {visibleColumns.map(({ stage, opportunities: columnOpportunities }) => (
+  // Columnas de ancho controlado con scroll horizontal propio: el tablero
+  // nunca desborda la página (ni en mobile).
+  const board =
+    items.length === 0 ? (
+      <div className="text-muted-foreground rounded-md border border-dashed p-8 text-center text-sm">
+        No hay oportunidades activas con estos filtros.
+      </div>
+    ) : (
+      <div className="-mx-4 overflow-x-auto px-4 pb-3 sm:mx-0 sm:px-0">
+        <div className="flex w-max gap-3">
+          {columns.map(({ stage, opportunities: columnOpportunities }) => (
             <KanbanColumn
               key={stage.id}
               stageId={stage.id}
@@ -115,36 +109,8 @@ export function KanbanBoard({
             />
           ))}
         </div>
-      ) : (
-        <div className="text-muted-foreground rounded-md border border-dashed p-8 text-center text-sm">
-          No hay oportunidades en el pipeline todavía.
-        </div>
-      )}
-
-      {emptyStages.length > 0 && (
-        <section className="rounded-md border border-dashed bg-muted/10 p-3">
-          <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
-            <p className="text-sm font-medium">Etapas vacías</p>
-            <span className="text-muted-foreground text-xs">
-              {emptyStages.length} ocultas
-            </span>
-          </div>
-          <div className="flex flex-wrap gap-2">
-            {emptyStages.map(({ stage }) => (
-              <button
-                key={stage.id}
-                type="button"
-                onClick={() => expandEmptyStage(stage.id)}
-                className="text-muted-foreground hover:bg-muted hover:text-foreground focus-visible:border-ring focus-visible:ring-ring/50 rounded-md border bg-background px-2.5 py-1.5 text-xs font-medium transition-colors outline-none focus-visible:ring-2"
-              >
-                {stage.label}
-              </button>
-            ))}
-          </div>
-        </section>
-      )}
-    </div>
-  );
+      </div>
+    );
 
   if (!mounted) {
     return board;

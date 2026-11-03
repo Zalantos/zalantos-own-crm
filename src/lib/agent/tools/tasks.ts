@@ -13,6 +13,14 @@ import { TASK_STATUS_INPUTS, toActivityStatus } from "./write-activity";
 export const listTasksInputSchema = z.object({
   companyId: z.string().optional(),
   opportunityId: z.string().optional(),
+  commercialLeadId: z
+    .string()
+    .optional()
+    .describe("Prospecto/lead (id de list_commercial_leads)"),
+  commercialPartnerId: z
+    .string()
+    .optional()
+    .describe("Alianza/partner (id de list_partners)"),
   assigneeId: z
     .string()
     .optional()
@@ -100,6 +108,10 @@ export function buildTaskTools(ctx: AgentToolContext) {
           occurredAt: null,
           ...(args.companyId ? { companyId: args.companyId } : {}),
           ...(args.opportunityId ? { opportunityId: args.opportunityId } : {}),
+          ...(args.commercialLeadId ? { commercialLeadId: args.commercialLeadId } : {}),
+          ...(args.commercialPartnerId
+            ? { commercialPartnerId: args.commercialPartnerId }
+            : {}),
           ...assigneeWhere,
           status: {
             in: args.overdue ? statuses.filter(isOpenStatus) : statuses,
@@ -131,6 +143,8 @@ export function buildTaskTools(ctx: AgentToolContext) {
             opportunity: { select: { id: true, name: true } },
             person: { select: { id: true, firstName: true, lastName: true } },
             assignee: { select: { id: true, name: true, email: true } },
+            commercialLead: { select: { id: true, title: true } },
+            commercialPartner: { select: { id: true, displayName: true } },
           },
         });
         const page = tasks.slice(0, take);

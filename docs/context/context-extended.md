@@ -138,6 +138,7 @@ Endpoints POST protegidos con `Authorization: Bearer <CRON_SECRET>`:
 | `/api/cron/process-entity-context` | Reprocesa fuentes de contexto atascadas                                          |
 | `/api/cron/check-overdue`          | Oportunidades/actividades vencidas                                               |
 | `/api/cron/send-task-reminders`    | Resumen de tareas abiertas del día (y vencidas) a las 18:00, por mail y Telegram |
+| `/api/cron/commercial-follow-ups`  | Alerta/tarea idempotente para oportunidades pausadas cuya reactivación llegó     |
 
 GAP: configuración de schedule en Railway no versionada en el repo. Ese cron
 conviene invocarlo al menos una vez por hora: cada org envía solo si su hora
@@ -173,3 +174,32 @@ local ya es ≥ 18:00, una vez por responsable y canal.
 - Participantes de meeting como JSON libre (sin FK a Person aún).
 - Billing no implementado.
 - Workflows n8n (gateway saliente y Telegram) no versionados en el repo.
+
+## Proceso comercial (HU-CRM-02)
+
+Detalle completo en `docs/context/commercial-process.md`. Código:
+
+- `src/lib/commercial/` — servicios de dominio puros por tenant:
+  `leads.ts` (prospección), `opportunity-service.ts` (etapas con compuertas,
+  estados, propuesta, próxima acción), `partners.ts` (constantes, seguras para
+  cliente) + `partner-service.ts`, `attribution.ts`, `history.ts`,
+  `next-action.ts` (reglas), `follow-up.ts` (carga + sugerencia IA bajo
+  demanda), `funnel.ts` (métricas), `rumbo.ts` (handoff),
+  `activity-ingest.ts`, `links.ts` (validación de vínculos por org),
+  `ai-items.ts` (ítems reversibles de la bitácora IA).
+- Las server actions (`src/app/(dashboard)/{prospecting,opportunities,partners,commercial}/`)
+  son envoltorios delgados de esos servicios.
+- Agente/MCP: `src/lib/agent/tools/commercial.ts` (`create_prospect`,
+  `update_lead_status`, `convert_lead_to_opportunity`,
+  `set_opportunity_status`, `set_next_action`, `log_interaction`,
+  `list_commercial_leads`, `get_commercial_origin`, `list_partners`,
+  `get_commercial_funnel`, `suggest_next_actions`). Las escrituras pasan por
+  `registerProposalChange` → `applyProposal`, con tipos de ítem
+  `status_change`, `add_commercial_lead`, `commercial_lead_status`,
+  `convert_lead`, `set_next_action`, todos reversibles.
+- `stage_change`/`update_field(stage)` aplican las compuertas y registran
+  historial; `update_record_fields` rechaza `status`/`lossReason` (se usa
+  `set_opportunity_status`). Keys legacy de etapa devuelven la acción correcta.
+- Workflows: condiciones `stage` aceptan id o key; eventos nuevos
+  `status_changed` (oportunidad) y `reactivation_due`; no ejecutan acciones
+  sobre oportunidades cerradas.

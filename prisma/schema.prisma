@@ -132,6 +132,13 @@ model Organization {
   commercialOfferDocuments      CommercialOfferDocument[]
   commercialOfferProfitShares   CommercialOfferProfitShare[]
   businessHolidays              BusinessHoliday[]
+  commercialLeads               CommercialLead[]
+  commercialAttributions        CommercialAttribution[]
+  campaigns                     Campaign[]
+  opportunityStageHistory       OpportunityStageHistory[]
+  commercialStatusChanges       CommercialStatusChange[]
+  commercialPartnerContacts     CommercialPartnerContact[]
+  rumboHandoffs                 RumboHandoff[]
 
   @@map("organizations")
 }
@@ -154,6 +161,7 @@ model PipelineStage {
   updatedAt      DateTime     @updatedAt
 
   opportunities Opportunity[]
+  stageHistory  OpportunityStageHistory[]
 
   @@unique([organizationId, key])
   @@unique([organizationId, sortOrder])
@@ -240,6 +248,7 @@ model Company {
   personRelationships          PersonCompanyRelationship[]
   linkedCommercialPartners     CommercialPartner[]         @relation("CommercialPartnerLinkedCompany")
   commercialPartnerAssignments CompanyCommercialPartner[]
+  commercialLeads              CommercialLead[]
 
   @@index([organizationId, name])
   @@index([organizationId, status])
@@ -276,6 +285,9 @@ model Person {
   convertedInboundLeads        InboundLead[]               @relation("InboundLeadConvertedPerson")
   companyRelationships         PersonCompanyRelationship[]
   linkedCommercialPartners     CommercialPartner[]         @relation("CommercialPartnerLinkedPerson")
+  commercialLeads              CommercialLead[]
+  referredAttributions         CommercialAttribution[]     @relation("AttributionReferrerPerson")
+  partnerContacts              CommercialPartnerContact[]
 
   @@unique([organizationId, email])
   @@index([organizationId])
@@ -306,6 +318,8 @@ model Opportunity {
   nextStep          String?
   nextStepDueDate   DateTime?
   expectedCloseDate DateTime?
+  // open | paused | won | lost (archived: solo registros legacy retirados del
+  // pipeline por el backfill controlado). Ver src/lib/opportunities/status.ts.
   status            String        @default("open")
   lossReason        LossReason?
   ownerId           String?
@@ -316,12 +330,61 @@ model Opportunity {
   createdAt         DateTime      @default(now())
   updatedAt         DateTime      @updatedAt
 
+  // Valor recurrente mensual estimado (estimatedValue = implementación).
+  recurringValue          Decimal?               @db.Decimal(14, 2)
+  // Origen comercial: lead de prospección y primer toque (se comparte la fila
+  // de atribución para que el origen inicial nunca se sobrescriba).
+  commercialLeadId        String?
+  commercialLead          CommercialLead?        @relation("OpportunityCommercialLead", fields: [commercialLeadId], references: [id], onDelete: SetNull)
+  firstTouchAttributionId String?
+  firstTouchAttribution   CommercialAttribution? @relation("OpportunityFirstTouch", fields: [firstTouchAttributionId], references: [id], onDelete: SetNull)
+  // SPICED (Pain vive en mainPain).
+  situation               String?                @db.Text
+  impact                  String?                @db.Text
+  criticalEvent           String?                @db.Text
+  criticalEventDate       DateTime?
+  decisionProcess         String?                @db.Text
+  // Sprint 0 / diagnóstico: offered | scheduled | done | diagnosis_delivered | declined
+  sprint0Status           String?
+  sprint0ScheduledAt      DateTime?
+  sprint0CompletedAt      DateTime?
+  diagnosisDeliveredAt    DateTime?
+  // Decisión explícita de preparar/enviar propuesta y envío real.
+  proposalDecisionAt      DateTime?
+  proposalSentAt          DateTime?
+  expectedResponseAt      DateTime?
+  // Próxima acción (nextStep/nextStepDueDate siguen siendo la fuente).
+  nextStepChannel         String?
+  nextStepContext         String?                @db.Text
+  nextStepUpdatedAt       DateTime?
+  nextStepActivityId      String?
+  nextStepActivity        Activity?              @relation("OpportunityNextStepActivity", fields: [nextStepActivityId], references: [id], onDelete: SetNull)
+  // Ciclo de estado.
+  statusChangedAt         DateTime?
+  stageEnteredAt          DateTime?
+  pausedAt                DateTime?
+  pauseReason             String?                @db.Text
+  reactivateAt            DateTime?
+  reactivationCriteria    String?                @db.Text
+  wonAt                   DateTime?
+  wonEvidence             String?                @db.Text
+  lostAt                  DateTime?
+  lossDetail              String?                @db.Text
+  closedById              String?
+  closedBy                User?                  @relation("OpportunityClosedBy", fields: [closedById], references: [id], onDelete: SetNull)
+  // Trazabilidad del rediseño: etapa original y bandera de revisión.
+  legacyStageKey          String?
+  migrationReview         String?
+
   activities            Activity[]
   notes                 Note[]
   meetings              Meeting[]
   convertedInboundLeads InboundLead[]                  @relation("InboundLeadConvertedOpportunity")
   commercialPartners    OpportunityCommercialPartner[]
   commercialOffers      CommercialOffer[]
+  stageHistory          OpportunityStageHistory[]
+  rumboHandoff          RumboHandoff?
+  legacyOfLead          CommercialLead?                @relation("CommercialLeadLegacyOpportunity")
 
   @@index([organizationId, stageId])
   @@index([organizationId, status])
@@ -329,6 +392,9 @@ model Opportunity {
   @@index([createdById])
   @@index([ownerId])
   @@index([nextStepDueDate])
+  @@index([organizationId, commercialLeadId])
+  @@index([firstTouchAttributionId])
+  @@index([organizationId, reactivateAt])
   @@map("opportunities")
 }
 
@@ -372,10 +438,38 @@ model CommercialPartner {
   createdAt       DateTime     @default(now())
   updatedAt       DateTime     @updatedAt
 
+  // Pipeline de alianzas: identified | contacted | exploration | negotiation |
+  // agreement | active. Null = partner fuera del pipeline (solo catálogo).
+  allianceStage          String?
+  // open | paused | discarded (no son etapas del flujo activo).
+  allianceStatus         String    @default("open")
+  allianceStatusReason   String?   @db.Text
+  allianceStageChangedAt DateTime?
+  // referral | reseller | implementation | technology | other
+  allianceType           String?
+  ownerId                String?
+  owner                  User?     @relation("CommercialPartnerOwner", fields: [ownerId], references: [id], onDelete: SetNull)
+  commercialPotential    String?   @db.Text
+  potentialValue         Decimal?  @db.Decimal(14, 2)
+  agreementTerms         String?   @db.Text
+  agreementSignedAt      DateTime?
+  nextStep               String?
+  nextStepDueDate        DateTime?
+  nextStepChannel        String?
+  nextStepContext        String?   @db.Text
+  nextStepUpdatedAt      DateTime?
+  nextStepActivityId     String?
+  nextStepActivity       Activity? @relation("CommercialPartnerNextStepActivity", fields: [nextStepActivityId], references: [id], onDelete: SetNull)
+
   companyAssignments     CompanyCommercialPartner[]
   opportunityAssignments OpportunityCommercialPartner[]
   offerProfitShares      CommercialOfferProfitShare[]
+  contacts               CommercialPartnerContact[]
+  referredAttributions   CommercialAttribution[]        @relation("AttributionReferrerPartner")
+  activities             Activity[]
+  notesRel               Note[]
 
+  @@index([organizationId, allianceStage])
   @@index([organizationId, isActive])
   @@index([linkedCompanyId])
   @@index([linkedPersonId])
@@ -548,6 +642,235 @@ model CommercialOfferProfitShare {
   @@map("commercial_offer_profit_shares")
 }
 
+// ---------- Proceso comercial: prospección, atribución, historial ----------
+
+// Prospecto → contactado → lead → convertido (o descartado). Una sola entidad
+// con estados; no es una oportunidad ni duplica Company/Person.
+model CommercialLead {
+  id                      String                 @id @default(cuid())
+  organizationId          String
+  organization            Organization           @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  title                   String
+  companyId               String?
+  company                 Company?               @relation(fields: [companyId], references: [id], onDelete: SetNull)
+  personId                String?
+  person                  Person?                @relation(fields: [personId], references: [id], onDelete: SetNull)
+  // prospect | contacted | lead | converted | disqualified
+  status                  String                 @default("prospect")
+  // low | medium | high
+  priority                String?
+  ownerId                 String?
+  owner                   User?                  @relation("CommercialLeadOwner", fields: [ownerId], references: [id], onDelete: SetNull)
+  description             String?                @db.Text
+  // Señal de interés o necesidad detectada al pasar a lead.
+  interestSignal          String?                @db.Text
+  identifiedAt            DateTime               @default(now())
+  firstContactAt          DateTime?
+  becameLeadAt            DateTime?
+  convertedAt             DateTime?
+  disqualifiedAt          DateTime?
+  disqualificationReason  String?                @db.Text
+  lastInteractionAt       DateTime?
+  statusChangedAt         DateTime?
+  nextStep                String?
+  nextStepDueDate         DateTime?
+  nextStepChannel         String?
+  nextStepContext         String?                @db.Text
+  nextStepUpdatedAt       DateTime?
+  nextStepActivityId      String?
+  nextStepActivity        Activity?              @relation("CommercialLeadNextStepActivity", fields: [nextStepActivityId], references: [id], onDelete: SetNull)
+  firstTouchAttributionId String?
+  firstTouchAttribution   CommercialAttribution? @relation("CommercialLeadFirstTouch", fields: [firstTouchAttributionId], references: [id], onDelete: SetNull)
+  lastTouchAttributionId  String?
+  lastTouchAttribution    CommercialAttribution? @relation("CommercialLeadLastTouch", fields: [lastTouchAttributionId], references: [id], onDelete: SetNull)
+  inboundLeadId           String?                @unique
+  inboundLead             InboundLead?           @relation("InboundLeadCommercialLead", fields: [inboundLeadId], references: [id], onDelete: SetNull)
+  // Oportunidad legacy (etapa de prospección) retirada por el backfill.
+  legacyOpportunityId     String?                @unique
+  legacyOpportunity       Opportunity?           @relation("CommercialLeadLegacyOpportunity", fields: [legacyOpportunityId], references: [id], onDelete: SetNull)
+  createdById             String?
+  createdBy               User?                  @relation("CommercialLeadCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+  createdVia              String                 @default("manual")
+  createdAt               DateTime               @default(now())
+  updatedAt               DateTime               @updatedAt
+
+  opportunities Opportunity[] @relation("OpportunityCommercialLead")
+  activities    Activity[]
+  notes         Note[]
+
+  @@index([organizationId, status])
+  @@index([organizationId, ownerId])
+  @@index([organizationId, identifiedAt])
+  @@index([companyId])
+  @@index([personId])
+  @@index([nextStepDueDate])
+  @@map("commercial_leads")
+}
+
+// Atribución comercial de un toque (primero o más reciente). La misma fila se
+// referencia desde inbound, lead y oportunidad para preservar el origen.
+model CommercialAttribution {
+  id                String             @id @default(cuid())
+  organizationId    String
+  organization      Organization       @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  // referral | campaign | web | linkedin_organic | outbound | event | partner | other
+  sourceChannel     String
+  campaignId        String?
+  campaign          Campaign?          @relation(fields: [campaignId], references: [id], onDelete: SetNull)
+  utmSource         String?
+  utmMedium         String?
+  utmCampaign       String?
+  utmContent        String?
+  utmTerm           String?
+  landingPage       String?
+  referrerUrl       String?
+  referrerPersonId  String?
+  referrerPerson    Person?            @relation("AttributionReferrerPerson", fields: [referrerPersonId], references: [id], onDelete: SetNull)
+  referrerPartnerId String?
+  referrerPartner   CommercialPartner? @relation("AttributionReferrerPartner", fields: [referrerPartnerId], references: [id], onDelete: SetNull)
+  sourceDetail      String?            @db.Text
+  touchedAt         DateTime?
+  // manual | inbound | agent | migration
+  method            String             @default("manual")
+  recordedById      String?
+  recordedBy        User?              @relation("AttributionRecordedBy", fields: [recordedById], references: [id], onDelete: SetNull)
+  createdAt         DateTime           @default(now())
+
+  inboundLeads            InboundLead[]
+  leadsAsFirstTouch       CommercialLead[] @relation("CommercialLeadFirstTouch")
+  leadsAsLastTouch        CommercialLead[] @relation("CommercialLeadLastTouch")
+  opportunitiesFirstTouch Opportunity[]    @relation("OpportunityFirstTouch")
+
+  @@index([organizationId, sourceChannel])
+  @@index([organizationId, campaignId])
+  @@index([referrerPartnerId])
+  @@index([referrerPersonId])
+  @@map("commercial_attributions")
+}
+
+model Campaign {
+  id             String       @id @default(cuid())
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  // Slug estable; coincide con utm_campaign o campaign_id del formulario.
+  key            String
+  name           String
+  channel        String?
+  startsAt       DateTime?
+  endsAt         DateTime?
+  isActive       Boolean      @default(true)
+  notes          String?      @db.Text
+  // manual | inbound (creada al recibir un utm_campaign desconocido)
+  createdVia     String       @default("manual")
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+
+  attributions CommercialAttribution[]
+
+  @@unique([organizationId, key])
+  @@map("campaigns")
+}
+
+// Períodos de permanencia de una oportunidad en cada etapa. enteredAt null =
+// fecha desconocida (registro legacy; no se inventa).
+model OpportunityStageHistory {
+  id             String         @id @default(cuid())
+  organizationId String
+  organization   Organization   @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  opportunityId  String
+  opportunity    Opportunity    @relation(fields: [opportunityId], references: [id], onDelete: Cascade)
+  stageId        String?
+  stage          PipelineStage? @relation(fields: [stageId], references: [id], onDelete: SetNull)
+  stageKey       String
+  stageLabel     String
+  enteredAt      DateTime?
+  exitedAt       DateTime?
+  // manual | agent | meeting | workflow | inbound_lead | lead_conversion | migration
+  source         String
+  actorId        String?
+  reason         String?        @db.Text
+  createdAt      DateTime       @default(now())
+
+  @@index([organizationId, opportunityId])
+  @@index([organizationId, stageKey, enteredAt])
+  @@map("opportunity_stage_history")
+}
+
+// Bitácora append-only de cambios de estado comerciales (lead, oportunidad,
+// alianza). entityId es ref lógica (mismo criterio que TimelineEvent.refId).
+model CommercialStatusChange {
+  id             String       @id @default(cuid())
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  // commercial_lead | opportunity | commercial_partner
+  entityType     String
+  entityId       String
+  // Campo que cambió: status | alliance_stage | alliance_status
+  field          String       @default("status")
+  fromValue      String?
+  toValue        String
+  changedAt      DateTime     @default(now())
+  actorId        String?
+  source         String
+  reason         String?      @db.Text
+  metadata       Json?
+
+  @@index([organizationId, entityType, entityId])
+  @@index([organizationId, entityType, toValue, changedAt])
+  @@map("commercial_status_changes")
+}
+
+model CommercialPartnerContact {
+  id                  String            @id @default(cuid())
+  organizationId      String
+  organization        Organization      @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  commercialPartnerId String
+  commercialPartner   CommercialPartner @relation(fields: [commercialPartnerId], references: [id], onDelete: Cascade)
+  personId            String
+  person              Person            @relation(fields: [personId], references: [id], onDelete: Cascade)
+  role                String?
+  isPrimary           Boolean           @default(false)
+  createdAt           DateTime          @default(now())
+
+  @@unique([commercialPartnerId, personId])
+  @@index([organizationId, commercialPartnerId])
+  @@map("commercial_partner_contacts")
+}
+
+// Traspaso de una oportunidad ganada a Rumbo (ejecución). Una fila por
+// oportunidad: los reintentos actualizan la misma fila (idempotente).
+model RumboHandoff {
+  id                    String       @id @default(cuid())
+  organizationId        String
+  organization          Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  opportunityId         String       @unique
+  opportunity           Opportunity  @relation(fields: [opportunityId], references: [id], onDelete: Restrict)
+  // pending | sent | confirmed | failed
+  status                String       @default("pending")
+  payloadVersion        String
+  payload               Json
+  projectName           String
+  startDate             DateTime?
+  scopeSummary          String?      @db.Text
+  responsibleUserId     String?
+  responsibleUser       User?        @relation("RumboHandoffResponsible", fields: [responsibleUserId], references: [id], onDelete: SetNull)
+  requestedById         String?
+  requestedBy           User?        @relation("RumboHandoffRequestedBy", fields: [requestedById], references: [id], onDelete: SetNull)
+  attempts              Int          @default(0)
+  lastError             String?      @db.Text
+  integrationDeliveryId String?
+  sentAt                DateTime?
+  confirmedAt           DateTime?
+  failedAt              DateTime?
+  rumboProjectId        String?
+  rumboProjectUrl       String?
+  createdAt             DateTime     @default(now())
+  updatedAt             DateTime     @updatedAt
+
+  @@index([organizationId, status])
+  @@map("rumbo_handoffs")
+}
+
 model BusinessHoliday {
   id             String       @id @default(cuid())
   organizationId String
@@ -600,9 +923,23 @@ model Activity {
   createdAt       DateTime     @default(now())
   updatedAt       DateTime     @updatedAt
 
+  // Vínculos comerciales adicionales (prospección y alianzas).
+  commercialLeadId    String?
+  commercialLead      CommercialLead?    @relation(fields: [commercialLeadId], references: [id], onDelete: SetNull)
+  commercialPartnerId String?
+  commercialPartner   CommercialPartner? @relation(fields: [commercialPartnerId], references: [id], onDelete: SetNull)
+  // Id externo para ingesta idempotente (email/WhatsApp vía n8n).
+  externalSource      String?
+  externalId          String?
+
   // Todas las personas que participaron; personId queda como la principal.
   participants ActivityPerson[]
 
+  nextStepOfOpportunities   Opportunity[]       @relation("OpportunityNextStepActivity")
+  nextStepOfCommercialLeads CommercialLead[]    @relation("CommercialLeadNextStepActivity")
+  nextStepOfPartners        CommercialPartner[] @relation("CommercialPartnerNextStepActivity")
+
+  @@unique([organizationId, externalSource, externalId])
   @@index([organizationId, status])
   @@index([organizationId, dueDate])
   @@index([organizationId, plannedDate])
@@ -613,6 +950,8 @@ model Activity {
   @@index([completedById])
   @@index([createdById])
   @@index([organizationId, occurredAt])
+  @@index([commercialLeadId])
+  @@index([commercialPartnerId])
   @@map("activities")
 }
 
@@ -650,6 +989,13 @@ model Note {
   createdAt      DateTime     @default(now())
   updatedAt      DateTime     @updatedAt
 
+  commercialLeadId    String?
+  commercialLead      CommercialLead?    @relation(fields: [commercialLeadId], references: [id], onDelete: SetNull)
+  commercialPartnerId String?
+  commercialPartner   CommercialPartner? @relation(fields: [commercialPartnerId], references: [id], onDelete: SetNull)
+
+  @@index([commercialLeadId])
+  @@index([commercialPartnerId])
   @@index([organizationId])
   @@index([companyId])
   @@index([personId])
@@ -677,9 +1023,16 @@ model InboundLead {
   firstName String?
   lastName  String?
   email     String?
+  phone     String?
   company   String?
   message   String? @db.Text
   page      String?
+
+  // Atribución recibida (UTM, campaña, landing). Se comparte con el lead
+  // comercial y la oportunidad resultantes como primer toque.
+  attributionId  String?
+  attribution    CommercialAttribution? @relation(fields: [attributionId], references: [id], onDelete: SetNull)
+  commercialLead CommercialLead?        @relation("InboundLeadCommercialLead")
 
   // new | reviewed | converted | rejected
   status String @default("new")
@@ -784,6 +1137,9 @@ model Workflow {
   conditionsJson Json
   actionsJson    Json
   isActive       Boolean      @default(true)
+  // Advertencia de compatibilidad (p. ej. condición sobre una etapa retirada
+  // por el rediseño comercial). No desactiva el workflow.
+  configWarning  String?      @db.Text
   createdAt      DateTime     @default(now())
   updatedAt      DateTime     @updatedAt
 
@@ -860,17 +1216,24 @@ model User {
   createdAt      DateTime      @default(now())
   updatedAt      DateTime      @updatedAt
 
-  teamMember              TeamMember?
-  createdCompanies        Company[]
-  createdPeople           Person[]
-  createdOpportunities    Opportunity[]
-  ownedOpportunities      Opportunity[]        @relation("OpportunityOwner")
-  createdActivities       Activity[]
-  createdNotes            Note[]
-  createdCommercialOffers CommercialOffer[]
-  createdSavedViews       SavedView[]
-  passwordResetTokens     PasswordResetToken[]
-  reviewedInboundLeads    InboundLead[]        @relation("InboundLeadReviewedBy")
+  teamMember               TeamMember?
+  createdCompanies         Company[]
+  createdPeople            Person[]
+  createdOpportunities     Opportunity[]
+  ownedOpportunities       Opportunity[]           @relation("OpportunityOwner")
+  createdActivities        Activity[]
+  createdNotes             Note[]
+  createdCommercialOffers  CommercialOffer[]
+  createdSavedViews        SavedView[]
+  passwordResetTokens      PasswordResetToken[]
+  reviewedInboundLeads     InboundLead[]           @relation("InboundLeadReviewedBy")
+  ownedCommercialLeads     CommercialLead[]        @relation("CommercialLeadOwner")
+  createdCommercialLeads   CommercialLead[]        @relation("CommercialLeadCreatedBy")
+  ownedPartners            CommercialPartner[]     @relation("CommercialPartnerOwner")
+  closedOpportunities      Opportunity[]           @relation("OpportunityClosedBy")
+  recordedAttributions     CommercialAttribution[] @relation("AttributionRecordedBy")
+  requestedRumboHandoffs   RumboHandoff[]          @relation("RumboHandoffRequestedBy")
+  responsibleRumboHandoffs RumboHandoff[]          @relation("RumboHandoffResponsible")
 
   @@index([organizationId])
   @@map("users")

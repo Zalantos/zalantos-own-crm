@@ -194,6 +194,7 @@ Endpoints internos que un scheduler debe llamar:
 | `POST /api/cron/process-entity-context` | Catch-up enriquecimiento de fichas                                                |
 | `POST /api/cron/check-overdue`          | Alertas de vencimiento                                                            |
 | `POST /api/cron/send-task-reminders`    | Resumen diario de tareas vencidas (18:00, timezone de la org) por mail y Telegram |
+| `POST /api/cron/commercial-follow-ups`  | Tarea de seguimiento (idempotente) para oportunidades pausadas cuya reactivación llegó + evento `reactivation_due` |
 
 Autenticación: `Authorization: Bearer <CRON_SECRET>`
 
@@ -217,7 +218,15 @@ Pipeline de meeting también: `POST /api/meetings/process`
 Documentados hoy:
 
 - Canal Telegram vía n8n (`/api/telegram/*`) — ver sección arriba.
-- Inbound Leads vía n8n (`/api/integrations/inbound-leads`) — ver sección arriba.
+- Inbound Leads vía n8n (`/api/integrations/inbound-leads`) — ver sección arriba
+  (acepta UTM, campaña y landing; ver `docs/integrations/inbound-leads.md`).
+- Interacciones externas (`/api/integrations/activities`, Bearer
+  `COMMERCIAL_EVENTS_SECRET`) — `docs/integrations/commercial-events.md`.
+- Confirmación de Rumbo (`/api/integrations/rumbo/handoff-status`, Bearer
+  `RUMBO_CALLBACK_SECRET`) — `docs/integrations/rumbo-handoff.md`.
+
+Saliente nuevo por el gateway: `notificationType=rumbo.project_handoff`
+(payload versionado, ver `docs/integrations/rumbo-handoff.md`).
 
 GAP: webhooks de calendario/videollamada (Recall, Google Meet) no implementados.
 El campo `Meeting.sourceType` anticipa orígenes futuros.

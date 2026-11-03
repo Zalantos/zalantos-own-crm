@@ -2,8 +2,16 @@
 
 import { revalidatePath } from "next/cache";
 import { requireOrgContext } from "@/lib/tenant";
-import { activityCreateSchema, activityUpdateSchema } from "@/lib/zod/activity";
+import {
+  activityCreateSchema,
+  activityUpdateSchema,
+  interactionLogSchema,
+} from "@/lib/zod/activity";
 import { handleMutationError } from "@/lib/prisma-errors";
+import { withOrgTransaction } from "@/lib/tenant";
+import { insertLoggedActivity } from "@/lib/crm/activity-records";
+import { recordParentPath, resolveRecordLinks } from "@/lib/commercial/links";
+import { changeLeadStatusTx } from "@/lib/commercial/leads";
 import { appendTimelineEvent } from "@/lib/timeline";
 import { evaluateWorkflows } from "@/lib/workflows/engine";
 import {
@@ -12,16 +20,7 @@ import {
   type ActivityStatus,
 } from "@/lib/activity-status";
 
-function parentPath(entity: {
-  companyId?: string | null;
-  personId?: string | null;
-  opportunityId?: string | null;
-}) {
-  if (entity.opportunityId) return `/opportunities/${entity.opportunityId}`;
-  if (entity.personId) return `/people/${entity.personId}`;
-  if (entity.companyId) return `/companies/${entity.companyId}`;
-  return "/activities";
-}
+const parentPath = recordParentPath;
 
 export type ActivityFormState = { error: string } | undefined;
 
@@ -36,21 +35,16 @@ export async function createActivity(
     return { error: "La actividad no pudo guardarse. Revisa los campos." };
   }
 
-  const linkedCompanyId =
-    parsed.data.companyId ??
-    (parsed.data.opportunityId
-      ? await db.opportunity.findUnique({
-          where: { id: parsed.data.opportunityId },
-          select: { companyId: true },
-        })
-      : parsed.data.personId
-        ? await db.person.findUnique({
-            where: { id: parsed.data.personId },
-            select: { companyId: true },
-          })
-        : null
-    )?.companyId ??
-    null;
+  const links = await resolveRecordLinks(db, parsed.data);
+  if (!links.ok) return { error: links.error };
+  const linkedCompanyId = links.companyId;
+  if (parsed.data.assigneeId) {
+    const member = await db.teamMember.findUnique({
+      where: { id: parsed.data.assigneeId },
+      select: { id: true },
+    });
+    if (!member) return { error: "El responsable seleccionado no existe." };
+  }
 
   const activity = await db.activity.create({
     data: {
@@ -66,6 +60,8 @@ export async function createActivity(
       organizationId: org.id,
       companyId: activity.companyId,
       opportunityId: activity.opportunityId,
+      refType: activity.commercialLeadId ? "commercial_lead" : "activity",
+      refId: activity.commercialLeadId ?? activity.id,
       type: "task_created",
       title: `Tarea creada: ${activity.title}`,
       summary: activity.dueDate
@@ -91,6 +87,8 @@ export async function updateActivity(
   }
 
   const { id, ...data } = parsed.data;
+  const links = await resolveRecordLinks(db, data);
+  if (!links.ok) return { error: links.error };
   let activity;
   try {
     activity = await db.activity.update({ where: { id }, data });
@@ -137,7 +135,7 @@ export async function assignActivity(id: string, assigneeId: string | null) {
 export async function updateActivityStatus(
   id: string,
   status: ActivityStatus,
-  options?: { completedById?: string | null },
+  options?: { completedById?: string | null; outcomes?: string | null },
 ) {
   const { user, org, db } = await requireOrgContext();
 
@@ -150,6 +148,7 @@ export async function updateActivityStatus(
     completedAt?: Date | null;
     completedById?: string | null;
     blockedReason?: string | null;
+    outcomes?: string | null;
   } = {
     status,
     statusChangedAt: new Date(),
@@ -167,6 +166,11 @@ export async function updateActivityStatus(
 
   if (status !== "blocked") {
     data.blockedReason = null;
+  }
+  // Resultado al completar (se guarda en outcomes, igual que las
+  // actividades registradas).
+  if (status === "done" && options?.outcomes?.trim()) {
+    data.outcomes = options.outcomes.trim();
   }
 
   let activity;
@@ -225,4 +229,74 @@ export async function deleteActivity(id: string) {
   revalidatePath(parentPath(activity));
   revalidatePath("/activities");
   revalidatePath("/dashboard");
+}
+
+export async function completeTaskWithOutcome(id: string, outcomes: string) {
+  await updateActivityStatus(id, "done", { outcomes });
+}
+
+export type InteractionFormState =
+  | { error: string }
+  | { success: true; message: string }
+  | undefined;
+
+// Registro manual de una interacción ocurrida (omnicanal). Opcionalmente
+// marca al prospecto como contactado, en la misma transacción.
+export async function logInteraction(
+  _prevState: InteractionFormState,
+  formData: FormData,
+): Promise<InteractionFormState> {
+  const { user, org, db } = await requireOrgContext();
+  const parsed = interactionLogSchema.safeParse(Object.fromEntries(formData));
+  if (!parsed.success) {
+    return {
+      error: parsed.error.issues[0]?.message ?? "Revisa los campos de la interacción.",
+    };
+  }
+  const input = parsed.data;
+  const links = await resolveRecordLinks(db, input);
+  if (!links.ok) return { error: links.error };
+
+  try {
+    await withOrgTransaction(org.id, async (tx) => {
+      await insertLoggedActivity(
+        tx,
+        { organizationId: org.id, actorId: user.id, createdVia: "manual" },
+        {
+          companyId: links.companyId,
+          opportunityId: input.opportunityId ?? null,
+          commercialLeadId: input.commercialLeadId ?? null,
+          commercialPartnerId: input.commercialPartnerId ?? null,
+          personIds: input.personId ? [input.personId] : [],
+          type: input.type,
+          title: input.title,
+          occurredAt: input.occurredAt,
+          durationMinutes: input.durationMinutes ?? null,
+          channel: null,
+          summary: input.description ?? null,
+          outcomes: input.outcomes ?? null,
+        },
+      );
+      if (input.commercialLeadId && input.markContacted) {
+        const lead = await tx.commercialLead.findFirst({
+          where: { id: input.commercialLeadId, organizationId: org.id },
+          select: { status: true },
+        });
+        if (lead?.status === "prospect") {
+          await changeLeadStatusTx(
+            tx,
+            { organizationId: org.id, actorId: user.id, createdVia: "manual" },
+            input.commercialLeadId,
+            { status: "contacted", at: input.occurredAt },
+          );
+        }
+      }
+    });
+  } catch (error) {
+    return { error: error instanceof Error ? error.message : "No se pudo registrar la interacción." };
+  }
+  revalidatePath(parentPath(input));
+  revalidatePath("/activities");
+  revalidatePath("/prospecting");
+  return { success: true, message: "Interacción registrada." };
 }

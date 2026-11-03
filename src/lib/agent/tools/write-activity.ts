@@ -86,6 +86,14 @@ const participantSchema = z.object({
 export const createActivityInputSchema = z.object({
   companyId: z.string().min(1),
   opportunityId: z.string().optional(),
+  commercialLeadId: z
+    .string()
+    .optional()
+    .describe("Prospecto/lead con el que ocurrió la interacción"),
+  commercialPartnerId: z
+    .string()
+    .optional()
+    .describe("Alianza/partner con el que ocurrió la interacción"),
   personIds: z
     .array(z.string().min(1))
     .max(50)
@@ -406,10 +414,32 @@ export function buildActivityWriteTools(
           );
         }
         const personIds = await assertPeople(ctx.db, args.personIds ?? []);
+        const commercialLeadId = emptyToNull(args.commercialLeadId);
+        const commercialPartnerId = emptyToNull(args.commercialPartnerId);
+        if (
+          commercialLeadId &&
+          !(await ctx.db.commercialLead.findUnique({
+            where: { id: commercialLeadId },
+            select: { id: true },
+          }))
+        ) {
+          throw new Error(`Prospecto no encontrado: ${commercialLeadId}`);
+        }
+        if (
+          commercialPartnerId &&
+          !(await ctx.db.commercialPartner.findUnique({
+            where: { id: commercialPartnerId },
+            select: { id: true },
+          }))
+        ) {
+          throw new Error(`Partner no encontrado: ${commercialPartnerId}`);
+        }
 
         const input: LoggedActivityInput = {
           companyId: args.companyId,
           opportunityId,
+          commercialLeadId,
+          commercialPartnerId,
           personIds,
           type: args.type,
           title: args.title,

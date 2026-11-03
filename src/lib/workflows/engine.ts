@@ -3,11 +3,27 @@ import { matchesConditions } from "@/lib/workflows/conditions";
 import { executeAction } from "@/lib/workflows/actions";
 import type { Action, Condition, WorkflowEvent } from "@/lib/workflows/types";
 
+// Las acciones no se ejecutan sobre oportunidades cerradas (ganadas,
+// perdidas o archivadas), salvo el propio evento de cambio de estado.
+async function isClosedOpportunity(db: TenantClient, event: WorkflowEvent) {
+  if (event.entityType !== "opportunity" || event.eventName === "status_changed") {
+    return false;
+  }
+  const opportunity = await db.opportunity.findUnique({
+    where: { id: event.entityId },
+    select: { status: true },
+  });
+  return (
+    !opportunity || ["won", "lost", "archived"].includes(opportunity.status)
+  );
+}
+
 export async function evaluateWorkflows(
   db: TenantClient,
   organizationId: string,
   event: WorkflowEvent,
 ) {
+  if (await isClosedOpportunity(db, event)) return;
   const workflows = await db.workflow.findMany({
     where: {
       isActive: true,

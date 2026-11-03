@@ -5,39 +5,33 @@ import { redirect } from "next/navigation";
 import { requireOrgContext, withOrgTransaction } from "@/lib/tenant";
 import {
   opportunityCreateSchema,
-  opportunityStageChangeSchema,
+  opportunityStatusChangeSchema,
   opportunityUpdateSchema,
+  proposalSentSchema,
+  rumboHandoffSchema,
 } from "@/lib/zod/opportunity";
-import { getOrgStages } from "@/lib/pipeline/stages";
+import { boardStages, getOrgStages } from "@/lib/pipeline/stages";
 import {
   deleteCustomFieldValues,
   upsertCustomFieldValues,
 } from "@/lib/custom-fields/merge";
-import { evaluateWorkflows } from "@/lib/workflows/engine";
 import { handleMutationError } from "@/lib/prisma-errors";
 import { appendTimelineEvent } from "@/lib/timeline";
 import type { TenantClient } from "@/lib/tenant";
+import { createAttribution, hasAttributionData } from "@/lib/commercial/attribution";
+import { recordStageTransition } from "@/lib/commercial/history";
+import {
+  changeOpportunityStage,
+  changeOpportunityStatus,
+  recordProposalSent,
+} from "@/lib/commercial/opportunity-service";
+import { requestRumboHandoff } from "@/lib/commercial/rumbo";
 
 export type FormState =
   | { error: string; fieldErrors?: Record<string, string[] | undefined> }
   | undefined;
 
-// La etapa debe existir y estar activa dentro de la org; si el formulario no
-// mandó ninguna se usa la primera del pipeline.
-async function resolveStageId(
-  db: TenantClient,
-  stageId: string | undefined,
-): Promise<string> {
-  const stages = await getOrgStages(db);
-  if (!stageId) {
-    const first = stages[0];
-    if (!first) throw new Error("La organización no tiene etapas de pipeline.");
-    return first.id;
-  }
-  const stage = stages.find((candidate) => candidate.id === stageId);
-  if (!stage) throw new Error("Etapa inválida.");
-  return stage.id;
-}
+export type ActionResult = { ok: true; message?: string } | { ok: false; error: string };
 
 async function validateOpportunityPeople(
   db: TenantClient,
@@ -60,15 +54,20 @@ async function validateOpportunityPeople(
 
 // El responsable debe ser un usuario activo de la org (db está scopeado al
 // tenant, así que un id ajeno no aparece).
-async function isValidOwner(
-  db: TenantClient,
-  ownerId: string,
-): Promise<boolean> {
+async function isValidOwner(db: TenantClient, ownerId: string): Promise<boolean> {
   const owner = await db.user.findFirst({
     where: { id: ownerId, isActive: true },
     select: { id: true },
   });
   return Boolean(owner);
+}
+
+function revalidateOpportunity(id: string, companyId?: string) {
+  revalidatePath("/opportunities");
+  revalidatePath("/opportunities/list");
+  revalidatePath(`/opportunities/${id}`);
+  revalidatePath("/dashboard");
+  if (companyId) revalidatePath(`/companies/${companyId}`);
 }
 
 export async function createOpportunity(
@@ -77,76 +76,98 @@ export async function createOpportunity(
 ): Promise<FormState> {
   const { user, org, db } = await requireOrgContext();
 
-  const parsed = opportunityCreateSchema.safeParse(
-    Object.fromEntries(formData),
-  );
+  const parsed = opportunityCreateSchema.safeParse(Object.fromEntries(formData));
   if (!parsed.success) {
     return {
       error: "Revisa los campos del formulario.",
       fieldErrors: parsed.error.flatten().fieldErrors,
     };
   }
+  const {
+    stageId,
+    sourceChannel,
+    campaignId,
+    referrerPersonId,
+    referrerPartnerId,
+    sourceDetail,
+    ...data
+  } = parsed.data;
 
-  // La empresa debe pertenecer a la org (una id ajena es invisible).
   const company = await db.company.findUnique({
-    where: { id: parsed.data.companyId },
+    where: { id: data.companyId },
     select: { id: true },
   });
-  if (!company) {
-    return { error: "La empresa seleccionada no existe." };
+  if (!company) return { error: "La empresa seleccionada no existe." };
+  if (!(await validateOpportunityPeople(db, data.companyId, [data.decisionMakerId, data.sponsorId]))) {
+    return { error: "El decisor y el sponsor deben estar vinculados a la empresa." };
   }
-  if (
-    !(await validateOpportunityPeople(db, parsed.data.companyId, [
-      parsed.data.decisionMakerId,
-      parsed.data.sponsorId,
-    ]))
-  ) {
-    return {
-      error: "El decisor y el sponsor deben estar vinculados a la empresa.",
-    };
-  }
-
-  if (parsed.data.ownerId && !(await isValidOwner(db, parsed.data.ownerId))) {
+  const ownerId = data.ownerId ?? user.id;
+  if (!(await isValidOwner(db, ownerId))) {
     return { error: "El responsable seleccionado no es válido." };
   }
-  if (parsed.data.status === "lost" && !parsed.data.lossReason) {
-    return {
-      error: "Indica el motivo de pérdida.",
-      fieldErrors: { lossReason: ["El motivo de pérdida es obligatorio."] },
-    };
-  }
 
-  const { stageId, ...data } = parsed.data;
-  const opportunity = await db.opportunity.create({
-    data: {
-      ...data,
-      // El motivo solo aplica a oportunidades perdidas.
-      lossReason: data.status === "lost" ? data.lossReason : undefined,
-      ownerId: data.ownerId ?? user.id,
-      organizationId: org.id,
-      stageId: await resolveStageId(db, stageId),
-      createdById: user.id,
-      createdVia: "manual",
-    },
-  });
-  await upsertCustomFieldValues(
-    db,
-    org.id,
-    "opportunity",
-    opportunity.id,
-    formData,
-  );
-  await appendTimelineEvent(db, {
-    organizationId: org.id,
-    companyId: opportunity.companyId,
-    opportunityId: opportunity.id,
-    type: "opportunity_created",
-    title: `Oportunidad creada: ${opportunity.name}`,
-    actorId: user.id,
-  });
-  revalidatePath("/opportunities");
-  revalidatePath(`/companies/${opportunity.companyId}`);
-  redirect(`/opportunities/${opportunity.id}`);
+  // Nueva oportunidad: solo en etapas operativas (no terminales).
+  const stages = boardStages(await getOrgStages(db));
+  const stage = stageId ? stages.find((candidate) => candidate.id === stageId) : stages[0];
+  if (!stage) return { error: "Etapa inválida." };
+
+  let opportunityId: string;
+  try {
+    opportunityId = await withOrgTransaction(org.id, async (tx) => {
+      const attribution = hasAttributionData({
+        sourceChannel,
+        campaignId,
+        referrerPersonId,
+        referrerPartnerId,
+        sourceDetail,
+      })
+        ? await createAttribution(
+            tx,
+            { organizationId: org.id, actorId: user.id, method: "manual" },
+            { sourceChannel, campaignId, referrerPersonId, referrerPartnerId, sourceDetail },
+          )
+        : null;
+      const now = new Date();
+      const opportunity = await tx.opportunity.create({
+        data: {
+          ...data,
+          organizationId: org.id,
+          ownerId,
+          stageId: stage.id,
+          status: "open",
+          statusChangedAt: now,
+          nextStepUpdatedAt: data.nextStep ? now : null,
+          firstTouchAttributionId: attribution?.id ?? null,
+          createdById: user.id,
+          createdVia: "manual",
+        },
+        select: { id: true, name: true, companyId: true },
+      });
+      await recordStageTransition(tx, {
+        organizationId: org.id,
+        opportunityId: opportunity.id,
+        stage,
+        actorId: user.id,
+        source: "manual",
+        at: now,
+      });
+      await appendTimelineEvent(tx, {
+        organizationId: org.id,
+        companyId: opportunity.companyId,
+        opportunityId: opportunity.id,
+        type: "opportunity_created",
+        title: `Oportunidad creada: ${opportunity.name}`,
+        summary: stage.label,
+        actorId: user.id,
+      });
+      return opportunity.id;
+    });
+  } catch (error) {
+    return { error: error instanceof Error ? error.message : "No se pudo crear la oportunidad." };
+  }
+  await upsertCustomFieldValues(db, org.id, "opportunity", opportunityId, formData);
+  revalidateOpportunity(opportunityId, data.companyId);
+  redirect(`/opportunities/${opportunityId}`);
 }
 
 export async function updateOpportunity(
@@ -155,9 +176,7 @@ export async function updateOpportunity(
 ): Promise<FormState> {
   const { user, org, db } = await requireOrgContext();
 
-  const parsed = opportunityUpdateSchema.safeParse(
-    Object.fromEntries(formData),
-  );
+  const parsed = opportunityUpdateSchema.safeParse(Object.fromEntries(formData));
   if (!parsed.success) {
     return {
       error: "Revisa los campos del formulario.",
@@ -168,7 +187,17 @@ export async function updateOpportunity(
   const { id, stageId, ...data } = parsed.data;
   const before = await db.opportunity.findUnique({
     where: { id },
-    include: { stage: { select: { id: true, label: true } } },
+    select: {
+      id: true,
+      status: true,
+      companyId: true,
+      ownerId: true,
+      decisionMakerId: true,
+      sponsorId: true,
+      nextStep: true,
+      nextStepDueDate: true,
+      stageId: true,
+    },
   });
   if (!before) redirect("/opportunities");
   const targetCompanyId = data.companyId ?? before.companyId;
@@ -183,21 +212,46 @@ export async function updateOpportunity(
       data.sponsorId ?? before.sponsorId ?? undefined,
     ]))
   ) {
-    return {
-      error: "El decisor y el sponsor deben estar vinculados a la empresa.",
-    };
+    return { error: "El decisor y el sponsor deben estar vinculados a la empresa." };
   }
-
   if (data.ownerId && !(await isValidOwner(db, data.ownerId))) {
     return { error: "El responsable seleccionado no es válido." };
   }
-  const targetStatus = data.status ?? before.status;
-  if (targetStatus === "lost" && !(data.lossReason ?? before.lossReason)) {
+  const clearsOwner = formData.has("ownerId") && !data.ownerId;
+  if (clearsOwner && (before.status === "open" || before.status === "paused")) {
     return {
-      error: "Indica el motivo de pérdida.",
-      fieldErrors: { lossReason: ["El motivo de pérdida es obligatorio."] },
+      error: "Una oportunidad activa debe tener responsable.",
+      fieldErrors: { ownerId: ["Selecciona un responsable."] },
     };
   }
+
+  // Los campos vacíos llegan como undefined: los de texto/fecha que vinieron
+  // en el form se limpian explícitamente.
+  const cleared: Record<string, null> = {};
+  for (const field of [
+    "nextStep",
+    "nextStepDueDate",
+    "expectedCloseDate",
+    "situation",
+    "impact",
+    "criticalEvent",
+    "criticalEventDate",
+    "decisionProcess",
+    "sprint0Status",
+    "sprint0ScheduledAt",
+    "sprint0CompletedAt",
+    "diagnosisDeliveredAt",
+    "expectedResponseAt",
+    "recurringValue",
+    "estimatedValue",
+    "probability",
+  ] as const) {
+    if (formData.has(field) && data[field] === undefined) cleared[field] = null;
+  }
+  const nextStepChanged =
+    "nextStep" in data &&
+    (data.nextStep !== (before.nextStep ?? undefined) ||
+      (data.nextStepDueDate?.getTime() ?? null) !== (before.nextStepDueDate?.getTime() ?? null));
 
   let opportunity;
   try {
@@ -205,43 +259,18 @@ export async function updateOpportunity(
       where: { id },
       data: {
         ...data,
-        // Un campo vacío llega como undefined: se limpia de forma explícita.
-        ...(targetStatus !== "lost" ? { lossReason: null } : {}),
-        ...(formData.has("ownerId") && !data.ownerId ? { ownerId: null } : {}),
-        ...(stageId ? { stageId: await resolveStageId(db, stageId) } : {}),
+        ...cleared,
+        ...(clearsOwner ? { ownerId: null } : {}),
+        ...(nextStepChanged ? { nextStepUpdatedAt: new Date() } : {}),
       },
-      include: { stage: { select: { id: true, key: true, label: true } } },
+      select: { id: true, companyId: true, nextStep: true },
     });
   } catch (error) {
     handleMutationError(error);
   }
   await upsertCustomFieldValues(db, org.id, "opportunity", id, formData);
 
-  if (stageId && opportunity.stage.id !== before.stage.id) {
-    await appendTimelineEvent(db, {
-      organizationId: org.id,
-      companyId: opportunity.companyId,
-      opportunityId: opportunity.id,
-      type: "stage_changed",
-      title: "Cambio de etapa",
-      summary: `${before.stage.label} → ${opportunity.stage.label}`,
-      actorId: user.id,
-    });
-    await evaluateWorkflows(db, org.id, {
-      entityType: "opportunity",
-      entityId: opportunity.id,
-      eventName: "stage_changed",
-      actorId: user.id,
-      before: { stage: before.stage.id },
-      after: { stage: opportunity.stage.id },
-    });
-  }
-  if (
-    "nextStep" in data &&
-    (data.nextStep !== before.nextStep ||
-      opportunity.nextStepDueDate?.getTime() !==
-        before.nextStepDueDate?.getTime())
-  ) {
+  if (nextStepChanged) {
     await appendTimelineEvent(db, {
       organizationId: org.id,
       companyId: opportunity.companyId,
@@ -253,56 +282,101 @@ export async function updateOpportunity(
     });
   }
 
-  revalidatePath("/opportunities");
-  revalidatePath(`/opportunities/${id}`);
-  revalidatePath(`/companies/${opportunity.companyId}`);
+  // La etapa pasa por las compuertas de avance (mismo servicio que el Kanban).
+  if (stageId && stageId !== before.stageId) {
+    const result = await changeOpportunityStage(
+      { db, organizationId: org.id, actorId: user.id, source: "manual" },
+      { opportunityId: id, stage: stageId },
+    );
+    if (!result.ok) {
+      revalidateOpportunity(id, opportunity.companyId);
+      return { error: `Cambios guardados, pero la etapa no cambió: ${result.error}` };
+    }
+  }
+
+  revalidateOpportunity(id, opportunity.companyId);
   redirect(`/opportunities/${id}`);
 }
 
-export async function updateOpportunityStage(id: string, stageId: string) {
+// Kanban, selector de etapa: devuelve el error de compuerta para mostrarlo.
+export async function updateOpportunityStage(
+  id: string,
+  stageId: string,
+): Promise<ActionResult> {
   const { user, org, db } = await requireOrgContext();
+  const result = await changeOpportunityStage(
+    { db, organizationId: org.id, actorId: user.id, source: "manual" },
+    { opportunityId: id, stage: stageId },
+  );
+  revalidateOpportunity(id);
+  return result.ok ? { ok: true } : { ok: false, error: result.error };
+}
 
-  const parsed = opportunityStageChangeSchema.safeParse({ id, stageId });
-  if (!parsed.success) return;
+export async function changeOpportunityStatusAction(
+  _prev: ActionResult | undefined,
+  formData: FormData,
+): Promise<ActionResult> {
+  const { user, org, db } = await requireOrgContext();
+  const parsed = opportunityStatusChangeSchema.safeParse(Object.fromEntries(formData));
+  if (!parsed.success) return { ok: false, error: "Revisa los campos del cambio de estado." };
+  const { id, ...change } = parsed.data;
+  const result = await changeOpportunityStatus(
+    { db, organizationId: org.id, actorId: user.id, source: "manual" },
+    id,
+    change,
+  );
+  revalidateOpportunity(id);
+  return result.ok
+    ? { ok: true, message: "Estado actualizado." }
+    : { ok: false, error: result.error };
+}
 
-  const before = await db.opportunity.findUnique({
-    where: { id },
-    include: { stage: { select: { id: true, label: true } } },
-  });
-  if (!before) return;
+export async function recordProposalAction(
+  _prev: ActionResult | undefined,
+  formData: FormData,
+): Promise<ActionResult> {
+  const { user, org, db } = await requireOrgContext();
+  const parsed = proposalSentSchema.safeParse(Object.fromEntries(formData));
+  if (!parsed.success) return { ok: false, error: "Indica una fecha válida." };
+  const result = await recordProposalSent(
+    { db, organizationId: org.id, actorId: user.id, source: "manual" },
+    {
+      opportunityId: parsed.data.id,
+      sentAt: parsed.data.sentAt,
+      expectedResponseAt: parsed.data.expectedResponseAt ?? null,
+      decisionOnly: parsed.data.mode === "decision",
+    },
+  );
+  revalidateOpportunity(parsed.data.id);
+  return result.ok
+    ? {
+        ok: true,
+        message: parsed.data.mode === "decision" ? "Decisión registrada." : "Envío de propuesta registrado.",
+      }
+    : { ok: false, error: result.error };
+}
 
-  let opportunity;
-  try {
-    opportunity = await db.opportunity.update({
-      where: { id },
-      data: { stageId: await resolveStageId(db, parsed.data.stageId) },
-      include: { stage: { select: { id: true, label: true } } },
-    });
-  } catch (error) {
-    handleMutationError(error);
+export async function requestRumboHandoffAction(
+  _prev: ActionResult | undefined,
+  formData: FormData,
+): Promise<ActionResult> {
+  const { user, org, db } = await requireOrgContext();
+  const parsed = rumboHandoffSchema.safeParse(Object.fromEntries(formData));
+  if (!parsed.success) {
+    return { ok: false, error: parsed.error.issues[0]?.message ?? "Revisa el formulario." };
   }
-
-  await appendTimelineEvent(db, {
-    organizationId: org.id,
-    companyId: opportunity.companyId,
-    opportunityId: opportunity.id,
-    type: "stage_changed",
-    title: "Cambio de etapa",
-    summary: `${before.stage.label} → ${opportunity.stage.label}`,
-    actorId: user.id,
+  const result = await requestRumboHandoff(db, org, user.id, {
+    opportunityId: parsed.data.id,
+    projectName: parsed.data.projectName,
+    startDate: parsed.data.startDate ?? null,
+    scopeSummary: parsed.data.scopeSummary ?? null,
+    responsibleUserId: parsed.data.responsibleUserId ?? null,
   });
-
-  await evaluateWorkflows(db, org.id, {
-    entityType: "opportunity",
-    entityId: opportunity.id,
-    eventName: "stage_changed",
-    actorId: user.id,
-    before: { stage: before.stage.id },
-    after: { stage: opportunity.stage.id },
-  });
-
-  revalidatePath("/opportunities");
-  revalidatePath(`/opportunities/${id}`);
+  revalidateOpportunity(parsed.data.id);
+  if (!result.ok) return { ok: false, error: result.error };
+  return result.value.status === "sent"
+    ? { ok: true, message: "Enviado a Rumbo. Queda pendiente de confirmación." }
+    : { ok: false, error: "El envío a Rumbo falló; revisa el estado y reintenta." };
 }
 
 export async function deleteOpportunity(id: string) {

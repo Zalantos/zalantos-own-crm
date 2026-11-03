@@ -35,6 +35,11 @@ const READ_TOOL_NAMES = [
   "read_attachment",
   "read_context_source",
   "web_search",
+  "list_commercial_leads",
+  "get_commercial_origin",
+  "list_partners",
+  "get_commercial_funnel",
+  "suggest_next_actions",
 ] as const;
 
 const DIRECT_WRITE_TOOL_NAMES = [
@@ -53,6 +58,12 @@ const DIRECT_WRITE_TOOL_NAMES = [
   "create_contact",
   "create_opportunity",
   "create_company",
+  "create_prospect",
+  "update_lead_status",
+  "convert_lead_to_opportunity",
+  "set_opportunity_status",
+  "set_next_action",
+  "log_interaction",
 ] as const;
 
 const CHANGE_TOOL_NAMES = [

@@ -28,6 +28,10 @@ Leer documentos adicionales solo cuando la tarea lo requiera:
 | `docs/architecture/integrations.md` | APIs, webhooks, email, IA, R2, gateway, Telegram |
 | `docs/integrations/telegram-copiloto.md` | Contrato n8n ↔ `/api/telegram/*` |
 | `docs/integrations/inbound-leads.md` | Contrato n8n ↔ `/api/integrations/inbound-leads`, bandeja `/leads` |
+| `docs/context/commercial-process.md` | Prospección, pipeline, estados, atribución, alianzas, próxima acción, métricas |
+| `docs/integrations/commercial-events.md` | Ingesta de interacciones `/api/integrations/activities` |
+| `docs/integrations/rumbo-handoff.md` | Traspaso a Rumbo y callback |
+| `docs/operations/commercial-process-migration.md` | Migración/backfill del rediseño comercial |
 | `docs/engineering/security-checklist.md` | Auth, permisos, datos personales, producción |
 | `docs/engineering/testing-strategy.md` | Lógica de negocio, integraciones, permisos |
 | `docs/operations/deployment.md` | Deploy, Railway, migraciones, env vars |

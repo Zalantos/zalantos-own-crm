@@ -13,6 +13,15 @@ Hay tests puntuales con el runner nativo de Node:
   `npm run test:mcp-tools`
 - `src/lib/commercial/commercial.test.ts` → `npm run test:commercial`
 - Ingesta y conversión de leads → `npm run test:inbound-leads`
+- Proceso comercial (reglas puras: compuertas, estados, prospección, próxima
+  acción, funnel, atribución, alianzas, payload Rumbo, compatibilidad de
+  workflows) → `npm run test:commercial-process`
+- Escenarios de aceptación A–G contra Postgres local con RLS →
+  `INTEGRATION_DATABASE_URL=… INTEGRATION_TENANT_DATABASE_URL=… npm run test:commercial-integration`
+  (se omiten si no hay base configurada; solo acepta localhost)
+- Migración legacy (escenario H) →
+  `MIGRATION_TEST_DATABASE_URL=… npm run test:commercial-migration`
+  (borra y recrea el schema; solo localhost)
 
 **GAP:** No hay suite amplia ni configuración Jest/Vitest/Playwright para el
 resto del dominio (tenant, propuestas, agent, Telegram).

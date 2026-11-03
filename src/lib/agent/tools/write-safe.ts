@@ -122,6 +122,14 @@ export function buildWriteSafeTools(
         companyId: z.string().min(1),
         opportunityId: z.string().optional(),
         personId: z.string().optional(),
+        commercialLeadId: z
+          .string()
+          .optional()
+          .describe("Prospecto/lead al que pertenece la tarea"),
+        commercialPartnerId: z
+          .string()
+          .optional()
+          .describe("Alianza a la que pertenece la tarea"),
         type: z.enum(ACTIVITY_TYPES).optional(),
         title: z.string().min(1),
         description: z.string().optional(),
@@ -158,6 +166,8 @@ export function buildWriteSafeTools(
         companyId,
         opportunityId,
         personId,
+        commercialLeadId,
+        commercialPartnerId,
         type,
         title,
         description,
@@ -183,6 +193,20 @@ export function buildWriteSafeTools(
           return { error: `dueDate inválida: ${dueDate}. Usar formato ISO.` };
         }
         await assertCompanyInOrg(companyId);
+        if (commercialLeadId) {
+          const lead = await ctx.db.commercialLead.findUnique({
+            where: { id: commercialLeadId },
+            select: { id: true },
+          });
+          if (!lead) return { error: `Prospecto no encontrado: ${commercialLeadId}` };
+        }
+        if (commercialPartnerId) {
+          const partner = await ctx.db.commercialPartner.findUnique({
+            where: { id: commercialPartnerId },
+            select: { id: true },
+          });
+          if (!partner) return { error: `Partner no encontrado: ${commercialPartnerId}` };
+        }
         const assignee = await resolveAssignee(ctx.db, {
           assigneeId: assigneeId === "me" ? ctx.userId : assigneeId,
           assigneeEmail,
@@ -220,6 +244,8 @@ export function buildWriteSafeTools(
             ...(assignee ? { assigneeId: assignee.id } : {}),
             ...(completedBy ? { completedById: completedBy.id } : {}),
             ...(priority ? { priority } : {}),
+            ...(commercialLeadId ? { commercialLeadId } : {}),
+            ...(commercialPartnerId ? { commercialPartnerId } : {}),
           },
           explanation: "Tarea creada por el copiloto desde el chat.",
           confidence: 1,
@@ -246,6 +272,8 @@ export function buildWriteSafeTools(
                   companyId,
                   opportunityId: opportunityIdOrNull,
                   personId: personIdOrNull,
+                  commercialLeadId: emptyToNull(commercialLeadId),
+                  commercialPartnerId: emptyToNull(commercialPartnerId),
                   type: type ?? "task",
                   title,
                   description: descriptionOrNull,

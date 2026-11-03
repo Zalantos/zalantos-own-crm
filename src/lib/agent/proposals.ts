@@ -19,9 +19,21 @@ export type AgentProposalItemInput = {
     | "update_task"
     | "update_note"
     | "update_activity"
-    | "update_meeting";
+    | "update_meeting"
+    | "status_change"
+    | "add_commercial_lead"
+    | "commercial_lead_status"
+    | "convert_lead"
+    | "set_next_action";
   entity:
-    "company" | "opportunity" | "person" | "note" | "activity" | "meeting";
+    | "company"
+    | "opportunity"
+    | "person"
+    | "note"
+    | "activity"
+    | "meeting"
+    | "commercial_lead"
+    | "commercial_partner";
   entityId: string | null;
   beforeValue: Prisma.InputJsonValue | null;
   afterValue: Prisma.InputJsonValue;

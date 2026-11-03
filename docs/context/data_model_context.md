@@ -27,6 +27,13 @@ Fuente de verdad: `prisma/schema.prisma`.
 | `ActivityPerson`            | `activity_people`              | Personas que participaron de una actividad registrada (N:M)       |
 | `Note`                      | `notes`                        | → company/person/opportunity                                      |
 | `InboundLead`               | `inbound_leads`                | Bandeja previa a Company/Person/Opportunity; ver sección propia   |
+| `CommercialLead`            | `commercial_leads`             | Prospección: prospect/contacted/lead/converted/disqualified        |
+| `CommercialAttribution`     | `commercial_attributions`      | Toque de origen (canal, campaña, UTM, referidor); compartido       |
+| `Campaign`                  | `campaigns`                    | Campañas por org; `key` = utm_campaign/campaign_id                 |
+| `OpportunityStageHistory`   | `opportunity_stage_history`    | Períodos por etapa (`enteredAt` null = legacy desconocido)         |
+| `CommercialStatusChange`    | `commercial_status_changes`    | Bitácora append-only de estados (lead, oportunidad, alianza)       |
+| `CommercialPartnerContact`  | `commercial_partner_contacts`  | Contactos de una alianza                                           |
+| `RumboHandoff`              | `rumbo_handoffs`               | Traspaso a Rumbo, una fila por oportunidad                         |
 
 ### Partners y ofertas comerciales
 
@@ -360,3 +367,38 @@ Ver `@@index` en `schema.prisma` — la mayoría compuestos con `organizationId`
   invariante de que el ingest nunca crea Company/Person/Opportunity directo.
 - Una sola relación principal activa por persona; versiones de oferta únicas
   por oportunidad y fingerprint de backfill único por organización.
+
+## Proceso comercial (HU-CRM-02)
+
+Reglas completas en `docs/context/commercial-process.md`.
+
+- `Opportunity.status`: `open | paused | won | lost` (+ `archived` solo
+  legacy). Nuevos campos: SPICED (`situation`, `impact`, `criticalEvent`,
+  `criticalEventDate`, `decisionProcess`; Pain = `mainPain`), Sprint 0
+  (`sprint0Status`, `sprint0ScheduledAt`, `sprint0CompletedAt`,
+  `diagnosisDeliveredAt`), propuesta (`proposalDecisionAt`, `proposalSentAt`,
+  `expectedResponseAt`), `recurringValue`, ciclo de estado (`pausedAt`,
+  `pauseReason`, `reactivateAt`, `reactivationCriteria`, `wonAt`,
+  `wonEvidence`, `lostAt`, `lossDetail`, `closedById`, `statusChangedAt`,
+  `stageEnteredAt`), origen (`commercialLeadId`, `firstTouchAttributionId`),
+  próxima acción (`nextStepChannel`, `nextStepContext`, `nextStepActivityId`,
+  `nextStepUpdatedAt`) y migración (`legacyStageKey`, `migrationReview`).
+- `PipelineStage`: 4 operativas activas (`reunion_discovery`, `calificada`,
+  `propuesta_principal`, `negociacion`); las legacy quedan `isActive=false`.
+- `CommercialPartner`: `allianceStage`, `allianceStatus`,
+  `allianceStatusReason`, `allianceType`, `ownerId`, `commercialPotential`,
+  `potentialValue`, `agreementTerms`, `agreementSignedAt`, próxima acción.
+- `Activity`/`Note`: `commercialLeadId`, `commercialPartnerId`;
+  `Activity.externalSource/externalId` con único por org (ingesta idempotente).
+- `InboundLead`: `phone`, `attributionId`; relación 1:1 con `CommercialLead`.
+- `Workflow.configWarning`: advertencia de compatibilidad (no desactiva).
+- CHECKs SQL: estados de lead, prioridad, canal de atribución, etapa/estado de
+  alianza, estado de handoff, sujeto del lead, rango de probabilidad.
+- RLS `tenant_isolation` en las 7 tablas nuevas (`check-rls-coverage`: 46 OK).
+
+### Migraciones
+
+| Migración | Cambio |
+| --- | --- |
+| `commercial_process_structure` | Aditiva: tablas, columnas, índices, CHECKs, RLS |
+| `commercial_process_backfill` | Etapas, estados, historial, atribución legacy, avisos de workflows, trazabilidad y validaciones (ver `docs/operations/commercial-process-migration.md`) |

@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { SOURCE_CHANNELS } from "@/lib/commercial/attribution";
 
 const emptyToUndefined = (val: unknown) =>
   typeof val === "string" && val.trim() === "" ? undefined : val;
@@ -22,6 +23,18 @@ export const inboundLeadPayloadSchema = z.object({
   company: optionalString,
   message: optionalString,
   page: optionalString,
+  // Extensión HU-CRM-02 (todo opcional: el contrato previo sigue válido).
+  phone: z.preprocess(emptyToUndefinedTrimmed, z.string().max(50).optional()),
+  source_channel: z.preprocess(emptyToUndefined, z.enum(SOURCE_CHANNELS).optional()),
+  campaign_id: z.preprocess(emptyToUndefinedTrimmed, z.string().max(200).optional()),
+  utm_source: z.preprocess(emptyToUndefinedTrimmed, z.string().max(200).optional()),
+  utm_medium: z.preprocess(emptyToUndefinedTrimmed, z.string().max(200).optional()),
+  utm_campaign: z.preprocess(emptyToUndefinedTrimmed, z.string().max(200).optional()),
+  utm_content: z.preprocess(emptyToUndefinedTrimmed, z.string().max(200).optional()),
+  utm_term: z.preprocess(emptyToUndefinedTrimmed, z.string().max(200).optional()),
+  landing_page: z.preprocess(emptyToUndefinedTrimmed, z.string().max(500).optional()),
+  referrer: z.preprocess(emptyToUndefinedTrimmed, z.string().max(500).optional()),
+  first_touch_at: z.preprocess(emptyToUndefined, z.coerce.date().optional()),
 });
 
 export type InboundLeadPayload = z.infer<typeof inboundLeadPayloadSchema>;
@@ -32,8 +45,17 @@ export const convertInboundLeadSchema = z.object({
   id: z.string().min(1),
   companyId: z.preprocess(emptyToUndefined, z.string().optional()),
   companyName: optionalString,
-  opportunityName: z.string().min(1, "El nombre de la oportunidad es obligatorio"),
+  opportunityName: z.preprocess(emptyToUndefined, z.string().optional()),
   stageId: z.preprocess(emptyToUndefined, z.string().optional()),
+  // "lead": incorpora a Prospección como lead; "opportunity": además crea la
+  // oportunidad en Discovery (ambos conservan la traza inbound → lead).
+  mode: z.enum(["lead", "opportunity"]).default("opportunity"),
+  personId: z.preprocess(emptyToUndefined, z.string().optional()),
+  ownerId: z.preprocess(emptyToUndefined, z.string().optional()),
+  interestSignal: optionalString,
+}).refine((value) => value.mode === "lead" || Boolean(value.opportunityName), {
+  message: "El nombre de la oportunidad es obligatorio",
+  path: ["opportunityName"],
 });
 
 export type ConvertInboundLeadInput = z.infer<typeof convertInboundLeadSchema>;

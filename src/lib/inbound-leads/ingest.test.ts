@@ -10,16 +10,48 @@ type StoredLead = {
   organizationId: string;
   source: string;
   externalId: string;
+  attributionId?: string | null;
 };
+
+type StoredAttribution = Record<string, unknown> & { id: string };
 
 // Fake scoped a una sola org (como forOrg() scopearía en la realidad):
 // create() respeta la unicidad (organizationId, source, externalId) y lanza
 // P2002 igual que Postgres lo haría contra el índice único real.
 function createFakeOrgDb(organizationId: string, seed: StoredLead[] = []) {
   const rows = [...seed];
+  const attributions: StoredAttribution[] = [];
+  const campaigns: { id: string; key: string; name: string }[] = [];
   let nextId = rows.length + 1;
 
   const db = {
+    commercialAttribution: {
+      create: async ({ data }: { data: Record<string, unknown> }) => {
+        const row = { id: `attr-${attributions.length + 1}`, ...data };
+        attributions.push(row);
+        return { id: row.id };
+      },
+      delete: async ({ where }: { where: { id: string } }) => {
+        const index = attributions.findIndex((row) => row.id === where.id);
+        if (index >= 0) attributions.splice(index, 1);
+      },
+    },
+    campaign: {
+      upsert: async ({
+        where,
+        create,
+      }: {
+        where: { organizationId_key: { key: string } };
+        create: { key: string; name: string };
+      }) => {
+        const key = where.organizationId_key.key;
+        const existing = campaigns.find((campaign) => campaign.key === key);
+        if (existing) return { id: existing.id };
+        const row = { id: `camp-${campaigns.length + 1}`, key, name: create.name };
+        campaigns.push(row);
+        return { id: row.id };
+      },
+    },
     inboundLead: {
       create: async ({
         data,
@@ -58,12 +90,24 @@ function createFakeOrgDb(organizationId: string, seed: StoredLead[] = []) {
             row.source === where.source &&
             row.externalId === where.externalId,
         );
-        return found ? { id: found.id } : null;
+        return found ? { id: found.id, attributionId: found.attributionId ?? null } : null;
+      },
+      updateMany: async ({
+        where,
+        data,
+      }: {
+        where: { id: string; attributionId: null };
+        data: { attributionId: string };
+      }) => {
+        const row = rows.find((candidate) => candidate.id === where.id && !candidate.attributionId);
+        if (!row) return { count: 0 };
+        row.attributionId = data.attributionId;
+        return { count: 1 };
       },
     },
   } as unknown as TenantClient;
 
-  return { db, rows };
+  return { db, rows, attributions, campaigns };
 }
 
 const basePayload: InboundLeadPayload = {
@@ -111,5 +155,31 @@ describe("ingestInboundLead", () => {
     assert.equal(resultB.created, true);
     assert.equal(orgA.rows.length, 1);
     assert.equal(orgB.rows.length, 1);
+  });
+
+  it("registra atribución con UTM y vincula la campaña recibida (sin inventarla)", async () => {
+    const { db, attributions, campaigns } = createFakeOrgDb("org-1");
+    await ingestInboundLead(db, "org-1", {
+      ...basePayload,
+      external_id: "ext-utm",
+      utm_source: "linkedin",
+      utm_medium: "paid",
+      utm_campaign: "Webinar Octubre",
+      landing_page: "/webinar",
+    });
+    assert.equal(attributions.length, 1);
+    assert.equal(attributions[0]!.sourceChannel, "campaign");
+    assert.equal(attributions[0]!.utmCampaign, "Webinar Octubre");
+    assert.equal(attributions[0]!.campaignId, "camp-1");
+    assert.equal(campaigns[0]!.key, "webinar-octubre");
+  });
+
+  it("los reintentos no duplican la atribución", async () => {
+    const { db, attributions } = createFakeOrgDb("org-1");
+    await ingestInboundLead(db, "org-1", basePayload);
+    await ingestInboundLead(db, "org-1", basePayload);
+    assert.equal(attributions.length, 1);
+    assert.equal(attributions[0]!.sourceChannel, "web");
+    assert.equal(attributions[0]!.campaignId, null);
   });
 });

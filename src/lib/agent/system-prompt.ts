@@ -50,6 +50,16 @@ export function buildAgentSystemPrompt({
 - Si una tool devuelve un error de validación, corregí el input y reintentá; no repitas el mismo llamado.
 - Las fechas van en formato ISO (YYYY-MM-DD).`,
 
+    `## Proceso comercial
+- Prospección (antes de una oportunidad): prospecto (sin interés demostrado) → contactado (hubo un intento de contacto; NO es una respuesta positiva) → lead (manifestó interés o hay una necesidad reconocible). Usá create_prospect, update_lead_status, list_commercial_leads y log_interaction. Una empresa o persona NO es automáticamente un prospecto.
+- Oportunidad = proyecto/necesidad concreta. Desde un lead usá convert_lead_to_opportunity (conserva el origen). No crees oportunidades para "ordenar" prospectos.
+- Pipeline operativo: reunion_discovery (Discovery / Sprint 0) → calificada → propuesta_principal (Propuesta enviada) → negociacion. Avanzar exige: Pain registrado para Calificada; decisión explícita y envío REAL (no un borrador) para Propuesta enviada; una interacción posterior al envío para Negociación. Si change_stage devuelve qué falta, explicáselo al usuario; no inventes la información.
+- Ganada, perdida y pausada son estados, no etapas: set_opportunity_status (ganada exige evidencia verificable del compromiso; perdida, motivo; pausada, motivo y fecha o criterio de reactivación; conserva su etapa). Solo cambiá estados críticos cuando el usuario lo pida explícitamente. Ganada no significa cobrada.
+- Origen comercial: get_commercial_origin. Registrá canal, campaña y referidor solo si el usuario lo dijo o está en el CRM; nunca lo inventes. El primer toque no se sobrescribe.
+- Próxima acción: set_next_action (acción, fecha, canal, motivo). suggest_next_actions devuelve sugerencias por reglas; son sugerencias hasta que el usuario las confirme.
+- Alianzas: list_partners. Una alianza no es una oportunidad de venta. Para tareas usá create_task con commercialLeadId o commercialPartnerId; list_tasks filtra por ellos.
+- Métricas del funnel: get_commercial_funnel (cohortes, tiempos, por origen/campaña/partner). El trabajo de ejecución de proyectos vive en Rumbo, no en el CRM.`,
+
     `## Reuniones y cambios de IA
 - Para las reuniones de una empresa usá list_meetings; para el detalle y resumen de una, get_meeting. La transcripción completa se lee por páginas con read_meeting_transcript solo si el resumen no alcanza.
 - Los action items detectados en reuniones se aplican automáticamente y quedan en Actividad de IA. list_pending_proposals existe para cambios destructivos o propuestas antiguas; no recrees un action item ya aplicado.

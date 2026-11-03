@@ -7,6 +7,12 @@ personas, oportunidades, actividades, notas y reuniones. Incluye:
 
 - **Landing pública** en `/` para explicar el producto; el CRM sigue cerrado y
   requiere login en `/login`.
+- **Proceso comercial en tres flujos** (ver `docs/context/commercial-process.md`):
+  Prospección (`/prospecting`: prospecto → contactado → lead), Oportunidades
+  (4 etapas operativas configurables con compuertas de avance + estados
+  pausada/ganada/perdida) y Alianzas (`/partners`), con atribución comercial,
+  próxima mejor acción, interacciones omnicanal, analítica por cohortes
+  (`/analytics`) y traspaso a Rumbo de oportunidades ganadas.
 - **Pipeline configurable** por etapas (`PipelineStage`).
 - **Meeting Intelligence**: subir evidencia (audio, video, PDF, etc.), transcribir,
   analizar con IA y ejecutar cambios no destructivos con trazabilidad reversible.
@@ -53,7 +59,10 @@ ejecutados por IA.
 
 ## Flujos principales
 
-1. **Pipeline comercial**: crear empresa → personas → oportunidad → actividades.
+1. **Proceso comercial**: prospecto (empresa/persona + origen) → contacto
+   registrado → lead (interés) → oportunidad en Discovery / Sprint 0 →
+   Calificada → Propuesta enviada → Negociación → ganada (evidencia) →
+   traspaso a Rumbo. Pausada/perdida en cualquier punto.
 2. **Reunión con IA**: crear meeting → subir evidencia → pipeline automático →
    aplicar cambios no destructivos → revisar o deshacer desde Actividad de IA.
 3. **Agente**: abrir chat en contexto de entidad → consultar/actualizar CRM →
@@ -63,9 +72,10 @@ ejecutados por IA.
 5. **Workflows**: evento en entidad → evaluar condiciones → ejecutar acciones
    (ej. crear actividad).
 6. **Integraciones**: evento de negocio → `IntegrationDelivery` → webhook externo.
-7. **Inbound Leads**: formulario web → n8n → `POST /api/integrations/inbound-leads`
-   → `InboundLead(status=new)` → revisión en `/leads` → convertir a
-   Company/Person/Opportunity (o descartar).
+7. **Inbound Leads**: formulario web (+ UTM/campaña) → n8n →
+   `POST /api/integrations/inbound-leads` → `InboundLead(status=new)` +
+   atribución → revisión en `/leads` → incorporar como lead (y opcionalmente
+   oportunidad) o descartar.
 8. **Oferta comercial**: oportunidad → partners del negocio → versión de oferta
    → partidas y vigencia → costo + utilidad = precio neto → reparto de la
    utilidad entre Zalantos y partners.

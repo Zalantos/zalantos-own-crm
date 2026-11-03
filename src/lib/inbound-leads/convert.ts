@@ -1,6 +1,10 @@
 import type { Prisma } from "@prisma/client";
 import { findExistingPerson } from "@/lib/crm/person-dedup";
 import { appendTimelineEvent } from "@/lib/timeline";
+import {
+  recordStageTransition,
+  recordStatusChange,
+} from "@/lib/commercial/history";
 
 const CREATED_VIA = "inbound_lead";
 
@@ -14,12 +18,20 @@ export type ConvertibleLead = {
   message: string | null;
   reviewedAt: Date | null;
   reviewedById: string | null;
+  attributionId?: string | null;
 };
 
 export type ConvertLeadInput = {
   companyId?: string;
   companyName?: string;
-  opportunityName: string;
+  // "lead": solo se incorpora a Prospección; "opportunity" (default): además
+  // se crea la oportunidad en la primera etapa operativa.
+  mode?: "lead" | "opportunity";
+  opportunityName?: string;
+  // Persona existente elegida por quien revisa (en vez del dedup automático).
+  personId?: string;
+  ownerId?: string;
+  interestSignal?: string;
 };
 
 export type ConvertLeadContext = {
@@ -30,7 +42,8 @@ export type ConvertLeadContext = {
 export type ConvertLeadResult = {
   companyId: string;
   personId: string | null;
-  opportunityId: string;
+  commercialLeadId: string;
+  opportunityId: string | null;
 };
 
 // Transacción pura (sin "use server" ni withOrgTransaction) para poder
@@ -83,7 +96,29 @@ export async function convertLeadTx(
   // ---- Person (dedup existente: email primero, si no nombre+apellido en
   // la misma empresa)
   let personId: string | null = null;
-  if (lead.firstName || lead.email) {
+  if (input.personId) {
+    const chosen = await tx.person.findFirst({
+      where: { id: input.personId, organizationId: ctx.organizationId },
+      select: { id: true, companyId: true, firstName: true, lastName: true },
+    });
+    if (!chosen) throw new Error("La persona seleccionada no existe.");
+    const relationship = await tx.personCompanyRelationship.findUnique({
+      where: { personId_companyId: { personId: chosen.id, companyId: company.id } },
+      select: { id: true },
+    });
+    if (!relationship) {
+      await tx.personCompanyRelationship.create({
+        data: {
+          organizationId: ctx.organizationId,
+          personId: chosen.id,
+          companyId: company.id,
+          roles: ["contact"],
+          isPrimary: !chosen.companyId,
+        },
+      });
+    }
+    personId = chosen.id;
+  } else if (lead.firstName || lead.email) {
     const match = await findExistingPerson(tx, ctx.organizationId, {
       companyId: company.id,
       email: lead.email,
@@ -160,39 +195,175 @@ export async function convertLeadTx(
     }
   }
 
-  // ---- Opportunity: primera etapa activa, sin hardcodear nombres de etapa.
-  const firstStage = await tx.pipelineStage.findFirst({
-    where: { organizationId: ctx.organizationId, isActive: true },
-    orderBy: { sortOrder: "asc" },
-    select: { id: true, label: true },
-  });
-  if (!firstStage) {
-    throw new Error("La organización no tiene etapas de pipeline.");
-  }
-  const opportunity = await tx.opportunity.create({
-    data: {
+  // ---- Lead comercial (Prospección). Si la persona ya tiene un lead activo
+  // se reutiliza y el inbound queda como su toque más reciente: el origen
+  // inicial no se sobrescribe.
+  const ownerId = input.ownerId ?? ctx.actorId;
+  const existingLead = personId
+    ? await tx.commercialLead.findFirst({
+        where: {
+          organizationId: ctx.organizationId,
+          personId,
+          status: { in: ["prospect", "contacted", "lead"] },
+        },
+        select: {
+          id: true,
+          status: true,
+          inboundLeadId: true,
+          becameLeadAt: true,
+          firstTouchAttributionId: true,
+        },
+      })
+    : null;
+  const interestSignal =
+    input.interestSignal?.trim() ||
+    (lead.message?.trim()
+      ? `Solicitud inbound (${lead.source}): ${lead.message.trim().slice(0, 300)}`
+      : `Solicitud inbound vía ${lead.source}`);
+  const now = new Date();
+  let commercialLead: { id: string; status: string; firstTouchAttributionId: string | null };
+  if (existingLead) {
+    await tx.commercialLead.update({
+      where: { id: existingLead.id, organizationId: ctx.organizationId },
+      data: {
+        ...(existingLead.inboundLeadId ? {} : { inboundLeadId: lead.id }),
+        lastTouchAttributionId: lead.attributionId ?? undefined,
+        firstTouchAttributionId: existingLead.firstTouchAttributionId ?? lead.attributionId ?? null,
+        ...(existingLead.status !== "lead"
+          ? { status: "lead", becameLeadAt: existingLead.becameLeadAt ?? now, statusChangedAt: now, interestSignal }
+          : {}),
+        lastInteractionAt: now,
+      },
+    });
+    if (existingLead.status !== "lead") {
+      await recordStatusChange(tx, {
+        organizationId: ctx.organizationId,
+        entityType: "commercial_lead",
+        entityId: existingLead.id,
+        fromValue: existingLead.status,
+        toValue: "lead",
+        actorId: ctx.actorId,
+        source: CREATED_VIA,
+        reason: interestSignal,
+        metadata: { inboundLeadId: lead.id },
+      });
+    }
+    commercialLead = {
+      id: existingLead.id,
+      status: "lead",
+      firstTouchAttributionId: existingLead.firstTouchAttributionId ?? lead.attributionId ?? null,
+    };
+  } else {
+    const title = [company.name, [lead.firstName, lead.lastName].filter(Boolean).join(" ")]
+      .filter(Boolean)
+      .join(" · ");
+    const created = await tx.commercialLead.create({
+      data: {
+        organizationId: ctx.organizationId,
+        title: title || company.name,
+        companyId: company.id,
+        personId,
+        status: "lead",
+        ownerId,
+        interestSignal,
+        identifiedAt: now,
+        becameLeadAt: now,
+        lastInteractionAt: now,
+        statusChangedAt: now,
+        firstTouchAttributionId: lead.attributionId ?? null,
+        lastTouchAttributionId: lead.attributionId ?? null,
+        inboundLeadId: lead.id,
+        createdById: ctx.actorId,
+        createdVia: CREATED_VIA,
+      },
+      select: { id: true, status: true, firstTouchAttributionId: true },
+    });
+    await recordStatusChange(tx, {
       organizationId: ctx.organizationId,
+      entityType: "commercial_lead",
+      entityId: created.id,
+      fromValue: null,
+      toValue: "lead",
+      actorId: ctx.actorId,
+      source: CREATED_VIA,
+      metadata: { inboundLeadId: lead.id },
+    });
+    await appendTimelineEvent(tx, {
+      ...timelineBase,
       companyId: company.id,
-      name: input.opportunityName,
-      stageId: firstStage.id,
-      source: lead.source,
-      decisionMakerId: personId,
-      ownerId: ctx.actorId,
-      createdById: ctx.actorId,
-      createdVia: CREATED_VIA,
-    },
-    select: { id: true, name: true },
-  });
-  await appendTimelineEvent(tx, {
-    ...timelineBase,
-    opportunityId: opportunity.id,
-    companyId: company.id,
-    type: "opportunity_created",
-    title: `Oportunidad creada: ${opportunity.name}`,
-    summary: firstStage.label,
-    refType: "inbound_lead",
-    refId: lead.id,
-  });
+      type: "lead_created",
+      title: `Lead creado desde inbound: ${title || company.name}`,
+      refType: "inbound_lead",
+      refId: lead.id,
+    });
+    commercialLead = created;
+  }
+
+  // ---- Opportunity (opcional): primera etapa operativa activa, sin
+  // hardcodear nombres de etapa.
+  let opportunityId: string | null = null;
+  if ((input.mode ?? "opportunity") === "opportunity") {
+    if (!input.opportunityName?.trim()) {
+      throw new Error("El nombre de la oportunidad es obligatorio.");
+    }
+    const firstStage = await tx.pipelineStage.findFirst({
+      where: { organizationId: ctx.organizationId, isActive: true, isWon: false, isLost: false },
+      orderBy: { sortOrder: "asc" },
+      select: { id: true, key: true, label: true },
+    });
+    if (!firstStage) {
+      throw new Error("La organización no tiene etapas de pipeline.");
+    }
+    const opportunity = await tx.opportunity.create({
+      data: {
+        organizationId: ctx.organizationId,
+        companyId: company.id,
+        name: input.opportunityName.trim(),
+        stageId: firstStage.id,
+        source: lead.source,
+        decisionMakerId: personId,
+        ownerId,
+        commercialLeadId: commercialLead.id,
+        firstTouchAttributionId: commercialLead.firstTouchAttributionId,
+        statusChangedAt: now,
+        createdById: ctx.actorId,
+        createdVia: CREATED_VIA,
+      },
+      select: { id: true, name: true },
+    });
+    opportunityId = opportunity.id;
+    await recordStageTransition(tx, {
+      organizationId: ctx.organizationId,
+      opportunityId: opportunity.id,
+      stage: firstStage,
+      actorId: ctx.actorId,
+      source: CREATED_VIA,
+    });
+    await tx.commercialLead.update({
+      where: { id: commercialLead.id, organizationId: ctx.organizationId },
+      data: { status: "converted", convertedAt: now, statusChangedAt: now },
+    });
+    await recordStatusChange(tx, {
+      organizationId: ctx.organizationId,
+      entityType: "commercial_lead",
+      entityId: commercialLead.id,
+      fromValue: commercialLead.status,
+      toValue: "converted",
+      actorId: ctx.actorId,
+      source: CREATED_VIA,
+      metadata: { opportunityId: opportunity.id, inboundLeadId: lead.id },
+    });
+    await appendTimelineEvent(tx, {
+      ...timelineBase,
+      opportunityId: opportunity.id,
+      companyId: company.id,
+      type: "opportunity_created",
+      title: `Oportunidad creada: ${opportunity.name}`,
+      summary: firstStage.label,
+      refType: "inbound_lead",
+      refId: lead.id,
+    });
+  }
 
   // ---- Nota con el mensaje original
   if (lead.message?.trim()) {
@@ -201,7 +372,8 @@ export async function convertLeadTx(
         organizationId: ctx.organizationId,
         companyId: company.id,
         personId,
-        opportunityId: opportunity.id,
+        opportunityId,
+        commercialLeadId: commercialLead.id,
         title: "Mensaje original del lead",
         body: lead.message,
         createdById: ctx.actorId,
@@ -212,7 +384,7 @@ export async function convertLeadTx(
     await appendTimelineEvent(tx, {
       ...timelineBase,
       companyId: company.id,
-      opportunityId: opportunity.id,
+      opportunityId,
       type: "note_added",
       title: "Nota: Mensaje original del lead",
       summary:
@@ -229,11 +401,16 @@ export async function convertLeadTx(
       convertedAt: new Date(),
       convertedCompanyId: company.id,
       convertedPersonId: personId,
-      convertedOpportunityId: opportunity.id,
+      convertedOpportunityId: opportunityId,
       reviewedAt: lead.reviewedAt ?? new Date(),
       reviewedById: lead.reviewedById ?? ctx.actorId,
     },
   });
 
-  return { companyId: company.id, personId, opportunityId: opportunity.id };
+  return {
+    companyId: company.id,
+    personId,
+    commercialLeadId: commercialLead.id,
+    opportunityId,
+  };
 }

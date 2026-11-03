@@ -1,34 +1,63 @@
 import Link from "next/link";
+import type { Prisma } from "@prisma/client";
 import { requireOrgContext } from "@/lib/tenant";
-import { getOrgStages } from "@/lib/pipeline/stages";
-import {
-  knownHiddenStageIds,
-  opportunityStageWhere,
-} from "@/lib/opportunities/hidden-stages";
-import { readHiddenStageIds } from "@/lib/opportunities/read-hidden-stages";
+import { boardStages, getOrgStages } from "@/lib/pipeline/stages";
+import { getActiveOrgUsers } from "@/lib/team";
 import { PageHeader } from "@/components/shared/page-header";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { KanbanBoard } from "@/components/shared/kanban/kanban-board";
-import { StageVisibilityMenu } from "@/components/shared/opportunities/stage-visibility-menu";
 
-export default async function OpportunitiesKanbanPage() {
-  const { org, db } = await requireOrgContext();
-  const [stages, hiddenRaw] = await Promise.all([
-    getOrgStages(db),
-    readHiddenStageIds(),
+type SearchParams = { ownerId?: string; q?: string };
+
+// Tablero operativo: solo oportunidades abiertas en las etapas activas no
+// terminales. Pausadas, ganadas y perdidas se consultan en la lista.
+export default async function OpportunitiesKanbanPage({
+  searchParams,
+}: {
+  searchParams: Promise<SearchParams>;
+}) {
+  const { ownerId, q } = await searchParams;
+  const { org, db, user } = await requireOrgContext();
+  const [stages, users] = await Promise.all([getOrgStages(db), getActiveOrgUsers(db)]);
+  const columns = boardStages(stages);
+  const search = q?.trim();
+
+  const where: Prisma.OpportunityWhereInput = {
+    status: "open",
+    stageId: { in: columns.map((stage) => stage.id) },
+    ...(ownerId === "me" ? { ownerId: user.id } : ownerId ? { ownerId } : {}),
+    ...(search
+      ? {
+          OR: [
+            { name: { contains: search, mode: "insensitive" } },
+            { company: { name: { contains: search, mode: "insensitive" } } },
+          ],
+        }
+      : {}),
+  };
+
+  const [rows, pausedCount, reviewCount] = await Promise.all([
+    db.opportunity.findMany({
+      where,
+      select: {
+        id: true,
+        name: true,
+        stageId: true,
+        estimatedValue: true,
+        probability: true,
+        nextStep: true,
+        nextStepDueDate: true,
+        company: { select: { name: true } },
+        owner: { select: { name: true, email: true } },
+      },
+      orderBy: [{ nextStepDueDate: { sort: "asc", nulls: "first" } }, { createdAt: "desc" }],
+    }),
+    db.opportunity.count({ where: { status: "paused" } }),
+    db.opportunity.count({
+      where: { status: { in: ["open", "paused"] }, migrationReview: { not: null } },
+    }),
   ]);
-  const hiddenStageIds = knownHiddenStageIds(hiddenRaw, stages);
-  const rows = await db.opportunity.findMany({
-    where: opportunityStageWhere(hiddenStageIds),
-    include: {
-      company: true,
-      owner: { select: { name: true, email: true } },
-    },
-    orderBy: { createdAt: "desc" },
-  });
-  const visibleStages = stages.filter(
-    (stage) => !hiddenStageIds.includes(stage.id),
-  );
 
   const opportunities = rows.map((row) => ({
     ...row,
@@ -36,31 +65,70 @@ export default async function OpportunitiesKanbanPage() {
   }));
 
   return (
-    <div>
+    <div className="min-w-0">
       <PageHeader
-        title="Pipeline de oportunidades"
-        description="Arrastra las tarjetas para cambiar de etapa"
+        title="Oportunidades"
+        description="Pipeline operativo: arrastra para avanzar o retroceder de etapa"
         actions={
           <>
-            <StageVisibilityMenu
-              stages={stages}
-              hiddenStageIds={hiddenStageIds}
-            />
-            <Button
-              variant="secondary"
-              render={<Link href="/opportunities/list" />}
-            >
+            <Button variant="secondary" render={<Link href="/opportunities/list" />}>
               Ver como lista
             </Button>
-            <Button render={<Link href="/opportunities/new" />}>
-              Nueva oportunidad
-            </Button>
+            <Button render={<Link href="/opportunities/new" />}>Nueva oportunidad</Button>
           </>
         }
       />
+
+      <form className="mb-3 flex flex-wrap items-center gap-2">
+        <Input
+          name="q"
+          defaultValue={search ?? ""}
+          placeholder="Buscar negocio o empresa"
+          className="w-full sm:w-64"
+        />
+        <select
+          name="ownerId"
+          defaultValue={ownerId ?? ""}
+          className="bg-background h-9 rounded-md border px-2 text-sm"
+        >
+          <option value="">Todo responsable</option>
+          <option value="me">Mis oportunidades</option>
+          {users.map((member) => (
+            <option key={member.id} value={member.id}>
+              {member.name ?? member.email}
+            </option>
+          ))}
+        </select>
+        <Button type="submit" variant="secondary">
+          Filtrar
+        </Button>
+        <div className="text-muted-foreground flex flex-wrap gap-3 text-xs sm:ml-auto">
+          {pausedCount > 0 && (
+            <Link href="/opportunities/list?status=paused" className="hover:underline">
+              {pausedCount} pausada{pausedCount === 1 ? "" : "s"}
+            </Link>
+          )}
+          <Link href="/opportunities/list?status=won" className="hover:underline">
+            Ganadas
+          </Link>
+          <Link href="/opportunities/list?status=lost" className="hover:underline">
+            Perdidas
+          </Link>
+          {reviewCount > 0 && (
+            <Link
+              href="/opportunities/list?review=1"
+              className="text-amber-600 hover:underline dark:text-amber-400"
+            >
+              {reviewCount} requieren revisión post-migración
+            </Link>
+          )}
+        </div>
+      </form>
+
       <KanbanBoard
+        key={`${ownerId ?? ""}|${search ?? ""}`}
         opportunities={opportunities}
-        stages={visibleStages}
+        stages={columns}
         currency={org.currency}
         locale={org.locale}
       />

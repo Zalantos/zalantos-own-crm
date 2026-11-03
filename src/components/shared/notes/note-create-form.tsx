@@ -13,10 +13,14 @@ export function NoteCreateForm({
   companyId,
   personId,
   opportunityId,
+  commercialLeadId,
+  commercialPartnerId,
 }: {
   companyId?: string;
   personId?: string;
   opportunityId?: string;
+  commercialLeadId?: string;
+  commercialPartnerId?: string;
 }) {
   const formRef = useRef<HTMLFormElement>(null);
   const [state, formAction] = useActionState<NoteFormState, FormData>(
@@ -34,6 +38,16 @@ export function NoteCreateForm({
       {personId && <input type="hidden" name="personId" value={personId} />}
       {opportunityId && (
         <input type="hidden" name="opportunityId" value={opportunityId} />
+      )}
+      {commercialLeadId && (
+        <input type="hidden" name="commercialLeadId" value={commercialLeadId} />
+      )}
+      {commercialPartnerId && (
+        <input
+          type="hidden"
+          name="commercialPartnerId"
+          value={commercialPartnerId}
+        />
       )}
       <Input name="title" placeholder="Título (opcional)" />
       <Textarea

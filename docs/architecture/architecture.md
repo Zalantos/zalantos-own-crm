@@ -113,6 +113,15 @@ GAP: archivos de configuración Railway/Vercel no presentes en el repo.
 El parser nunca infiere costo o utilidad interna. La mención “Presenta” es un
 presentador; un partner requiere evidencia explícita y confirmación manual.
 
+## Dominio comercial
+
+Servicios puros en `src/lib/commercial/` (reciben `TenantClient` o
+`TransactionClient` con `organizationId` explícito); las server actions, las
+tools del agente/MCP y `apply.ts` los reutilizan, así las reglas (compuertas,
+estados, dedupe, atribución) son únicas para UI, agente y Meeting
+Intelligence. Las escrituras del agente siguen la bitácora reversible
+(`CRMChangeProposal`/`CRMChangeItem`). Ver `docs/context/commercial-process.md`.
+
 ## Riesgos arquitectónicos
 
 - Crons y pipeline en el mismo proceso que la web (sin cola dedicada).
