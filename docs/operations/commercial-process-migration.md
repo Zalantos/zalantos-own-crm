@@ -45,8 +45,8 @@ oportunidades, `Opportunity.source`, `Company.source`, estado `archived`.
    `DATABASE_URL=<prod> npx tsx scripts/validate-commercial-process.ts > pre.txt`
 3. Ensayo en una copia: restaurar el backup en una base efímera y correr
    `prisma migrate deploy` + `validate` + `backfill --dry-run`.
-4. Configurar variables nuevas (`COMMERCIAL_EVENTS_SECRET`,
-   `RUMBO_CALLBACK_SECRET`, opcional `INTEGRATIONS_ORGANIZATION_SLUG`).
+4. No hay variables nuevas obligatorias: los canales nuevos reutilizan los
+   secretos de n8n ya configurados.
 5. Deploy (`npm run start` corre `prisma migrate deploy`).
 6. Validación posterior + revisar banderas:
    `npx tsx scripts/validate-commercial-process.ts`

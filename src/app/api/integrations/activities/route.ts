@@ -13,7 +13,8 @@ import {
 export async function POST(request: NextRequest) {
   const auth = await authorizeOrgIntegrationRequest(
     request.headers.get("authorization"),
-    "COMMERCIAL_EVENTS_SECRET",
+    // Mismos secretos que ya usa n8n: no requiere configuración adicional.
+    ["COMMERCIAL_EVENTS_SECRET", "INBOUND_LEADS_SECRET", "INTEGRATION_GATEWAY_SECRET"],
   );
   if (!auth.ok) {
     return NextResponse.json({ ok: false, error: auth.error }, { status: auth.status });

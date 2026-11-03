@@ -36,8 +36,8 @@ Nunca incluir secretos reales en este documento. Ver `.env.example`.
 | `OPENAI_API_KEY` | OpenAI | Todos | Sí (agente) | `sk-...` | Agente copiloto (`gpt-6-luna` por defecto) | `src/lib/agent/model.ts` |
 | `OBSERVABILITY_BASE_URL` | Observability | Todos | No | `https://observ.zalantos.com` | Base URL ingesta costos IA | `src/lib/observability/reporter.ts` |
 | `OBSERVABILITY_API_KEY` | Observability | Todos | No | api key | Auth `X-Api-Key` para ingesta | `src/lib/observability/reporter.ts` |
-| `COMMERCIAL_EVENTS_SECRET` | Integraciones | Prod | Cond. | random ≥16 chars | Bearer de `POST /api/integrations/activities` (interacciones email/WhatsApp vía n8n) | `src/app/api/integrations/activities/route.ts` |
-| `RUMBO_CALLBACK_SECRET` | Rumbo | Prod | Cond. | random ≥16 chars | Bearer del callback `POST /api/integrations/rumbo/handoff-status` | `src/app/api/integrations/rumbo/handoff-status/route.ts` |
+| `COMMERCIAL_EVENTS_SECRET` | Integraciones | Prod | No (opcional; por defecto acepta `INBOUND_LEADS_SECRET`/`INTEGRATION_GATEWAY_SECRET`) | random ≥16 chars | Bearer de `POST /api/integrations/activities` (interacciones email/WhatsApp vía n8n) | `src/app/api/integrations/activities/route.ts` |
+| `RUMBO_CALLBACK_SECRET` | Rumbo | Prod | No (opcional; por defecto acepta el secreto del gateway) | random ≥16 chars | Bearer del callback `POST /api/integrations/rumbo/handoff-status` | `src/app/api/integrations/rumbo/handoff-status/route.ts` |
 | `INTEGRATIONS_ORGANIZATION_SLUG` | Integraciones | Prod | No | `zalantos` | Org destino de integraciones entrantes (fallback `INBOUND_LEADS_ORGANIZATION_SLUG`) | `src/lib/integrations/inbound-auth.ts` |
 | `NODE_ENV` | Node | Todos | Auto | `production` | Entorno runtime | varios |
 

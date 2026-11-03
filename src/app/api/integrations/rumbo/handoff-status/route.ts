@@ -2,10 +2,9 @@ import { NextResponse, type NextRequest } from "next/server";
 import { z } from "zod";
 import { prismaSystem } from "@/lib/prisma";
 import { forOrg } from "@/lib/tenant";
-import {
-  isAuthorized,
-  isCronSecretConfigured,
-} from "@/lib/meeting-intelligence/internal-auth";
+import { isCronSecretConfigured } from "@/lib/meeting-intelligence/internal-auth";
+import { configuredSecrets, matchesAnySecret } from "@/lib/integrations/inbound-auth";
+import { decryptSecret } from "@/lib/crypto";
 import { appendTimelineEvent } from "@/lib/timeline";
 
 const payloadSchema = z.object({
@@ -20,13 +19,6 @@ const payloadSchema = z.object({
 // confirma o rechaza un traspaso. Es la ÚNICA vía para marcar "confirmed".
 // Idempotente: repetir la misma confirmación no cambia nada.
 export async function POST(request: NextRequest) {
-  const secret = process.env.RUMBO_CALLBACK_SECRET;
-  if (!isCronSecretConfigured(secret)) {
-    return NextResponse.json({ ok: false, error: "Server misconfigured" }, { status: 500 });
-  }
-  if (!isAuthorized(request.headers.get("authorization"), secret)) {
-    return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });
-  }
   let json: unknown;
   try {
     json = await request.json();
@@ -42,8 +34,29 @@ export async function POST(request: NextRequest) {
   // corre scopeado con forOrg.
   const located = await prismaSystem.rumboHandoff.findUnique({
     where: { id: data.handoff_id },
-    select: { organizationId: true },
+    select: { organizationId: true, organization: { select: { integrationGatewaySecret: true } } },
   });
+  // Acepta el secreto del gateway de la org (el mismo que firma el envío a
+  // Rumbo) o los secretos globales ya configurados: siempre activo, sin
+  // variables nuevas.
+  let orgSecret: string | null = null;
+  try {
+    orgSecret = located?.organization.integrationGatewaySecret
+      ? decryptSecret(located.organization.integrationGatewaySecret)
+      : null;
+  } catch {
+    orgSecret = null;
+  }
+  const secrets = [
+    ...(isCronSecretConfigured(orgSecret ?? undefined) ? [orgSecret as string] : []),
+    ...configuredSecrets(["RUMBO_CALLBACK_SECRET", "INTEGRATION_GATEWAY_SECRET"]),
+  ];
+  if (secrets.length === 0) {
+    return NextResponse.json({ ok: false, error: "Server misconfigured" }, { status: 500 });
+  }
+  if (!matchesAnySecret(request.headers.get("authorization"), secrets)) {
+    return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });
+  }
   if (!located) return NextResponse.json({ ok: false, error: "not_found" }, { status: 404 });
   const db = forOrg(located.organizationId);
   const handoff = await db.rumboHandoff.findUnique({

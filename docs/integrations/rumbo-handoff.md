@@ -53,8 +53,10 @@ envían tareas comerciales.
 
 ## Callback de confirmación
 
-`POST /api/integrations/rumbo/handoff-status` — `Authorization: Bearer
-<RUMBO_CALLBACK_SECRET>`.
+`POST /api/integrations/rumbo/handoff-status` — siempre activo, sin
+variables nuevas. `Authorization: Bearer <secreto>` acepta el secreto del
+gateway de la organización (el mismo que firma el envío), o
+`INTEGRATION_GATEWAY_SECRET`, o `RUMBO_CALLBACK_SECRET` si se define.
 
 ```json
 { "handoff_id": "…", "status": "confirmed", "rumbo_project_id": "R-123", "rumbo_project_url": "https://rumbo…/p/123" }
@@ -67,4 +69,4 @@ Respuestas: `200 {ok:true,status}`; repetir una confirmación devuelve
 ## Pendiente externo
 
 - Implementar en n8n/Rumbo la recepción de `rumbo.project_handoff` y el
-  callback. Configurar `RUMBO_CALLBACK_SECRET`.
+  callback (con el mismo secreto que n8n ya usa para el gateway).

@@ -369,14 +369,16 @@ describe("Escenario F — ganado y Rumbo", { skip }, () => {
     assert.equal(handoff.confirmedAt, null);
 
     const { NextRequest } = await import("next/server");
-    const callback = () =>
+    const callback = (secret = process.env.RUMBO_CALLBACK_SECRET) =>
       new NextRequest("http://localhost/api/integrations/rumbo/handoff-status", {
         method: "POST",
-        headers: { authorization: `Bearer ${process.env.RUMBO_CALLBACK_SECRET}`, "content-type": "application/json" },
+        headers: { authorization: `Bearer ${secret}`, "content-type": "application/json" },
         body: JSON.stringify({ handoff_id: handoff.id, status: "confirmed", rumbo_project_id: "R-1" }),
       });
     assert.equal((await m.rumboRoute.POST(callback())).status, 200);
-    const again = await (await m.rumboRoute.POST(callback())).json();
+    assert.equal((await m.rumboRoute.POST(callback("secreto-invalido-000000"))).status, 401);
+    // Sin variable dedicada: el secreto del gateway ya configurado también sirve.
+    const again = await (await m.rumboRoute.POST(callback(process.env.INTEGRATION_GATEWAY_SECRET))).json();
     assert.equal(again.unchanged, true);
     const confirmed = await ctx.db.rumboHandoff.findUniqueOrThrow({ where: { opportunityId: opportunity.id } });
     assert.equal(confirmed.status, "confirmed");

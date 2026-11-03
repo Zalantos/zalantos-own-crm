@@ -220,10 +220,10 @@ Documentados hoy:
 - Canal Telegram vía n8n (`/api/telegram/*`) — ver sección arriba.
 - Inbound Leads vía n8n (`/api/integrations/inbound-leads`) — ver sección arriba
   (acepta UTM, campaña y landing; ver `docs/integrations/inbound-leads.md`).
-- Interacciones externas (`/api/integrations/activities`, Bearer
-  `COMMERCIAL_EVENTS_SECRET`) — `docs/integrations/commercial-events.md`.
-- Confirmación de Rumbo (`/api/integrations/rumbo/handoff-status`, Bearer
-  `RUMBO_CALLBACK_SECRET`) — `docs/integrations/rumbo-handoff.md`.
+- Interacciones externas (`/api/integrations/activities`, Bearer con los
+  secretos de n8n ya configurados; siempre activo) — `docs/integrations/commercial-events.md`.
+- Confirmación de Rumbo (`/api/integrations/rumbo/handoff-status`, Bearer con el secreto
+  del gateway; siempre activo) — `docs/integrations/rumbo-handoff.md`.
 
 Saliente nuevo por el gateway: `notificationType=rumbo.project_handoff`
 (payload versionado, ver `docs/integrations/rumbo-handoff.md`).

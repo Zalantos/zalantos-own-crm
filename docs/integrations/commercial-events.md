@@ -7,9 +7,12 @@ hay credenciales en este repo; no se simula sincronización).
 
 ## Auth y tenant
 
-`Authorization: Bearer <COMMERCIAL_EVENTS_SECRET>` (secreto dedicado). La
-organización la fija el servidor con `INTEGRATIONS_ORGANIZATION_SLUG`
-(fallback `INBOUND_LEADS_ORGANIZATION_SLUG`); el caller no la elige.
+Siempre activo: no requiere variables nuevas. `Authorization: Bearer
+<secreto>` acepta cualquiera de los secretos ya configurados para n8n
+(`INBOUND_LEADS_SECRET`, `INTEGRATION_GATEWAY_SECRET`) o, si se define,
+`COMMERCIAL_EVENTS_SECRET`. La organización la fija el servidor con
+`INBOUND_LEADS_ORGANIZATION_SLUG` (o `INTEGRATIONS_ORGANIZATION_SLUG` si se
+define); el caller no la elige.
 
 ## Payload
 

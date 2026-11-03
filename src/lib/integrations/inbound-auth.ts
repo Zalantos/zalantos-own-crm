@@ -8,17 +8,29 @@ export type IntegrationAuthResult =
   | { ok: true; organizationId: string }
   | { ok: false; status: 401 | 500; error: string };
 
-// Auth genérica para canales entrantes n8n → CRM con secreto dedicado por
-// canal. La organización la fija el servidor (env por slug), nunca el caller.
+// Secretos aceptados por un canal entrante: el dedicado (si existe) y los ya
+// configurados para n8n, así el canal funciona siempre sin variables nuevas.
+export function configuredSecrets(envNames: string[]): string[] {
+  return envNames
+    .map((name) => process.env[name])
+    .filter((secret): secret is string => isCronSecretConfigured(secret));
+}
+
+export function matchesAnySecret(authHeader: string | null, secrets: string[]) {
+  return secrets.some((secret) => isAuthorized(authHeader, secret));
+}
+
+// Auth genérica para canales entrantes n8n → CRM. La organización la fija el
+// servidor (env por slug), nunca el caller.
 export async function authorizeOrgIntegrationRequest(
   authHeader: string | null,
-  secretEnv: string,
+  secretEnvNames: string[],
 ): Promise<IntegrationAuthResult> {
-  const secret = process.env[secretEnv];
-  if (!isCronSecretConfigured(secret)) {
+  const secrets = configuredSecrets(secretEnvNames);
+  if (secrets.length === 0) {
     return { ok: false, status: 500, error: "Server misconfigured" };
   }
-  if (!isAuthorized(authHeader, secret)) {
+  if (!matchesAnySecret(authHeader, secrets)) {
     return { ok: false, status: 401, error: "Unauthorized" };
   }
   const slug =
