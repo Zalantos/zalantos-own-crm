@@ -13,7 +13,8 @@ copiloto con herramientas de lectura/escritura del CRM, y canal Telegram vía n8
 ```bash
 npm run dev                    # Desarrollo
 npm run build                  # Build producción
-npm run start                  # Migraciones + start
+npm run start                  # Start (sin migraciones)
+npm run prisma:migrate:status  # Estado de migraciones
 npm run lint                   # ESLint
 npm run format                 # Prettier
 npm run prisma:migrate:dev     # Migración en dev

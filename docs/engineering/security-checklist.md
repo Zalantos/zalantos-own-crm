@@ -79,7 +79,7 @@
 
 ## Checklist de deploy
 
-- [ ] Migraciones aplicadas (`prisma migrate deploy` en `start`).
+- [ ] Migraciones aplicadas (`npm run prisma:migrate:deploy`, paso explícito; `start` ya no migra).
 - [ ] Verificar login y una operación CRM post-deploy.
 - [ ] Verificar cron `process-evidence` responde 401 sin secret.
 - [ ] GAP: backup automático de Postgres documentado externamente.

@@ -14,6 +14,7 @@ import {
   type AttributionInput,
 } from "@/lib/commercial/attribution";
 import { recordStageTransition, recordStatusChange } from "@/lib/commercial/history";
+import { checkStageTransition } from "@/lib/opportunities/stage-gates";
 import type { CommercialContext, ServiceResult } from "@/lib/commercial/opportunity-service";
 
 type Tx = Prisma.TransactionClient;
@@ -647,6 +648,17 @@ export async function convertLeadToOpportunityTx(
     select: { id: true, key: true, label: true },
   });
   if (!stage) throw new Error("La organización no tiene etapas activas.");
+  // Crear directamente en una etapa avanzada exige las mismas compuertas que
+  // avanzar desde Discovery (una oportunidad nueva no tiene propuesta).
+  const gate = checkStageTransition(null, stage.key, {
+    status: "open",
+    mainPain: input.mainPain ?? null,
+    proposalDecisionAt: null,
+    proposalSentAt: null,
+    hasSentOffer: false,
+    hasInteractionAfterProposal: false,
+  });
+  if (!gate.ok) throw new Error(gate.error);
 
   const opportunity = await tx.opportunity.create({
     data: {

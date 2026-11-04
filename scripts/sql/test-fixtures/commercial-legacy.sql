@@ -86,4 +86,7 @@ INSERT INTO inbound_leads (id, "organizationId", source, "externalId", "firstNam
 
 INSERT INTO workflows (id, "organizationId", name, "triggerEntity", "triggerEvent", "conditionsJson", "actionsJson", "updatedAt") VALUES
   ('wf_retired', 'org_a', 'Al ofrecer Sprint 0', 'opportunity', 'stage_changed', '[{"field":"stage","op":"changed_to","value":"sprint_0_ofrecido"}]', '[{"type":"create_activity","title":"Preparar Sprint 0","activityType":"task"}]', NOW()),
-  ('wf_active', 'org_a', 'Al negociar', 'opportunity', 'stage_changed', '[{"field":"stage","op":"changed_to","value":"a_neg"}]', '[{"type":"create_activity","title":"Revisar contrato","activityType":"task"}]', NOW());
+  ('wf_active', 'org_a', 'Al negociar', 'opportunity', 'stage_changed', '[{"field":"stage","op":"changed_to","value":"a_neg"}]', '[{"type":"create_activity","title":"Revisar contrato","activityType":"task"}]', NOW()),
+  ('wf_won', 'org_a', 'Al ganar', 'opportunity', 'stage_changed', '[{"field":"stage","op":"changed_to","value":"ganado"}]', '[{"type":"create_activity","title":"Kickoff","activityType":"task"}]', NOW()),
+  ('wf_frozen', 'org_a', 'Al congelar', 'opportunity', 'stage_changed', '[{"field":"stage","op":"eq","value":"a_frozen"}]', '[{"type":"create_activity","title":"Agendar reactivación","activityType":"task"}]', NOW()),
+  ('wf_mixed', 'org_a', 'Ganado urgente', 'opportunity', 'stage_changed', '[{"field":"stage","op":"changed_to","value":"a_won"},{"field":"urgency","op":"eq","value":"high"}]', '[{"type":"create_activity","title":"Avisar","activityType":"task"}]', NOW());

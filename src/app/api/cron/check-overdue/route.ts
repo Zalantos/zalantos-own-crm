@@ -36,12 +36,22 @@ async function runForOrg(orgId: string) {
 
   let processed = 0;
   for (const opportunity of overdueOpportunities) {
+    // Un recordatorio por vencimiento: además del tipo clásico, cuenta
+    // cualquier tarea abierta creada por un workflow desde que venció el
+    // próximo paso (el tipo de actividad lo define cada workflow).
     const existingFollowUp = await db.activity.findFirst({
       where: {
         opportunityId: opportunity.id,
-        type: "overdue_follow_up",
         status: { in: ACTIVITY_OPEN_STATUSES },
+        OR: [
+          { type: "overdue_follow_up" },
+          {
+            createdVia: "workflow",
+            createdAt: { gte: opportunity.nextStepDueDate ?? new Date(0) },
+          },
+        ],
       },
+      select: { id: true },
     });
     if (existingFollowUp) continue;
 

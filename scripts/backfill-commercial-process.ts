@@ -167,13 +167,32 @@ async function apply(organizationId: string, input: string) {
           counts.skipped += 1;
           return;
         }
+        // Mismo criterio de unicidad que la app: un solo prospecto/lead
+        // activo por persona (o por empresa sin persona). Si ya existe, no
+        // se duplica: queda para decisión manual.
+        const personId = opportunity.decisionMakerId ?? opportunity.sponsorId;
+        const activeLead = await tx.commercialLead.findFirst({
+          where: {
+            organizationId,
+            status: { in: ["prospect", "contacted", "lead"] },
+            ...(personId ? { personId } : { companyId: opportunity.companyId, personId: null }),
+          },
+          select: { id: true },
+        });
+        if (activeLead) {
+          console.warn(
+            `[commercial-backfill] ${opportunity.id}: ya existe el lead activo ${activeLead.id} para el mismo contacto; se omite (revisar a mano).`,
+          );
+          counts.skipped += 1;
+          return;
+        }
         const status = opportunity.legacyStageKey === "primer_contacto" ? "contacted" : "prospect";
         const lead = await tx.commercialLead.create({
           data: {
             organizationId,
             title: opportunity.name,
             companyId: opportunity.companyId,
-            personId: opportunity.decisionMakerId ?? opportunity.sponsorId,
+            personId,
             status,
             ownerId: opportunity.ownerId,
             description: opportunity.mainPain,

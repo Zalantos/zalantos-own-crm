@@ -11,6 +11,7 @@ import {
   rumboHandoffSchema,
 } from "@/lib/zod/opportunity";
 import { boardStages, getOrgStages } from "@/lib/pipeline/stages";
+import { checkStageTransition } from "@/lib/opportunities/stage-gates";
 import {
   deleteCustomFieldValues,
   upsertCustomFieldValues,
@@ -110,6 +111,16 @@ export async function createOpportunity(
   const stages = boardStages(await getOrgStages(db));
   const stage = stageId ? stages.find((candidate) => candidate.id === stageId) : stages[0];
   if (!stage) return { error: "Etapa inválida." };
+  // Crear en una etapa avanzada exige las compuertas de avance desde Discovery.
+  const gate = checkStageTransition(null, stage.key, {
+    status: "open",
+    mainPain: data.mainPain ?? null,
+    proposalDecisionAt: null,
+    proposalSentAt: null,
+    hasSentOffer: false,
+    hasInteractionAfterProposal: false,
+  });
+  if (!gate.ok) return { error: gate.error, fieldErrors: { stageId: [gate.error] } };
 
   let opportunityId: string;
   try {

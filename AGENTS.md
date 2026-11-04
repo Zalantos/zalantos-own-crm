@@ -110,7 +110,7 @@ Leer documentos adicionales solo cuando la tarea lo requiera:
 
 ### Deploy
 
-- `npm run start` ejecuta migraciones antes de arrancar.
+- `npm run start` NO ejecuta migraciones: en producción se aplican con `npm run prisma:migrate:deploy` como paso explícito (ver `docs/operations/deployment.md`).
 - Crons protegidos con `CRON_SECRET` en header `Authorization`.
 - GAP: configuración Railway no versionada en el repo.
 

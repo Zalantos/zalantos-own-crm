@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+- Preparación de despliegue del rediseño comercial: `npm run start` ya no
+  aplica migraciones (paso explícito `npm run prisma:migrate:deploy`);
+  migración `commercial_workflow_compat` (workflows "etapa = Ganado/Perdido/
+  Congelado" → `status_changed`); compuertas de avance también al crear una
+  oportunidad en una etapa avanzada (UI, lead, agente/MI); los workflows de
+  etapa disparados por IA reciben id + key; el cron de vencidos no repite
+  recordatorios de workflow; el backfill controlado no duplica leads activos.
+
 - Rediseño del proceso comercial (HU-CRM-02): Prospección
   (`CommercialLead`: prospecto → contactado → lead), pipeline de 4 etapas
   operativas con compuertas de avance y estados `open/paused/won/lost`,

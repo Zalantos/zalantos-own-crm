@@ -37,15 +37,24 @@ npm run build
 
 ```bash
 npm run start
-# Equivale a: prisma migrate deploy && next start
+# Equivale a: next start (NO aplica migraciones)
 ```
 
-Las migraciones se aplican automáticamente al arrancar.
+Desde HU-CRM-02 las migraciones **no** corren al arrancar: un reinicio o un
+redeploy nunca modifica el schema por sorpresa, y una migración de datos
+fallida no deja la app en crash-loop.
 
 ## Migraciones
 
 - Desarrollo: `npm run prisma:migrate:dev`
-- Producción: incluido en `npm run start` vía `prisma migrate deploy`
+- Producción: paso explícito, **antes** de desplegar el código que las
+  necesita y después de un backup:
+  `npm run prisma:migrate:status` → `npm run prisma:migrate:deploy`
+  (con `DATABASE_URL` de producción, p. ej. `railway run npm run prisma:migrate:deploy`).
+  Alternativa: configurar `npm run prisma:migrate:deploy` como *Pre-deploy
+  Command* del servicio en Railway, sabiendo que entonces vuelve a ser
+  automático.
+- Setup RLS (una vez por entorno): `scripts/sql/setup-roles.sql`
 - Setup RLS (una vez por entorno): `scripts/sql/setup-roles.sql`
 
 ## Variables de entorno requeridas (producción mínimo)

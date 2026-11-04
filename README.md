@@ -61,7 +61,8 @@ psql "$DATABASE_URL" -v crm_app_password='<password>' -f scripts/sql/setup-roles
 |--------|-------------|
 | `npm run dev` | Servidor de desarrollo |
 | `npm run build` | `prisma generate` + build de producción |
-| `npm run start` | Migraciones + servidor de producción |
+| `npm run start` | Servidor de producción (sin migraciones) |
+| `npm run prisma:migrate:deploy` | Aplica migraciones (paso explícito en producción) |
 | `npm run lint` | ESLint |
 | `npm run format` | Prettier |
 | `npm run prisma:migrate:dev` | Migraciones en desarrollo |

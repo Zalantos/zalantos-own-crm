@@ -17,6 +17,7 @@ import {
 } from "@/lib/pipeline/stages";
 import { applyStageChangeTx } from "@/lib/commercial/opportunity-service";
 import { recordStageTransition } from "@/lib/commercial/history";
+import { checkStageTransition } from "@/lib/opportunities/stage-gates";
 import {
   applyCommercialItem,
   commercialSnapshot,
@@ -746,6 +747,16 @@ async function applyItem(
       if (requestedStatus !== "open") {
         throw new Error("Una oportunidad nueva nace abierta; los estados pausada/ganada/perdida se registran con set_opportunity_status.");
       }
+      // Mismas compuertas que la UI al crear en una etapa avanzada.
+      const gate = checkStageTransition(null, stage.key, {
+        status: "open",
+        mainPain: optionalString(after.mainPain) ?? null,
+        proposalDecisionAt: null,
+        proposalSentAt: null,
+        hasSentOffer: false,
+        hasInteractionAfterProposal: false,
+      });
+      if (!gate.ok) throw new Error(gate.error);
       const decisionMakerId = optionalString(after.decisionMakerId);
       const sponsorId = optionalString(after.sponsorId);
       if (decisionMakerId)
@@ -1680,15 +1691,21 @@ export async function applyProposal(
   });
 
   // Fire existing workflow engine for each applied stage change. Los items
-  // guardan keys; el motor acepta id o key en las condiciones.
+  // guardan keys; el evento lleva id + key (como la UI) para que las
+  // condiciones guardadas con el id de la etapa también coincidan.
+  const stageIdByKey = stageChanges.length
+    ? new Map((await getAllOrgStages(db)).map((stage) => [stage.key, stage.id]))
+    : new Map<string, string>();
+  const stageIdOf = (key: unknown) =>
+    typeof key === "string" ? (stageIdByKey.get(key) ?? key) : key;
   for (const change of stageChanges) {
     await evaluateWorkflows(db, organizationId, {
       entityType: "opportunity",
       entityId: change.opportunityId,
       eventName: "stage_changed",
       actorId,
-      before: { stage: change.from, stageKey: change.from },
-      after: { stage: change.to, stageKey: change.to },
+      before: { stage: stageIdOf(change.from), stageKey: change.from },
+      after: { stage: stageIdOf(change.to), stageKey: change.to },
       changeProposalId: proposalId,
       causedByItemId: change.itemId,
     });

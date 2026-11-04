@@ -27,8 +27,8 @@ function days(stat: DurationStat) {
 
 function Metric({ label, value, hint }: { label: string; value: React.ReactNode; hint?: string }) {
   return (
-    <div className="rounded-md border p-3">
-      <p className="text-muted-foreground text-xs">{label}</p>
+    <div className="min-w-0 rounded-md border p-2 sm:p-3">
+      <p className="text-muted-foreground text-xs break-words">{label}</p>
       <p className="text-xl font-semibold">{value}</p>
       {hint && <p className="text-muted-foreground text-xs">{hint}</p>}
     </div>

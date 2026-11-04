@@ -54,8 +54,9 @@ export default async function OpportunitiesKanbanPage({
       orderBy: [{ nextStepDueDate: { sort: "asc", nulls: "first" } }, { createdAt: "desc" }],
     }),
     db.opportunity.count({ where: { status: "paused" } }),
+    // Mismo criterio que /opportunities/list?review=1 (todo salvo archivadas).
     db.opportunity.count({
-      where: { status: { in: ["open", "paused"] }, migrationReview: { not: null } },
+      where: { status: { not: "archived" }, migrationReview: { not: null } },
     }),
   ]);
 

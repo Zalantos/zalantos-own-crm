@@ -5,15 +5,14 @@ import { Client } from "pg";
 
 // Escenario H (HU-CRM-02): aplica las migraciones previas al rediseño sobre
 // una base efímera, carga datos legacy representativos, aplica la migración
-// estructural + backfill y valida el resultado. Re-ejecuta el backfill para
-// comprobar idempotencia. Borra y recrea el schema `public`: SOLO acepta
+// estructural + backfill (+ compatibilidad de workflows) y valida el
+// resultado. Re-ejecuta las migraciones de datos para comprobar idempotencia. Borra y recrea el schema `public`: SOLO acepta
 // bases locales.
 //
 // Uso: MIGRATION_TEST_DATABASE_URL=postgresql://localhost/crm_migration_test \
 //        npx tsx scripts/test-commercial-migration.ts
 
 const FIRST_NEW_MIGRATION = "20261103120000_commercial_process_structure";
-const BACKFILL_MIGRATION = "20261103120100_commercial_process_backfill";
 const MIGRATIONS_DIR = path.join(process.cwd(), "prisma", "migrations");
 const FIXTURE = path.join(
   process.cwd(),
@@ -221,11 +220,26 @@ async function main() {
     assert.equal(byId.get("wf_retired")?.isActive, true);
     assert.match(byId.get("wf_retired")?.configWarning ?? "", /sprint_0_ofrecido/);
     assert.equal(byId.get("wf_active")?.configWarning, null);
+    // Equivalencia exacta etapa terminal -> estado: se reescribe.
+    const compat = await client.query<{ id: string; triggerEvent: string; conditions: unknown }>(
+      `SELECT id, "triggerEvent", "conditionsJson" AS conditions FROM workflows WHERE id IN ('wf_won','wf_frozen','wf_mixed')`,
+    );
+    const compatById = new Map(compat.rows.map((row) => [row.id, row]));
+    assert.equal(compatById.get("wf_won")?.triggerEvent, "status_changed");
+    assert.deepEqual(compatById.get("wf_won")?.conditions, [{ field: "status", op: "changed_to", value: "won" }]);
+    assert.equal(compatById.get("wf_frozen")?.triggerEvent, "status_changed");
+    assert.deepEqual(compatById.get("wf_frozen")?.conditions, [{ field: "status", op: "eq", value: "paused" }]);
+    assert.match(byId.get("wf_won")?.configWarning ?? "", /Migrado automáticamente/);
+    // Condición mixta: no hay equivalencia exacta, queda con advertencia.
+    assert.equal(compatById.get("wf_mixed")?.triggerEvent, "stage_changed");
+    assert.match(byId.get("wf_mixed")?.configWarning ?? "", /ganado/);
 
     // Idempotencia: re-ejecutar el backfill no cambia nada.
-    await client.query("BEGIN");
-    await client.query(migrationSql(BACKFILL_MIGRATION));
-    await client.query("COMMIT");
+    for (const name of redesign.filter((migration) => migration !== FIRST_NEW_MIGRATION)) {
+      await client.query("BEGIN");
+      await client.query(migrationSql(name));
+      await client.query("COMMIT");
+    }
     const again = await snapshot(client);
     assert.deepEqual(again.counts, after.counts);
     assert.deepEqual([...again.opportunities.values()], [...after.opportunities.values()]);

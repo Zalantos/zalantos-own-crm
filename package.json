@@ -8,7 +8,7 @@
   "scripts": {
     "dev": "next dev",
     "build": "prisma generate && next build",
-    "start": "prisma migrate deploy && next start",
+    "start": "next start",
     "lint": "eslint",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
@@ -26,6 +26,7 @@
     "prisma:generate": "prisma generate",
     "prisma:migrate:dev": "prisma migrate dev",
     "prisma:migrate:deploy": "prisma migrate deploy",
+    "prisma:migrate:status": "prisma migrate status",
     "prisma:studio": "prisma studio",
     "prisma:seed": "prisma db seed",
     "seed:check": "tsx scripts/check-seed-data.ts",
