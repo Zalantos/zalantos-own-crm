@@ -14,6 +14,8 @@ import { resolveAgentModel } from "@/lib/agent/model";
 import { resolvePageContext, type PageContext } from "@/lib/agent/context";
 import { buildAgentSystemPrompt } from "@/lib/agent/system-prompt";
 import { buildAgentTools } from "@/lib/agent/executor";
+import { isWikiEnabledForOrg } from "@/lib/wiki-mcp/authorization";
+import { redactWikiToolParts } from "@/lib/wiki-mcp/redaction";
 import {
   CRM_OBSERVABILITY_SERVICE_NAME,
   CRM_OBSERVABILITY_SERVICE_SLUG,
@@ -98,7 +100,15 @@ export async function POST(req: Request) {
     };
   });
 
-  const recentMessages = messages.slice(-agentConfig.maxContextMessages);
+  // El navegador reenvía el historial con el texto de la Wiki de turnos pasados.
+  // Se quita para que un documento hostil no siga a la vista del modelo en un turno
+  // nuevo, donde guardCriticalWikiActions ya no aplica: si hace falta, se relee.
+  const recentMessages = messages
+    .slice(-agentConfig.maxContextMessages)
+    .map((message) => ({
+      ...message,
+      parts: redactWikiToolParts(message.parts),
+    }));
   const startedAt = new Date();
   const userMessageId = userMessage?.id ?? generateId();
 
@@ -108,6 +118,7 @@ export async function POST(req: Request) {
       orgName: org.brandName ?? org.name,
       pageContext,
       attachments: promptAttachments,
+      wikiEnabled: isWikiEnabledForOrg(org.id),
     }),
     messages: await convertToModelMessages(recentMessages),
     tools: buildAgentTools({
@@ -181,6 +192,9 @@ export async function POST(req: Request) {
       onEnd: async ({ responseMessage }) => {
         try {
           const messageId = responseMessage.id || generateId();
+          const parts = redactWikiToolParts(
+            responseMessage.parts,
+          ) as unknown as Prisma.InputJsonValue;
           await db.agentChatMessage.upsert({
             where: { id: messageId },
             create: {
@@ -188,11 +202,9 @@ export async function POST(req: Request) {
               organizationId: org.id,
               threadId,
               role: "assistant",
-              parts: responseMessage.parts as unknown as Prisma.InputJsonValue,
+              parts,
             },
-            update: {
-              parts: responseMessage.parts as unknown as Prisma.InputJsonValue,
-            },
+            update: { parts },
           });
         } catch (error) {
           console.error("[agent] no se pudo persistir la respuesta", error);

@@ -14,6 +14,10 @@ import {
   type AttributionInput,
 } from "@/lib/commercial/attribution";
 import { recordStageTransition, recordStatusChange } from "@/lib/commercial/history";
+import {
+  copyLeadActorsToOpportunityTx,
+  linkAttributionReferrersTx,
+} from "@/lib/commercial/actor-service";
 import { checkStageTransition } from "@/lib/opportunities/stage-gates";
 import type { CommercialContext, ServiceResult } from "@/lib/commercial/opportunity-service";
 
@@ -408,6 +412,12 @@ export async function createCommercialLeadTx(
     actorId: ctx.actorId,
     source: ctx.createdVia,
   });
+  await linkAttributionReferrersTx(
+    tx,
+    { organizationId, userId: ctx.actorId, source: ctx.createdVia },
+    attributionId,
+    { type: "commercial_lead", id: lead.id },
+  );
 
   let contactActivityId: string | null = null;
   if (input.contactAttempt) {
@@ -691,6 +701,19 @@ export async function convertLeadToOpportunityTx(
     actorId: ctx.actorId,
     source: "lead_conversion",
   });
+  // Los actores del lead siguen participando en el negocio.
+  await copyLeadActorsToOpportunityTx(
+    tx,
+    { organizationId, userId: ctx.actorId, source: "lead_conversion" },
+    lead.id,
+    opportunity.id,
+  );
+  await linkAttributionReferrersTx(
+    tx,
+    { organizationId, userId: ctx.actorId, source: ctx.createdVia },
+    lead.firstTouchAttributionId,
+    { type: "opportunity", id: opportunity.id },
+  );
   if (lead.status !== "converted") {
     const now = new Date();
     await tx.commercialLead.update({

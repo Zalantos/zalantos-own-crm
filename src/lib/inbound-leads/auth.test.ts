@@ -3,7 +3,7 @@ import { describe, it } from "node:test";
 import {
   isAuthorized,
   isCronSecretConfigured,
-} from "@/lib/meeting-intelligence/internal-auth";
+} from "@/lib/internal-auth";
 
 // authorizeInboundLeadRequest (./auth.ts) delega el chequeo del secret en
 // estos dos helpers (mismos que Telegram/crons); se testean directo para no

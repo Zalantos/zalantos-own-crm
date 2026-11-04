@@ -101,3 +101,19 @@ reubicar oportunidades.
   `scripts/sql/test-fixtures/commercial-legacy.sql`, migra, valida y
   re-ejecuta el backfill (idempotencia). **Borra el schema `public`**: solo
   localhost.
+
+## Simplificación comercial (actores, alertas, retiro de Meeting Intelligence)
+
+Pasos al desplegar:
+
+1. Respaldar la base y ejecutar `npm run prisma:migrate:deploy`. Aplica
+   `commercial_actors_and_alerts` y `commercial_actors_alerts_backfill`; ambas son
+   aditivas e idempotentes.
+2. Quitar del scheduler el cron `/api/cron/process-evidence`, que ya no existe.
+3. Programar `/api/cron/commercial-follow-ups` cada hora.
+4. Revisar las reglas en `/admin/settings/alerts` **antes** de la primera corrida:
+   detecta todos los registros que ya cumplen una condición y, con gateway
+   configurado, envía un email por alerta. Para evitarlo, desactiva reglas o ajusta
+   umbrales primero.
+
+Rollback: las tablas nuevas pueden quedar sin uso; no se eliminó ningún dato.

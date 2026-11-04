@@ -5,7 +5,7 @@ import {
 import { ContextSourcesPanel } from "@/components/shared/entity-context/context-sources-panel";
 import { ContextUploader } from "@/components/shared/entity-context/context-uploader";
 import { EnrichmentProposalReview } from "@/components/shared/entity-context/enrichment-proposal-review";
-import type { ReviewProposal } from "@/components/shared/meeting/change-proposal-review";
+import type { ReviewProposal } from "@/components/shared/entity-context/review-types";
 import type { ContextEntityType } from "@/lib/entity-context/types";
 import type { TenantClient } from "@/lib/tenant";
 import type { Prisma } from "@prisma/client";

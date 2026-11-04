@@ -1,0 +1,49 @@
+// Centralized, lazily-validated access to AI and storage env vars.
+// Reads happen at call time (not module load) so the app still boots when a
+// feature isn't configured yet — the failure surfaces where the feature runs.
+
+function required(name: string): string {
+  const value = process.env[name];
+  if (!value || value.trim() === "") {
+    throw new Error(`Falta la variable de entorno ${name}`);
+  }
+  return value;
+}
+
+export const groqConfig = {
+  get apiKey() {
+    return required("GROQ_API_KEY");
+  },
+  get reasoningModel() {
+    // Groq model id includes a slash (openai/gpt-oss-120b). Callers that build
+    // AI SDK specs must prefix with "groq/" → "groq/openai/gpt-oss-120b".
+    return process.env.GROQ_REASONING_MODEL || "openai/gpt-oss-120b";
+  },
+};
+
+export const r2Config = {
+  get accountId() {
+    return required("R2_ACCOUNT_ID");
+  },
+  get accessKeyId() {
+    return required("R2_ACCESS_KEY_ID");
+  },
+  get secretAccessKey() {
+    return required("R2_SECRET_ACCESS_KEY");
+  },
+  get bucket() {
+    return required("R2_BUCKET");
+  },
+  get endpoint() {
+    return `https://${required("R2_ACCOUNT_ID")}.r2.cloudflarestorage.com`;
+  },
+};
+
+// Public base URL of the app.
+export function appUrl(): string {
+  return (
+    process.env.APP_URL ||
+    process.env.AUTH_URL ||
+    "http://localhost:3000"
+  ).replace(/\/$/, "");
+}

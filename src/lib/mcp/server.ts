@@ -30,7 +30,6 @@ const READ_TOOL_NAMES = [
   "list_team_members",
   "list_notes",
   "list_activities",
-  "read_meeting_transcript",
   "list_pending_proposals",
   "read_attachment",
   "read_context_source",
@@ -40,6 +39,8 @@ const READ_TOOL_NAMES = [
   "list_partners",
   "get_commercial_funnel",
   "suggest_next_actions",
+  "list_actors",
+  "list_commercial_alerts",
 ] as const;
 
 const DIRECT_WRITE_TOOL_NAMES = [
@@ -64,6 +65,9 @@ const DIRECT_WRITE_TOOL_NAMES = [
   "set_opportunity_status",
   "set_next_action",
   "log_interaction",
+  "link_actor",
+  "update_actor",
+  "unlink_actor",
 ] as const;
 
 const CHANGE_TOOL_NAMES = [

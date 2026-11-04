@@ -16,7 +16,7 @@ import type { ContextEntityType } from "@/lib/entity-context/types";
 import type {
   ReviewItem,
   ReviewProposal,
-} from "@/components/shared/meeting/change-proposal-review";
+} from "@/components/shared/entity-context/review-types";
 import { LinkifiedText } from "@/components/shared/linkified-text";
 
 const TYPE_LABELS: Record<string, string> = {

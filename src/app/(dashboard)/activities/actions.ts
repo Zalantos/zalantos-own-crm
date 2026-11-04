@@ -1,7 +1,9 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { requireOrgContext } from "@/lib/tenant";
+import { after } from "next/server";
+import { requireOrgContext, type TenantClient } from "@/lib/tenant";
+import { refreshRecordAlerts } from "@/lib/commercial/alert-service";
 import {
   activityCreateSchema,
   activityUpdateSchema,
@@ -21,6 +23,20 @@ import {
 } from "@/lib/activity-status";
 
 const parentPath = recordParentPath;
+
+// Una interacción nueva puede resolver una alerta de seguimiento.
+async function refreshAlertsAfterInteraction(
+  db: TenantClient,
+  organizationId: string,
+  input: { opportunityId?: string; commercialLeadId?: string },
+) {
+  if (input.opportunityId) {
+    await refreshRecordAlerts(db, organizationId, { entity: "opportunity", id: input.opportunityId });
+  }
+  if (input.commercialLeadId) {
+    await refreshRecordAlerts(db, organizationId, { entity: "commercial_lead", id: input.commercialLeadId });
+  }
+}
 
 export type ActivityFormState = { error: string } | undefined;
 
@@ -256,6 +272,13 @@ export async function logInteraction(
   const input = parsed.data;
   const links = await resolveRecordLinks(db, input);
   if (!links.ok) return { error: links.error };
+  const participantIds = formData.getAll("participantIds").map(String);
+  const participants = participantIds.length
+    ? await db.person.findMany({ where: { id: { in: participantIds } }, select: { id: true } })
+    : [];
+  if (participants.length !== participantIds.length) {
+    return { error: "Algún participante ya no existe." };
+  }
 
   try {
     await withOrgTransaction(org.id, async (tx) => {
@@ -267,7 +290,7 @@ export async function logInteraction(
           opportunityId: input.opportunityId ?? null,
           commercialLeadId: input.commercialLeadId ?? null,
           commercialPartnerId: input.commercialPartnerId ?? null,
-          personIds: input.personId ? [input.personId] : [],
+          personIds: input.personId ? [input.personId, ...participantIds] : participantIds,
           type: input.type,
           title: input.title,
           occurredAt: input.occurredAt,
@@ -295,6 +318,7 @@ export async function logInteraction(
   } catch (error) {
     return { error: error instanceof Error ? error.message : "No se pudo registrar la interacción." };
   }
+  after(() => refreshAlertsAfterInteraction(db, org.id, input));
   revalidatePath(parentPath(input));
   revalidatePath("/activities");
   revalidatePath("/prospecting");

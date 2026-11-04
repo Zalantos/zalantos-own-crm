@@ -5,7 +5,7 @@ import { forOrg, type OrgSettings, type TenantClient } from "@/lib/tenant";
 import {
   isAuthorized,
   isCronSecretConfigured,
-} from "@/lib/meeting-intelligence/internal-auth";
+} from "@/lib/internal-auth";
 import { renderNotificationEmail } from "@/lib/integrations/email-template";
 import { dispatchIntegrationEvent } from "@/lib/integrations/gateway";
 import {

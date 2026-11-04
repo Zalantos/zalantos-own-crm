@@ -3,7 +3,7 @@ import { defineAgentTool } from "@/lib/agent/tool-definition";
 import {
   applyProposal,
   getProposalContext,
-} from "@/lib/meeting-intelligence/apply";
+} from "@/lib/ai-changes/apply";
 import type { TenantClient } from "@/lib/tenant";
 import { appendTimelineEvent } from "@/lib/timeline";
 import { readMutationResult } from "@/lib/agent/proposals";

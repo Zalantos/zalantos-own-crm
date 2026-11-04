@@ -1,5 +1,5 @@
 import { generateText, type LanguageModelUsage, type ModelMessage } from "ai";
-import { groqConfig } from "@/lib/meeting-intelligence/config";
+import { groqConfig } from "@/lib/runtime-config";
 import { resolveModel } from "@/lib/agent/model";
 import {
   entityContextAnalysisSchema,

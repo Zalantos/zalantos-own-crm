@@ -27,7 +27,7 @@ export type TaskActivity = Activity & {
 function parentLabel(task: TaskActivity) {
   if (task.opportunity) return task.opportunity.name;
   if (task.commercialLead) return `Prospecto: ${task.commercialLead.title}`;
-  if (task.commercialPartner) return `Alianza: ${task.commercialPartner.displayName}`;
+  if (task.commercialPartner) return `Partner: ${task.commercialPartner.displayName}`;
   if (task.company) return task.company.name;
   if (task.person) return `${task.person.firstName} ${task.person.lastName}`;
   return null;

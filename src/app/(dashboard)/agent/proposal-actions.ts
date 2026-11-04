@@ -9,7 +9,7 @@ import {
   getProposalContext,
   revertItem,
   revertProposal,
-} from "@/lib/meeting-intelligence/apply";
+} from "@/lib/ai-changes/apply";
 import {
   dispatchIntegrationEvent,
   type OrgGatewayConfig,

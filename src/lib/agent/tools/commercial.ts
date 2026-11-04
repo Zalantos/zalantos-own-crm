@@ -13,7 +13,19 @@ import {
 } from "@/lib/commercial/leads";
 import { SOURCE_CHANNELS, sourceChannelLabel } from "@/lib/commercial/attribution";
 import { NEXT_STEP_CHANNELS } from "@/lib/commercial/next-action";
-import { allianceStageLabel, ALLIANCE_STAGES } from "@/lib/commercial/partners";
+import { partnerTypeLabel } from "@/lib/commercial/partners";
+import {
+  ACTOR_ROLES,
+  actorKey,
+  actorRoleLabel,
+  type ActorTarget,
+} from "@/lib/commercial/actors";
+import { listRecordActors, loadActorParticipation } from "@/lib/commercial/actor-service";
+import {
+  alertViewSelect,
+  loadRecordAlerts,
+  mergeAlertSuggestions,
+} from "@/lib/commercial/alert-service";
 import { loadFunnel } from "@/lib/commercial/funnel";
 import {
   leadFollowUpSuggestions,
@@ -37,12 +49,36 @@ function iso(date: Date | null | undefined) {
   return date ? date.toISOString().slice(0, 10) : null;
 }
 
-// Prospección, alianzas, estados de oportunidad, próxima acción y funnel.
+// Prospección, actores, alertas, estados de oportunidad, próxima acción y funnel.
 // Toda escritura pasa por la bitácora reversible (registerProposalChange →
 // apply.ts → commercial/ai-items) y respeta el aislamiento por organización
 // (ctx.db está scopeado con forOrg).
+function linkTarget(link: { opportunityId: string | null; commercialLeadId: string | null }): ActorTarget {
+  return link.opportunityId
+    ? { type: "opportunity", id: link.opportunityId }
+    : { type: "commercial_lead", id: link.commercialLeadId as string };
+}
+
 export function buildCommercialTools(ctx: AgentToolContext) {
   const db = ctx.db;
+
+  async function targetCompanyId(target: ActorTarget) {
+    if (target.type === "opportunity") {
+      const opportunity = await db.opportunity.findUnique({
+        where: { id: target.id },
+        select: { companyId: true },
+      });
+      if (!opportunity) throw new Error(`Oportunidad no encontrada: ${target.id}`);
+      return opportunity.companyId;
+    }
+    const lead = await db.commercialLead.findUnique({
+      where: { id: target.id },
+      select: { companyId: true },
+    });
+    if (!lead) throw new Error(`Prospecto no encontrado: ${target.id}`);
+    return lead.companyId;
+  }
+
   return {
     list_commercial_leads: defineAgentTool({
       description: `Lista prospectos y leads (prospección, previo a oportunidad) con filtros por estado, responsable, origen, texto y acción vencida. Devuelve leadId para update_lead_status / convert_lead_to_opportunity. ${ID_RULE}`,
@@ -164,17 +200,15 @@ export function buildCommercialTools(ctx: AgentToolContext) {
     }),
 
     list_partners: defineAgentTool({
-      description: "Lista alianzas comerciales (pipeline de partners) con etapa, estado, responsable, próxima acción y resultados (referidos, oportunidades, ganadas).",
+      description: "Lista el directorio de partners con tipo, responsable, acuerdo y sus negocios (prospectos, oportunidades, ganadas). Los partners no tienen pipeline propio: participan como actores de prospectos y oportunidades.",
       inputSchema: z.object({
-        stage: z.enum(ALLIANCE_STAGES).optional(),
-        status: z.enum(["open", "paused", "discarded"]).optional(),
         query: z.string().optional(),
+        includeInactive: z.boolean().optional(),
       }),
       execute: async (args) => {
         const partners = await db.commercialPartner.findMany({
           where: {
-            ...(args.stage ? { allianceStage: args.stage } : {}),
-            ...(args.status ? { allianceStatus: args.status } : {}),
+            ...(args.includeInactive ? {} : { isActive: true }),
             ...(args.query?.trim() ? { displayName: { contains: args.query.trim(), mode: "insensitive" } } : {}),
           },
           take: 50,
@@ -183,32 +217,116 @@ export function buildCommercialTools(ctx: AgentToolContext) {
             id: true,
             displayName: true,
             kind: true,
-            allianceStage: true,
-            allianceStatus: true,
+            isActive: true,
             allianceType: true,
             nextStep: true,
             nextStepDueDate: true,
             agreementTerms: true,
             owner: { select: { name: true, email: true } },
-            _count: { select: { referredAttributions: true, opportunityAssignments: true } },
-            opportunityAssignments: { where: { opportunity: { status: "won" } }, select: { id: true } },
+            actorLinks: {
+              select: { commercialLeadId: true, opportunity: { select: { status: true } } },
+            },
           },
         });
         return {
           partners: partners.map((partner) => ({
             partnerId: partner.id,
             name: partner.displayName,
-            stage: partner.allianceStage,
-            stageLabel: allianceStageLabel(partner.allianceStage),
-            status: partner.allianceStatus,
-            type: partner.allianceType,
+            isActive: partner.isActive,
+            type: partnerTypeLabel(partner.allianceType),
             owner: partner.owner ? (partner.owner.name ?? partner.owner.email) : null,
             nextStep: partner.nextStep,
             nextStepDueDate: iso(partner.nextStepDueDate),
             hasAgreement: Boolean(partner.agreementTerms),
-            referrals: partner._count.referredAttributions,
-            opportunities: partner._count.opportunityAssignments,
-            wonOpportunities: partner.opportunityAssignments.length,
+            prospects: partner.actorLinks.filter((link) => link.commercialLeadId).length,
+            opportunities: partner.actorLinks.filter((link) => link.opportunity).length,
+            wonOpportunities: partner.actorLinks.filter((link) => link.opportunity?.status === "won").length,
+          })),
+        };
+      },
+    }),
+
+    list_actors: defineAgentTool({
+      description: "Actores comerciales. Con targetType+targetId lista quiénes participan en un prospecto/lead u oportunidad (rol, descripción y participación económica). Con actorType+actorId lista en qué negocios participa una persona, empresa o partner. El responsable interno (ownerId) no es un actor.",
+      inputSchema: z.object({
+        targetType: z.enum(["opportunity", "commercial_lead"]).optional(),
+        targetId: z.string().optional(),
+        actorType: z.enum(["person", "company", "partner"]).optional(),
+        actorId: z.string().optional(),
+      }),
+      execute: async (args) => {
+        if (args.targetType && args.targetId) {
+          const actors = await listRecordActors(db, { type: args.targetType, id: args.targetId });
+          return {
+            actors: actors.map((actor) => ({
+              linkId: actor.linkId,
+              field: actor.field,
+              actorType: actor.actor.type,
+              actorId: actor.actor.id,
+              name: actor.name,
+              role: actor.role,
+              roleLabel: actor.roleLabel,
+              description: actor.description,
+              linkedAt: iso(actor.linkedAt),
+              economicSharePercentage: actor.economicShare,
+            })),
+          };
+        }
+        if (args.actorType && args.actorId) {
+          const { leads, opportunities } = await loadActorParticipation(db, {
+            type: args.actorType,
+            id: args.actorId,
+          });
+          return {
+            prospects: leads.map((lead) => ({
+              id: lead.id,
+              title: lead.title,
+              status: lead.status,
+              role: actorRoleLabel(lead.role),
+            })),
+            opportunities: opportunities.map((opportunity) => ({
+              id: opportunity.id,
+              name: opportunity.name,
+              company: opportunity.company.name,
+              status: opportunity.status,
+              role: actorRoleLabel(opportunity.role),
+            })),
+          };
+        }
+        return { error: "Indicá targetType+targetId o actorType+actorId." };
+      },
+    }),
+
+    list_commercial_alerts: defineAgentTool({
+      description: "Alertas de seguimiento abiertas por reglas de etapa (registro detenido, sin interacción, sin próxima acción, vencida, reactivación), con su motivo y severidad. Sin filtros devuelve las del usuario actual; mine=false, las de toda la organización.",
+      inputSchema: z.object({
+        entity: z.enum(["opportunity", "commercial_lead"]).optional(),
+        id: z.string().optional(),
+        mine: z.boolean().optional(),
+      }),
+      execute: async ({ entity, id, mine }) => {
+        const alerts =
+          entity && id
+            ? await loadRecordAlerts(db, { entity, id })
+            : await db.commercialAlert.findMany({
+                where: {
+                  status: "open",
+                  ...(mine === false ? {} : { recipientUserId: ctx.userId }),
+                },
+                select: alertViewSelect,
+                orderBy: { detectedAt: "desc" },
+                take: 30,
+              });
+        return {
+          alerts: alerts.map((alert) => ({
+            alertId: alert.id,
+            title: alert.title,
+            reason: alert.reason,
+            severity: alert.severity,
+            status: alert.status,
+            opportunityId: alert.opportunityId,
+            commercialLeadId: alert.commercialLeadId,
+            detectedAt: iso(alert.detectedAt),
           })),
         };
       },
@@ -241,7 +359,7 @@ export function buildCommercialTools(ctx: AgentToolContext) {
     }),
 
     suggest_next_actions: defineAgentTool({
-      description: "Sugerencias determinísticas de próxima mejor acción (reglas: propuesta sin respuesta, acción vencida, lead sin responsable, contactado sin respuesta, pausa por reactivar, reunión sin próximo paso). Con entity+id evalúa una ficha; sin id devuelve las oportunidades abiertas del usuario que requieren atención. Son sugerencias: no ejecutan nada.",
+      description: "Sugerencias determinísticas de próxima mejor acción (alertas de etapa configuradas y reglas: propuesta sin respuesta, acción vencida, lead sin responsable, contactado sin respuesta, pausa por reactivar, reunión sin próximo paso). Con entity+id evalúa una ficha; sin id devuelve las oportunidades abiertas del usuario que requieren atención. Son sugerencias: no ejecutan nada.",
       inputSchema: z.object({
         entity: z.enum(["opportunity", "commercial_lead", "commercial_partner"]).optional(),
         id: z.string().optional(),
@@ -252,12 +370,14 @@ export function buildCommercialTools(ctx: AgentToolContext) {
           if (entity === "opportunity") {
             const opportunity = await db.opportunity.findUnique({ where: { id }, include: { stage: { select: { key: true } } } });
             if (!opportunity) return { error: `Oportunidad no encontrada: ${id}` };
-            return { current: { nextStep: opportunity.nextStep, nextStepDueDate: iso(opportunity.nextStepDueDate) }, suggestions: await opportunityFollowUpSuggestions(db, opportunity, records) };
+            const alerts = await loadRecordAlerts(db, { entity, id });
+            return { current: { nextStep: opportunity.nextStep, nextStepDueDate: iso(opportunity.nextStepDueDate) }, suggestions: mergeAlertSuggestions(opportunityFollowUpSuggestions(opportunity, records), alerts) };
           }
           if (entity === "commercial_lead") {
             const lead = await db.commercialLead.findUnique({ where: { id }, include: { _count: { select: { opportunities: true } } } });
             if (!lead) return { error: `Prospecto no encontrado: ${id}` };
-            return { current: { nextStep: lead.nextStep, nextStepDueDate: iso(lead.nextStepDueDate) }, suggestions: leadFollowUpSuggestions(lead, records) };
+            const alerts = await loadRecordAlerts(db, { entity, id });
+            return { current: { nextStep: lead.nextStep, nextStepDueDate: iso(lead.nextStepDueDate) }, suggestions: mergeAlertSuggestions(leadFollowUpSuggestions(lead, records), alerts) };
           }
           const partner = await db.commercialPartner.findUnique({ where: { id } });
           if (!partner) return { error: `Partner no encontrado: ${id}` };
@@ -281,7 +401,8 @@ export function buildCommercialTools(ctx: AgentToolContext) {
         const result = [];
         for (const opportunity of opportunities) {
           const records = await loadFollowUpRecords(db, "opportunity", opportunity.id);
-          const suggestions = await opportunityFollowUpSuggestions(db, opportunity, records);
+          const alerts = await loadRecordAlerts(db, { entity: "opportunity", id: opportunity.id });
+          const suggestions = mergeAlertSuggestions(opportunityFollowUpSuggestions(opportunity, records), alerts);
           if (suggestions.length) {
             result.push({ opportunityId: opportunity.id, name: opportunity.name, company: opportunity.company.name, suggestions });
           }
@@ -489,7 +610,7 @@ export function buildCommercialTools(ctx: AgentToolContext) {
     }),
 
     set_next_action: defineAgentTool({
-      description: `Define o actualiza la próxima acción confirmada (acción concreta, fecha, canal, motivo) de una oportunidad, prospecto o alianza. Solo registra el compromiso: no envía mensajes. ${ID_RULE}`,
+      description: `Define o actualiza la próxima acción confirmada (acción concreta, fecha, canal, motivo) de una oportunidad, prospecto o partner. Solo registra el compromiso: no envía mensajes. ${ID_RULE}`,
       inputSchema: z.object({
         entity: z.enum(["opportunity", "commercial_lead", "commercial_partner"]),
         id: z.string().min(1),
@@ -532,8 +653,147 @@ export function buildCommercialTools(ctx: AgentToolContext) {
       },
     }),
 
+    link_actor: defineAgentTool({
+      description: "Vincula un actor (persona, empresa o partner) a un prospecto/lead u oportunidad con un rol: referrer, commercial_partner, intermediary, collaborator, sponsor, decision_maker u other. No asigna comisión. El decisor y el sponsor persona de una oportunidad se guardan en la oportunidad. Se aplica al instante y queda en Actividad de IA para deshacer.",
+      inputSchema: z.object({
+        targetType: z.enum(["opportunity", "commercial_lead"]),
+        targetId: z.string().min(1),
+        actorType: z.enum(["person", "company", "partner"]),
+        actorId: z.string().min(1),
+        role: z.enum(ACTOR_ROLES),
+        description: z.string().optional(),
+      }),
+      execute: async (args) => {
+        const target: ActorTarget = { type: args.targetType, id: args.targetId };
+        const companyId = await targetCompanyId(target);
+        const key = actorKey({ type: args.actorType, id: args.actorId });
+        return registerProposalChange(
+          ctx,
+          {
+            companyId,
+            opportunityId: target.type === "opportunity" ? target.id : null,
+          },
+          [
+            {
+              type: "link_actor",
+              entity: target.type,
+              entityId: target.id,
+              beforeValue: null,
+              afterValue: {
+                targetType: target.type,
+                targetId: target.id,
+                actorKey: key,
+                role: args.role,
+                description: args.description ?? null,
+              },
+              explanation: "Actor vinculado por el copiloto.",
+              confidence: 1,
+              label: `Actor: ${actorRoleLabel(args.role)}`,
+              before: "—",
+              after: key,
+            },
+          ],
+        );
+      },
+    }),
+
+    update_actor: defineAgentTool({
+      description: "Cambia el rol o la descripción de un actor ya vinculado. Resolvé linkId con list_actors. Se aplica al instante y queda en Actividad de IA para deshacer.",
+      inputSchema: z.object({
+        linkId: z.string().min(1).describe("linkId devuelto por list_actors"),
+        role: z.enum(ACTOR_ROLES),
+        description: z.string().nullable().optional(),
+      }),
+      execute: async (args) => {
+        const link = await db.commercialActorLink.findUnique({ where: { id: args.linkId } });
+        if (!link) throw new Error(`Vínculo de actor no encontrado: ${args.linkId}`);
+        const target = linkTarget(link);
+        return registerProposalChange(
+          ctx,
+          {
+            companyId: await targetCompanyId(target),
+            opportunityId: link.opportunityId,
+          },
+          [
+            {
+              type: "update_actor",
+              entity: "commercial_actor",
+              entityId: link.id,
+              beforeValue: { role: link.role, description: link.description },
+              afterValue: {
+                role: args.role,
+                description: args.description === undefined ? link.description : args.description,
+              },
+              explanation: "Participación del actor actualizada por el copiloto.",
+              confidence: 1,
+              label: "Actor: rol",
+              before: actorRoleLabel(link.role),
+              after: actorRoleLabel(args.role),
+            },
+          ],
+        );
+      },
+    }),
+
+    unlink_actor: defineAgentTool({
+      description: "Desvincula un actor de un registro sin borrar la persona, empresa o partner. Usá linkId de list_actors; para el decisor o sponsor de una oportunidad (linkId null) pasá opportunityId y field. Un partner con participación económica se retira primero en la oportunidad. Se aplica al instante y queda en Actividad de IA para deshacer.",
+      inputSchema: z.object({
+        linkId: z.string().optional(),
+        opportunityId: z.string().optional(),
+        field: z.enum(["decisionMakerId", "sponsorId"]).optional(),
+      }),
+      execute: async (args) => {
+        if (args.linkId) {
+          const link = await db.commercialActorLink.findUnique({ where: { id: args.linkId } });
+          if (!link) throw new Error(`Vínculo de actor no encontrado: ${args.linkId}`);
+          return registerProposalChange(
+            ctx,
+            { companyId: await targetCompanyId(linkTarget(link)), opportunityId: link.opportunityId },
+            [
+              {
+                type: "unlink_actor",
+                entity: "commercial_actor",
+                entityId: link.id,
+                beforeValue: { actorKey: link.actorKey, role: link.role },
+                afterValue: {},
+                explanation: "Actor desvinculado por el copiloto.",
+                confidence: 1,
+                label: "Actor desvinculado",
+                before: actorRoleLabel(link.role),
+                after: "—",
+              },
+            ],
+          );
+        }
+        if (!args.opportunityId || !args.field) {
+          throw new Error("Indicá linkId, o opportunityId y field.");
+        }
+        return registerProposalChange(
+          ctx,
+          {
+            companyId: await targetCompanyId({ type: "opportunity", id: args.opportunityId }),
+            opportunityId: args.opportunityId,
+          },
+          [
+            {
+              type: "unlink_actor",
+              entity: "opportunity",
+              entityId: args.opportunityId,
+              beforeValue: null,
+              afterValue: { field: args.field },
+              explanation: "Decisor o sponsor desvinculado por el copiloto.",
+              confidence: 1,
+              label: "Actor desvinculado",
+              before: args.field,
+              after: "—",
+            },
+          ],
+        );
+      },
+    }),
+
     log_interaction: defineAgentTool({
-      description: `Registra una interacción que YA ocurrió (email, WhatsApp, llamada, LinkedIn, reunión) con un prospecto, alianza u oportunidad, aunque no tenga empresa. Para algo futuro usá create_task. ${ID_RULE}`,
+      description: `Registra una interacción que YA ocurrió (email, WhatsApp, llamada, LinkedIn, reunión) con un prospecto, partner u oportunidad, aunque no tenga empresa. Para algo futuro usá create_task. ${ID_RULE}`,
       inputSchema: z.object({
         commercialLeadId: z.string().optional(),
         commercialPartnerId: z.string().optional(),

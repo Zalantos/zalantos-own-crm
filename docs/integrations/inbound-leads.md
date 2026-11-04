@@ -20,7 +20,7 @@ usuario humano lo convierte desde `/leads`.
 ## Autenticación (n8n → backend)
 
 `Authorization: Bearer <INBOUND_LEADS_SECRET>` (timing-safe, mismo mecanismo
-que Telegram/crons — ver `src/lib/meeting-intelligence/internal-auth.ts`).
+que Telegram/crons — ver `src/lib/internal-auth.ts`).
 Secreto **dedicado**, distinto de `INTEGRATION_GATEWAY_SECRET`: si se filtra,
 no compromete el gateway saliente ni el canal de Telegram.
 
@@ -113,7 +113,7 @@ El dashboard principal muestra un bloque "Leads entrantes" con el conteo de
 Lógica en `src/lib/inbound-leads/convert.ts` (`convertLeadTx`), invocada
 dentro de `withOrgTransaction` desde
 `src/app/(dashboard)/leads/actions.ts#convertInboundLead`. Mismo patrón que
-`meeting-intelligence/apply.ts`: transacción única, eventos de timeline con
+`ai-changes/apply.ts`: transacción única, eventos de timeline con
 los tipos ya existentes (`company_created`, `contact_added`/`contact_linked`,
 `opportunity_created`, `note_added`).
 

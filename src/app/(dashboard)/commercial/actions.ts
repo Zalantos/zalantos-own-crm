@@ -1,6 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { linkActorTx } from "@/lib/commercial/actor-service";
 import { redirect } from "next/navigation";
 import { Prisma } from "@prisma/client";
 import { requireOrgContext, withOrgTransaction } from "@/lib/tenant";
@@ -127,7 +128,7 @@ export async function removeCompanyPartner(assignmentId: string) {
 }
 
 export async function assignOpportunityPartner(formData: FormData) {
-  const { org, db } = await requireOrgContext();
+  const { user, org, db } = await requireOrgContext();
   const parsed = opportunityCommercialPartnerSchema.safeParse(
     formObject(formData),
   );
@@ -176,6 +177,19 @@ export async function assignOpportunityPartner(formData: FormData) {
       profitSharePercentage: percentage,
     },
   });
+  // Quien tiene participación económica también es actor del negocio.
+  await withOrgTransaction(org.id, (tx) =>
+    linkActorTx(
+      tx,
+      { organizationId: org.id, userId: user.id, source: "partner_assignment" },
+      {
+        target: { type: "opportunity", id: opportunity.id },
+        actor: { type: "partner", id: partner.id },
+        role: "commercial_partner",
+        ifExists: "keep",
+      },
+    ),
+  );
   revalidatePath(`/opportunities/${opportunity.id}`);
 }
 

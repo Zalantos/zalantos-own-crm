@@ -12,7 +12,6 @@ import {
 } from "./next-action";
 import { computeFunnel, durationStat, type LeadRow, type OpportunityRow } from "./funnel";
 import { inferSourceChannel, normalizeCampaignKey, resolveChannel } from "./attribution";
-import { validateAllianceChange } from "./partners";
 import { buildRumboHandoffPayload } from "./rumbo";
 import { matchesConditions } from "../workflows/conditions";
 import { normalizeStageKey, boardStages } from "../pipeline/stages";
@@ -288,15 +287,6 @@ describe("atribución", () => {
     assert.ok(extended.success);
     const invalid = inboundLeadPayloadSchema.safeParse({ source: "x", external_id: "3", source_channel: "tiktok" });
     assert.equal(invalid.success, false);
-  });
-});
-
-describe("alianzas", () => {
-  it("acuerdo exige condiciones y pausar exige motivo", () => {
-    const current = { allianceStage: "negotiation", allianceStatus: "open", agreementTerms: null };
-    assert.equal(validateAllianceChange(current, { stage: "agreement" }).ok, false);
-    assert.equal(validateAllianceChange(current, { stage: "agreement", agreementTerms: "10% por negocio" }).ok, true);
-    assert.equal(validateAllianceChange(current, { status: "paused" }).ok, false);
   });
 });
 

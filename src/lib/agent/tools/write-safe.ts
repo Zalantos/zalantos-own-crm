@@ -129,7 +129,7 @@ export function buildWriteSafeTools(
         commercialPartnerId: z
           .string()
           .optional()
-          .describe("Alianza a la que pertenece la tarea"),
+          .describe("Partner al que pertenece la tarea"),
         type: z.enum(ACTIVITY_TYPES).optional(),
         title: z.string().min(1),
         description: z.string().optional(),

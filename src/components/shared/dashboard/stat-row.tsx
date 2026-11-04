@@ -3,7 +3,7 @@ import {
   CircleDollarSignIcon,
   ClockAlertIcon,
   TargetIcon,
-  VideoIcon,
+  UsersRoundIcon,
 } from "lucide-react";
 import { StatCard } from "@/components/shared/stat-card";
 import { formatCurrencyValue } from "@/lib/format";
@@ -13,8 +13,7 @@ export function StatRow({
   openOpportunityCount,
   pipelineValue,
   overdueActivityCount,
-  meetingsReadyCount,
-  meetingsTotalCount,
+  meetingsLast30Days,
   currency,
   locale,
 }: {
@@ -22,8 +21,7 @@ export function StatRow({
   openOpportunityCount: number;
   pipelineValue: number;
   overdueActivityCount: number;
-  meetingsReadyCount: number;
-  meetingsTotalCount: number;
+  meetingsLast30Days: number;
   currency: string;
   locale: string;
 }) {
@@ -49,9 +47,9 @@ export function StatRow({
         }
       />
       <StatCard
-        label="Meetings procesados"
-        value={`${meetingsReadyCount}/${meetingsTotalCount}`}
-        icon={VideoIcon}
+        label="Reuniones (30 días)"
+        value={meetingsLast30Days}
+        icon={UsersRoundIcon}
       />
     </div>
   );

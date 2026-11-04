@@ -12,6 +12,14 @@ import { FollowUpPanel } from "@/components/shared/commercial/follow-up-panel";
 import { AttributionDetails } from "@/components/shared/commercial/attribution-details";
 import { OpportunityStatusBadge } from "@/components/shared/opportunities/status-badge";
 import { LeadActions } from "@/components/shared/prospecting/lead-actions";
+import { ActorsPanel } from "@/components/shared/commercial/actors-panel";
+import { AlertsPanel } from "@/components/shared/commercial/alerts-panel";
+import { listRecordActors, loadActorPickerOptions } from "@/lib/commercial/actor-service";
+import {
+  loadRecordAlerts,
+  mergeAlertSuggestions,
+  refreshRecordAlerts,
+} from "@/lib/commercial/alert-service";
 import { attributionSummarySelect } from "@/lib/commercial/attribution";
 import { leadStatusLabel } from "@/lib/commercial/leads";
 import { leadFollowUpSuggestions, loadFollowUpRecords } from "@/lib/commercial/follow-up";
@@ -27,7 +35,7 @@ export default async function ProspectDetailPage({
   params: Promise<{ id: string }>;
 }) {
   const { id } = await params;
-  const { db } = await requireOrgContext();
+  const { db, org } = await requireOrgContext();
   const lead = await db.commercialLead.findUnique({
     where: { id },
     include: {
@@ -48,7 +56,8 @@ export default async function ProspectDetailPage({
   });
   if (!lead) notFound();
 
-  const [records, teamMembers, users, companies, history, companyPeople] = await Promise.all([
+  await refreshRecordAlerts(db, org.id, { entity: "commercial_lead", id: lead.id });
+  const [records, teamMembers, users, companies, history, companyPeople, leadActors, actorOptions, alerts] = await Promise.all([
     loadFollowUpRecords(db, "commercial_lead", lead.id),
     getActiveTeamMembers(db),
     getActiveOrgUsers(db),
@@ -63,9 +72,12 @@ export default async function ProspectDetailPage({
           select: { id: true, firstName: true, lastName: true },
         })
       : Promise.resolve([]),
+    listRecordActors(db, { type: "commercial_lead", id: lead.id }),
+    loadActorPickerOptions(db),
+    loadRecordAlerts(db, { entity: "commercial_lead", id: lead.id }),
   ]);
   const actors = new Map(users.map((user) => [user.id, user.name ?? user.email]));
-  const suggestions = leadFollowUpSuggestions(lead, records);
+  const suggestions = mergeAlertSuggestions(leadFollowUpSuggestions(lead, records), alerts);
   const ownerLabel = lead.owner ? actorLabel(lead.owner) : "Sin responsable";
   const closed = lead.status === "converted" || lead.status === "disqualified";
   const people = lead.person
@@ -109,6 +121,8 @@ export default async function ProspectDetailPage({
           />
         }
       />
+
+      <AlertsPanel alerts={alerts} />
 
       <div className="mb-4 grid grid-cols-1 gap-4 lg:grid-cols-3">
         <div className="lg:col-span-2">
@@ -227,6 +241,7 @@ export default async function ProspectDetailPage({
       <Tabs defaultValue="follow-up">
         <TabsList>
           <TabsTrigger value="follow-up">Seguimiento</TabsTrigger>
+          <TabsTrigger value="actors">Actores ({leadActors.length})</TabsTrigger>
           <TabsTrigger value="notes">Notas</TabsTrigger>
           <TabsTrigger value="history">Historial de estados</TabsTrigger>
         </TabsList>
@@ -238,6 +253,9 @@ export default async function ProspectDetailPage({
             people={people}
             offerMarkContacted={lead.status === "prospect"}
           />
+        </TabsContent>
+        <TabsContent value="actors" className="pt-4">
+          <ActorsPanel target={{ type: "commercial_lead", id: lead.id }} actors={leadActors} options={actorOptions} />
         </TabsContent>
         <TabsContent value="notes" className="pt-4">
           <NotesPanel commercialLeadId={lead.id} />

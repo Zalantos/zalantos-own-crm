@@ -5,14 +5,7 @@ import { redirect } from "next/navigation";
 import { z } from "zod";
 import { requireOrgContext } from "@/lib/tenant";
 import { commercialPartnerSchema } from "@/lib/zod/commercial";
-import {
-  ALLIANCE_STAGES,
-  ALLIANCE_STATUSES,
-  ALLIANCE_TYPES,
-} from "@/lib/commercial/partners";
-import { changeAlliance } from "@/lib/commercial/partner-service";
-import { recordStatusChange } from "@/lib/commercial/history";
-import { withOrgTransaction } from "@/lib/tenant";
+import { PARTNER_TYPES } from "@/lib/commercial/partners";
 
 export type PartnerFormState = { error: string } | { ok: true; message: string } | undefined;
 
@@ -20,8 +13,8 @@ const emptyToUndefined = (value: unknown) =>
   typeof value === "string" && value.trim() === "" ? undefined : value;
 const optionalText = z.preprocess(emptyToUndefined, z.string().trim().optional());
 
-const allianceFieldsSchema = z.object({
-  allianceType: z.preprocess(emptyToUndefined, z.enum(ALLIANCE_TYPES).optional()),
+const partnerFieldsSchema = z.object({
+  allianceType: z.preprocess(emptyToUndefined, z.enum(PARTNER_TYPES).optional()),
   ownerId: optionalText,
   commercialPotential: optionalText,
   potentialValue: z.preprocess(emptyToUndefined, z.coerce.number().nonnegative().optional()),
@@ -43,18 +36,16 @@ async function assertOwner(
   return Boolean(owner);
 }
 
-// Alta de un partner directamente en el pipeline de alianzas (Identificado).
-// Reutiliza el catálogo CommercialPartner: no hay partners paralelos.
-export async function createAlliancePartner(
+export async function createPartner(
   _prev: PartnerFormState,
   formData: FormData,
 ): Promise<PartnerFormState> {
   const { user, org, db } = await requireOrgContext();
   const raw = Object.fromEntries(formData);
   const partner = commercialPartnerSchema.safeParse(raw);
-  const fields = allianceFieldsSchema.safeParse(raw);
+  const fields = partnerFieldsSchema.safeParse(raw);
   if (!partner.success) return { error: partner.error.issues[0]?.message ?? "Revisa el partner." };
-  if (!fields.success) return { error: "Revisa los datos de la alianza." };
+  if (!fields.success) return { error: "Revisa los datos del partner." };
   if (partner.data.linkedCompanyId) {
     const company = await db.company.findUnique({ where: { id: partner.data.linkedCompanyId }, select: { id: true } });
     if (!company) return { error: "La empresa vinculada no existe." };
@@ -70,46 +61,29 @@ export async function createAlliancePartner(
     where: { displayName: { equals: partner.data.displayName, mode: "insensitive" } },
     select: { id: true },
   });
-  if (existing) return { error: "Ya existe un partner con ese nombre: ábrelo desde Alianzas." };
+  if (existing) return { error: "Ya existe un partner con ese nombre: ábrelo desde el directorio." };
 
-  const id = await withOrgTransaction(org.id, async (tx) => {
-    const now = new Date();
-    const created = await tx.commercialPartner.create({
-      data: {
-        ...partner.data,
-        ...fields.data,
-        ownerId: fields.data.ownerId ?? user.id,
-        organizationId: org.id,
-        allianceStage: "identified",
-        allianceStageChangedAt: now,
-      },
-      select: { id: true },
-    });
-    await recordStatusChange(tx, {
+  const created = await db.commercialPartner.create({
+    data: {
+      ...partner.data,
+      ...fields.data,
+      ownerId: fields.data.ownerId ?? user.id,
       organizationId: org.id,
-      entityType: "commercial_partner",
-      entityId: created.id,
-      field: "alliance_stage",
-      fromValue: null,
-      toValue: "identified",
-      actorId: user.id,
-      source: "manual",
-      at: now,
-    });
-    return created.id;
+    },
+    select: { id: true },
   });
   revalidatePartner();
-  redirect(`/partners/${id}`);
+  redirect(`/partners/${created.id}`);
 }
 
-export async function updateAllianceFields(
+export async function updatePartnerFields(
   partnerId: string,
   _prev: PartnerFormState,
   formData: FormData,
 ): Promise<PartnerFormState> {
   const { user, db } = await requireOrgContext();
-  const parsed = allianceFieldsSchema.safeParse(Object.fromEntries(formData));
-  if (!parsed.success) return { error: "Revisa los datos de la alianza." };
+  const parsed = partnerFieldsSchema.safeParse(Object.fromEntries(formData));
+  if (!parsed.success) return { error: "Revisa los datos del partner." };
   if (!(await assertOwner(db, parsed.data.ownerId))) return { error: "El responsable no es válido." };
   try {
     await db.commercialPartner.update({
@@ -127,32 +101,13 @@ export async function updateAllianceFields(
     return { error: "Partner no encontrado." };
   }
   revalidatePartner(partnerId);
-  return { ok: true, message: "Alianza actualizada." };
+  return { ok: true, message: "Partner actualizado." };
 }
 
-const allianceChangeSchema = z.object({
-  stage: z.preprocess(emptyToUndefined, z.enum(ALLIANCE_STAGES).optional()),
-  status: z.preprocess(emptyToUndefined, z.enum(ALLIANCE_STATUSES).optional()),
-  reason: optionalText,
-});
-
-export async function changeAllianceAction(
-  partnerId: string,
-  _prev: PartnerFormState,
-  formData: FormData,
-): Promise<PartnerFormState> {
-  const { user, org, db } = await requireOrgContext();
-  const parsed = allianceChangeSchema.safeParse(Object.fromEntries(formData));
-  if (!parsed.success || (!parsed.data.stage && !parsed.data.status)) {
-    return { error: "Indica la etapa o el estado." };
-  }
-  const result = await changeAlliance(
-    { db, organizationId: org.id, actorId: user.id, source: "manual" },
-    partnerId,
-    parsed.data,
-  );
+export async function setPartnerActive(partnerId: string, isActive: boolean) {
+  const { db } = await requireOrgContext();
+  await db.commercialPartner.update({ where: { id: partnerId }, data: { isActive } });
   revalidatePartner(partnerId);
-  return result.ok ? { ok: true, message: "Alianza actualizada." } : { error: result.error };
 }
 
 export async function addPartnerContact(
@@ -173,7 +128,7 @@ export async function addPartnerContact(
       data: { organizationId: org.id, commercialPartnerId: partnerId, personId, role },
     });
   } catch {
-    return { error: "Esa persona ya es contacto de la alianza." };
+    return { error: "Esa persona ya es contacto del partner." };
   }
   revalidatePartner(partnerId);
   return { ok: true, message: "Contacto agregado." };

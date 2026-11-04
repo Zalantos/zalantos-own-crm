@@ -21,6 +21,14 @@ import {
   sourceChannelLabel,
 } from "@/lib/commercial/attribution";
 import { nextActionState } from "@/lib/commercial/next-action";
+import { ActorIndicator, AlertIndicator } from "@/components/shared/commercial/record-indicators";
+import { listActorFilterOptions } from "@/lib/commercial/actor-service";
+import {
+  actorChipLabels,
+  actorLeadWhere,
+  actorLinkSummarySelect,
+  parseActorKey,
+} from "@/lib/commercial/actors";
 import { actorLabel } from "@/lib/traceability";
 
 type SearchParams = {
@@ -31,6 +39,8 @@ type SearchParams = {
   campaignId?: string;
   q?: string;
   overdue?: string;
+  actor?: string;
+  alerts?: string;
 };
 
 const selectClass = "bg-background h-9 rounded-md border px-2 text-sm";
@@ -50,6 +60,8 @@ const leadSelect = {
   firstTouchAttribution: {
     select: { sourceChannel: true, campaign: { select: { name: true } } },
   },
+  actorLinks: { select: actorLinkSummarySelect },
+  alerts: { where: { status: "open" }, select: { severity: true, title: true } },
   _count: { select: { opportunities: true } },
 } satisfies Prisma.CommercialLeadSelect;
 
@@ -91,7 +103,10 @@ function LeadCard({ lead }: { lead: LeadRow }) {
           <Badge variant="outline">{sourceChannelLabel(lead.firstTouchAttribution.sourceChannel)}</Badge>
         )}
         {lead.priority === "high" && <Badge variant="destructive">Prioridad alta</Badge>}
+        <ActorIndicator labels={actorChipLabels(lead.actorLinks)} />
+        <AlertIndicator alerts={lead.alerts} />
       </div>
+      {lead.owner && <p className="text-muted-foreground truncate text-xs">{actorLabel(lead.owner)}</p>}
       <p className="line-clamp-2 text-xs">
         <NextActionText lead={lead} />
       </p>
@@ -109,6 +124,7 @@ export default async function ProspectingPage({
   const { db, user } = await requireOrgContext();
   const search = params.q?.trim();
   const now = new Date();
+  const actorRef = parseActorKey(params.actor);
 
   const where: Prisma.CommercialLeadWhereInput = {
     ...(params.status && isLeadStatus(params.status)
@@ -134,6 +150,8 @@ export default async function ProspectingPage({
         }
       : {}),
     ...(params.overdue === "1" ? { nextStepDueDate: { lt: now } } : {}),
+    ...(params.alerts === "1" ? { alerts: { some: { status: "open" } } } : {}),
+    ...(actorRef ? actorLeadWhere(actorRef) : {}),
     ...(search
       ? {
           OR: [
@@ -147,7 +165,7 @@ export default async function ProspectingPage({
       : {}),
   };
 
-  const [leads, users, campaigns, counts] = await Promise.all([
+  const [leads, users, campaigns, counts, actorOptions] = await Promise.all([
     db.commercialLead.findMany({
       where,
       select: leadSelect,
@@ -157,6 +175,7 @@ export default async function ProspectingPage({
     getActiveOrgUsers(db),
     db.campaign.findMany({ orderBy: { name: "asc" }, select: { id: true, name: true } }),
     db.commercialLead.groupBy({ by: ["status"], _count: { _all: true } }),
+    listActorFilterOptions(db),
   ]);
   const countByStatus = new Map(counts.map((row) => [row.status, row._count._all]));
 
@@ -217,9 +236,21 @@ export default async function ProspectingPage({
             ))}
           </select>
         )}
+        <select name="actor" defaultValue={params.actor ?? ""} className={selectClass}>
+          <option value="">Todo actor o partner</option>
+          {actorOptions.map((option) => (
+            <option key={option.key} value={option.key}>
+              {option.label}
+            </option>
+          ))}
+        </select>
         <label className="flex items-center gap-1.5 text-sm">
           <input type="checkbox" name="overdue" value="1" defaultChecked={params.overdue === "1"} />
           Acción vencida
+        </label>
+        <label className="flex items-center gap-1.5 text-sm">
+          <input type="checkbox" name="alerts" value="1" defaultChecked={params.alerts === "1"} />
+          Con alertas
         </label>
         <Button type="submit" variant="secondary">
           Filtrar
@@ -254,7 +285,16 @@ export default async function ProspectingPage({
           rowHref={(row) => `/prospecting/${row.id}`}
           emptyMessage="No hay prospectos con estos filtros."
           columns={[
-            { header: "Prospecto", cell: (row) => <span className="font-medium">{row.title}</span> },
+            {
+              header: "Prospecto",
+              cell: (row) => (
+                <span className="flex items-center gap-1.5 font-medium">
+                  {row.title}
+                  <ActorIndicator labels={actorChipLabels(row.actorLinks)} />
+                  <AlertIndicator alerts={row.alerts} />
+                </span>
+              ),
+            },
             { header: "Estado", cell: (row) => leadStatusLabel(row.status) },
             {
               header: "Origen",

@@ -47,7 +47,7 @@ export type ConvertLeadResult = {
 };
 
 // Transacción pura (sin "use server" ni withOrgTransaction) para poder
-// testearla con un tx falso. Mismo patrón que meeting-intelligence/apply.ts:
+// testearla con un tx falso. Mismo patrón que ai-changes/apply.ts:
 // reusa findExistingPerson (dedup de Person) y appendTimelineEvent con los
 // tipos ya existentes (company_created/contact_added/contact_linked/
 // opportunity_created/note_added).

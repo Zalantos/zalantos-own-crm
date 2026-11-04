@@ -13,6 +13,8 @@ import {
   loadEntityContextData,
 } from "@/components/shared/entity-context/entity-context-panel";
 import { StatCard } from "@/components/shared/stat-card";
+import { ActorParticipationCards } from "@/components/shared/commercial/actor-participation-card";
+import { loadActorParticipation } from "@/lib/commercial/actor-service";
 import { LinkifiedText } from "@/components/shared/linkified-text";
 import {
   OpportunityStageBadge,
@@ -47,7 +49,10 @@ export default async function PersonDetailPage({
   });
   if (!person) notFound();
   const formatters = createFormatters(org);
-  const contextData = await loadEntityContextData(db, "person", person.id);
+  const [contextData, participation] = await Promise.all([
+    loadEntityContextData(db, "person", person.id),
+    loadActorParticipation(db, { type: "person", id: person.id }),
+  ]);
 
   const relatedOpportunities = [
     ...person.opportunitiesAsDecisionMaker.map((opportunity) => ({
@@ -168,6 +173,7 @@ export default async function PersonDetailPage({
           <TabsTrigger value="opportunities">
             Oportunidades ({relatedOpportunities.length})
           </TabsTrigger>
+          <TabsTrigger value="participation">Negocios como actor</TabsTrigger>
           <TabsTrigger value="context">Contexto</TabsTrigger>
           <TabsTrigger value="activities">Actividades</TabsTrigger>
           <TabsTrigger value="notes">Notas</TabsTrigger>
@@ -198,6 +204,12 @@ export default async function PersonDetailPage({
           )}
         </TabsContent>
 
+        <TabsContent value="participation" className="pt-4">
+          <ActorParticipationCards
+            actor={{ type: "person", id: person.id }}
+            participation={participation}
+          />
+        </TabsContent>
         <TabsContent value="context" className="pt-4">
           <EntityContextPanel
             entityType="person"

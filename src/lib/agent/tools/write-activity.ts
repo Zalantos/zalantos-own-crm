@@ -17,15 +17,12 @@ import {
   applyTaskUpdate,
   diffTaskUpdate,
   insertLoggedActivity,
-  insertManualMeeting,
   loggedActivityToJson,
-  manualMeetingToJson,
+  meetingToLoggedActivity,
   revertLoggedActivity,
-  revertManualMeeting,
   revertTaskUpdate,
   taskUpdateToJson,
   type LoggedActivityInput,
-  type ManualMeetingInput,
   type TaskUpdateInput,
   type WriteBase,
 } from "@/lib/crm/activity-records";
@@ -93,7 +90,7 @@ export const createActivityInputSchema = z.object({
   commercialPartnerId: z
     .string()
     .optional()
-    .describe("Alianza/partner con el que ocurrió la interacción"),
+    .describe("Partner con el que ocurrió la interacción"),
   personIds: z
     .array(z.string().min(1))
     .max(50)
@@ -116,6 +113,15 @@ export const createActivityInputSchema = z.object({
 export const createMeetingInputSchema = z.object({
   companyId: z.string().min(1),
   opportunityId: z.string().optional(),
+  commercialLeadId: z
+    .string()
+    .optional()
+    .describe("Prospecto/lead con el que fue la reunión"),
+  personIds: z
+    .array(z.string().min(1))
+    .max(50)
+    .optional()
+    .describe("Personas del CRM que participaron (ids de search_crm)"),
   title: z.string().min(1),
   date: isoDateString("Fecha y hora de la reunión en ISO 8601"),
   meetingType: z
@@ -124,7 +130,11 @@ export const createMeetingInputSchema = z.object({
     .describe(
       "discovery, seguimiento, técnica, comercial, demo, cierre... (default discovery)",
     ),
-  participants: z.array(participantSchema).max(50).optional(),
+  participants: z
+    .array(participantSchema)
+    .max(50)
+    .optional()
+    .describe("Participantes por nombre; quienes no están en el CRM quedan como texto"),
   summary: z.string().optional().describe("Resumen breve de la reunión"),
   keyPoints: z.array(z.string()).optional(),
   decisions: z.array(z.string()).optional(),
@@ -501,7 +511,7 @@ export function buildActivityWriteTools(
     }),
 
     create_meeting: defineAgentTool({
-      description: `Crea un registro de reunión que no viene de una grabación (sin transcripción), con participantes y resumen cargados a mano: queda lista (processingStatus "ready") y aparece en list_meetings y get_meeting. No crea tareas a partir de nextSteps: si hay compromisos con fecha, crealos aparte con create_task. ${INSTANT_RULE} ${ID_RULE}`,
+      description: `Registra una reunión comercial como actividad (type meeting), con fecha, participantes, resumen, acuerdos y próximas acciones; aparece en list_meetings y get_meeting. Podés vincularla a una oportunidad o a un prospecto/lead. No crea tareas a partir de nextSteps: si hay compromisos con fecha, crealos aparte con create_task. ${INSTANT_RULE} ${ID_RULE}`,
       inputSchema: createMeetingInputSchema,
       execute: async (args) => {
         await assertCompany(ctx.db, args.companyId);
@@ -513,12 +523,36 @@ export function buildActivityWriteTools(
             args.companyId,
           );
         }
+        const commercialLeadId = emptyToNull(args.commercialLeadId);
+        if (commercialLeadId) {
+          const lead = await ctx.db.commercialLead.findFirst({
+            where: { id: commercialLeadId },
+            select: { id: true },
+          });
+          if (!lead) throw new Error(`Prospecto no encontrado: ${commercialLeadId}`);
+        }
+        const emails = (args.participants ?? []).flatMap((participant) =>
+          participant.email ? [participant.email.toLowerCase()] : [],
+        );
+        const matched = emails.length
+          ? await ctx.db.person.findMany({
+              where: { email: { in: emails, mode: "insensitive" } },
+              select: { id: true },
+            })
+          : [];
+        const personIds = [
+          ...(await assertPeople(ctx.db, args.personIds ?? [])),
+          ...matched.map((person) => person.id),
+        ];
 
-        const input: ManualMeetingInput = {
+        const meetingType = emptyToNull(args.meetingType) ?? "discovery";
+        const input: LoggedActivityInput = meetingToLoggedActivity({
           companyId: args.companyId,
           opportunityId,
+          commercialLeadId,
+          personIds: [...new Set(personIds)],
           title: args.title,
-          meetingType: emptyToNull(args.meetingType) ?? "discovery",
+          meetingType,
           meetingDate: new Date(args.date),
           participants: args.participants ?? [],
           summary: emptyToNull(args.summary),
@@ -526,13 +560,13 @@ export function buildActivityWriteTools(
           decisions: args.decisions ?? [],
           risks: args.risks ?? [],
           nextSteps: args.nextSteps ?? [],
-        };
+        });
         const item: AgentProposalItemInput = {
-          type: "create_meeting",
-          entity: "meeting",
+          type: "log_activity",
+          entity: "activity",
           entityId: null,
           beforeValue: null,
-          afterValue: manualMeetingToJson(input),
+          afterValue: loggedActivityToJson(input),
           explanation: "Reunión registrada por el copiloto desde el chat.",
           confidence: 1,
           evidence: null,
@@ -540,9 +574,9 @@ export function buildActivityWriteTools(
           before: "—",
           after: preview(
             [
-              input.meetingDate.toISOString().slice(0, 10),
-              input.meetingType,
-              input.summary,
+              input.occurredAt.toISOString().slice(0, 10),
+              meetingType,
+              emptyToNull(args.summary),
             ]
               .filter(Boolean)
               .join(" · "),
@@ -552,17 +586,17 @@ export function buildActivityWriteTools(
         if (deps && ctx.turnState.changeCount === 0) {
           ctx.turnState.changeCount += 1;
           const revert = await deps.transaction(ctx.organizationId, (tx) =>
-            insertManualMeeting(tx, base, input),
+            insertLoggedActivity(tx, base, input),
           );
           ctx.turnState.pendingInstant = {
-            kind: "meeting",
-            entityId: revert.meetingId,
+            kind: "activity",
+            entityId: revert.activityId,
             companyId: args.companyId,
             opportunityId,
             item,
-            undo: (tx) => revertManualMeeting(tx, ctx.organizationId, revert),
+            undo: (tx) => revertLoggedActivity(tx, ctx.organizationId, revert),
           };
-          return { status: "created" as const, meetingId: revert.meetingId };
+          return { status: "created" as const, meetingId: revert.activityId };
         }
 
         return registerProposalChange(

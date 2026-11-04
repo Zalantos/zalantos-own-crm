@@ -1,7 +1,7 @@
 import {
   isAuthorized,
   isCronSecretConfigured,
-} from "@/lib/meeting-intelligence/internal-auth";
+} from "@/lib/internal-auth";
 import { prismaSystem } from "@/lib/prisma";
 
 // Auth para POST /api/integrations/inbound-leads (n8n -> backend). Secreto

@@ -16,21 +16,28 @@ Nunca incluir secretos reales en este documento. Ver `.env.example`.
 | `ADMIN_EMAIL` | Seed | Dev | No** | `admin@example.com` | Usuario admin seed | `prisma/seed.ts` |
 | `ADMIN_PASSWORD` | Seed | Dev | No** | strong password | Password admin seed | `prisma/seed.ts` |
 | `ALLOW_SEED` | Seed | Prod | No | `true` | Opt-in para seed en entorno desplegado (`RAILWAY_*` / production) | `prisma/seed.ts` |
-| `GROQ_API_KEY` | Groq | Todos | Cond.*** | `gsk_...` | Transcripción + LLM; sin ella el dictado queda no disponible | `src/lib/meeting-intelligence/`, `src/lib/voice-dictate.ts` |
-| `GROQ_TRANSCRIPTION_MODEL` | Groq | Todos | No | `whisper-large-v3` | Modelo STT | `src/lib/meeting-intelligence/config.ts` |
+| `GROQ_API_KEY` | Groq | Todos | Cond.*** | `gsk_...` | LLM y dictado; sin ella el dictado queda no disponible | `src/lib/runtime-config.ts`, `src/lib/voice-dictate.ts` |
 | `GROQ_TRANSCRIBE_MODEL` | Groq | Todos | No | `whisper-large-v3-turbo` | Modelo STT del dictado efímero del copiloto | `src/lib/voice-dictate.ts` |
-| `GROQ_REASONING_MODEL` | Groq | Todos | No | `openai/gpt-oss-120b` | Modelo razonamiento (id Groq; puede traer `/`) | `src/lib/meeting-intelligence/config.ts` |
-| `R2_ACCOUNT_ID` | Cloudflare R2 | Prod | Sí*** | account id | Storage evidencia | `src/lib/meeting-intelligence/storage/r2.ts` |
-| `R2_ACCESS_KEY_ID` | Cloudflare R2 | Prod | Sí*** | key id | Storage evidencia | idem |
-| `R2_SECRET_ACCESS_KEY` | Cloudflare R2 | Prod | Sí*** | secret | Storage evidencia | idem |
-| `R2_BUCKET` | Cloudflare R2 | Prod | Sí*** | `crm-zalantos-evidence` | Nombre bucket | idem |
+| `GROQ_REASONING_MODEL` | Groq | Todos | No | `openai/gpt-oss-120b` | Modelo razonamiento (id Groq; puede traer `/`) | `src/lib/runtime-config.ts` |
+| `R2_ACCOUNT_ID` | Cloudflare R2 | Prod | No**** | account id | Lectura de fuentes históricas | `src/lib/storage/r2.ts` |
+| `R2_ACCESS_KEY_ID` | Cloudflare R2 | Prod | No**** | key id | Lectura de fuentes históricas | idem |
+| `R2_SECRET_ACCESS_KEY` | Cloudflare R2 | Prod | No**** | secret | Lectura de fuentes históricas | idem |
+| `R2_BUCKET` | Cloudflare R2 | Prod | No**** | `crm-zalantos-evidence` | Nombre bucket | idem |
 | `APP_URL` | App | Todos | Sí | `https://app.example.com` | URLs internas/callbacks | varios |
 | `INTEGRATION_GATEWAY_URL` | Webhook | Prod | No | `https://host/webhook` | Despacho integraciones saliente | `src/lib/integrations/gateway.ts` |
 | `INTEGRATION_GATEWAY_SECRET` | Webhook / Telegram | Prod | Cond.**** | random string | Auth saliente (`x-webhook-secret`) y Bearer entrante Telegram | gateway + `src/lib/telegram/auth.ts` |
 | `NEXT_PUBLIC_TELEGRAM_BOT_USERNAME` | Telegram UI | Todos | No | `mi_bot` | Handle del bot (sin `@`) en UI de vinculación | `admin/settings/telegram` |
+| `WIKI_MCP_ALLOWED_ORG_IDS` | Wiki MCP | Prod | No | `org_id` | Organizaciones habilitadas; vacía apaga la integración | `src/lib/wiki-mcp/config.ts` |
+| `WIKI_MCP_BASE_URL` | Wiki MCP | Prod | Cond.† | `https://wiki.example.com` | URL base de la Wiki, sin `/mcp` | idem |
+| `WIKI_MCP_TOKEN` | Wiki MCP | Prod | Cond.† | `zwiki_...` | Token de la Wiki; si existe, no se usa Entra | idem |
+| `WIKI_ENTRA_TENANT_ID` | Entra | Prod | No‡ | GUID | Directorio de Entra | idem |
+| `WIKI_ENTRA_CLIENT_ID` | Entra | Prod | No‡ | GUID | Registro de aplicación del CRM | idem |
+| `WIKI_ENTRA_CLIENT_SECRET` | Entra | Prod | No‡ | secret | Secreto del registro | idem |
+| `WIKI_ENTRA_RESOURCE` | Entra | Prod | No‡ | `api://<GUID>` | API de la Wiki; se pide `{resource}/.default` | idem |
+| `WIKI_MCP_TIMEOUT_MS` | Wiki MCP | Todos | No | `8000` | Timeout por llamada | idem |
 | `SETTINGS_ENCRYPTION_KEY` | App crypto | Prod | Cond. | 32 bytes base64/hex | Cifrar secretos por org | `src/lib/crypto.ts` |
 | `AGENT_MODEL` | IA SDK | Todos | No | `openai/gpt-6-luna` | Modelo del agente copiloto (`proveedor/` + id; 1ª `/` separa). Default: OpenAI gpt-6-luna | `src/lib/agent/config.ts` |
-| `MEETING_REASONING_MODEL` | IA SDK | Todos | No | `groq/openai/gpt-oss-120b` | Modelo análisis reuniones | `src/lib/meeting-intelligence/ai/groq.ts` |
+| `MEETING_REASONING_MODEL` | IA SDK | Todos | No | `groq/openai/gpt-oss-120b` | Fallback de `ENTITY_CONTEXT_MODEL` | `src/lib/entity-context/analyze.ts` |
 | `ENTITY_CONTEXT_MODEL` | IA SDK | Todos | No | `groq/openai/gpt-oss-120b` | Modelo enriquecimiento de fichas (fallback: MEETING_REASONING_MODEL) | `src/lib/entity-context/analyze.ts` |
 | `ANTHROPIC_API_KEY` | Anthropic | Todos | No | `sk-ant-...` | Modelo alternativo | `src/lib/agent/config.ts` |
 | `OPENAI_API_KEY` | OpenAI | Todos | Sí (agente) | `sk-...` | Agente copiloto (`gpt-6-luna` por defecto) | `src/lib/agent/model.ts` |
@@ -57,7 +64,7 @@ Nunca incluir secretos reales en este documento. Ver `.env.example`.
 
 `AUTH_SECRET`, `AUTH_TRUST_HOST`, `AUTH_URL`
 
-### Meeting Intelligence + Agente
+### Agente y enriquecimiento
 
 `GROQ_*`, `AGENT_MODEL`, `MEETING_REASONING_MODEL`, `ENTITY_CONTEXT_MODEL`,
 `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `R2_*`, `APP_URL`
@@ -76,6 +83,13 @@ Nunca incluir secretos reales en este documento. Ver `.env.example`.
 No agrega variables de entorno. El endpoint público usa `APP_URL` y los tokens
 personales se crean desde `/admin/settings/mcp`.
 
+### Wiki MCP
+
+`WIKI_MCP_ALLOWED_ORG_IDS`, `WIKI_MCP_BASE_URL`, `WIKI_MCP_TOKEN`,
+`WIKI_MCP_TIMEOUT_MS`. † Requeridas si `WIKI_MCP_ALLOWED_ORG_IDS` tiene valor.
+‡ `WIKI_ENTRA_*` solo hacen falta si no se usa `WIKI_MCP_TOKEN`. Ver
+`docs/integrations/wiki-mcp.md`.
+
 ### Operaciones
 
 `CRON_SECRET`, `ADMIN_EMAIL`, `ADMIN_PASSWORD`, `ALLOW_SEED`
@@ -85,3 +99,5 @@ personales se crean desde `/admin/settings/mcp`.
 - GAP: variables específicas de Railway no listadas (inyectadas por plataforma).
 - GAP: `NOTION_*` u otras vars de `scripts/import-notion.ts` no detectadas en
   grep principal — revisar script antes de importar.
+
+\*\*\*\* Solo se usan para reintentar fuentes de contexto históricas sin texto. Se pueden retirar según `docs/architecture/knowledge-sources.md`. `GROQ_TRANSCRIPTION_MODEL` ya no se usa.

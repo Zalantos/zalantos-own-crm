@@ -67,7 +67,7 @@ export type StatusChangeLogInput = {
   organizationId: string;
   entityType: "opportunity" | "commercial_lead" | "commercial_partner";
   entityId: string;
-  field?: "status" | "alliance_stage" | "alliance_status";
+  field?: "status";
   fromValue: string | null;
   toValue: string;
   actorId: string | null;

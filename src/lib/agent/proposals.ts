@@ -1,6 +1,6 @@
 import type { Prisma } from "@prisma/client";
 import type { TenantClient } from "@/lib/tenant";
-import { applyProposal } from "@/lib/meeting-intelligence/apply";
+import { applyProposal } from "@/lib/ai-changes/apply";
 import { agentConfig } from "./config";
 import type { AgentToolContext } from "./executor";
 
@@ -24,7 +24,10 @@ export type AgentProposalItemInput = {
     | "add_commercial_lead"
     | "commercial_lead_status"
     | "convert_lead"
-    | "set_next_action";
+    | "set_next_action"
+    | "link_actor"
+    | "update_actor"
+    | "unlink_actor";
   entity:
     | "company"
     | "opportunity"
@@ -33,7 +36,8 @@ export type AgentProposalItemInput = {
     | "activity"
     | "meeting"
     | "commercial_lead"
-    | "commercial_partner";
+    | "commercial_partner"
+    | "commercial_actor";
   entityId: string | null;
   beforeValue: Prisma.InputJsonValue | null;
   afterValue: Prisma.InputJsonValue;

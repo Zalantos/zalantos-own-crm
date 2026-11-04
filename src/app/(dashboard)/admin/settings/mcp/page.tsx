@@ -1,5 +1,5 @@
 import { PageHeader } from "@/components/shared/page-header";
-import { appUrl } from "@/lib/meeting-intelligence/config";
+import { appUrl } from "@/lib/runtime-config";
 import { requireOrgAdminContext } from "@/lib/tenant";
 import { McpTokenForm } from "./mcp-token-form";
 import { McpTokenRow } from "./mcp-token-row";

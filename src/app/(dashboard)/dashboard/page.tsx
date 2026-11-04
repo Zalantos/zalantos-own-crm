@@ -9,6 +9,8 @@ import { StatRow } from "@/components/shared/dashboard/stat-row";
 import { PipelineChart } from "@/components/shared/dashboard/pipeline-chart";
 import { RecentActivityFeed } from "@/components/shared/dashboard/recent-activity-feed";
 import { ActivityRow } from "@/components/shared/activities/activity-row";
+import { CommercialAlertsWidget } from "@/components/shared/dashboard/commercial-alerts-widget";
+import { loadPendingAlerts } from "@/lib/commercial/alert-service";
 import { InboundLeadsWidget } from "@/components/shared/dashboard/inbound-leads-widget";
 import { ACTIVITY_OPEN_STATUSES } from "@/lib/activity-status";
 
@@ -22,8 +24,8 @@ export default async function DashboardPage() {
     companyCount,
     openOpportunityAggregate,
     overdueActivityCount,
-    meetingsTotalCount,
-    meetingsReadyCount,
+    meetingsLast30Days,
+    pendingAlerts,
     stages,
     stageCounts,
     { events: recentEvents },
@@ -49,8 +51,13 @@ export default async function DashboardPage() {
         dueDate: { lt: now },
       },
     }),
-    db.meeting.count(),
-    db.meeting.count({ where: { processingStatus: "ready" } }),
+    db.activity.count({
+      where: {
+        type: "meeting",
+        occurredAt: { gte: new Date(now.getTime() - 30 * 86_400_000), lte: now },
+      },
+    }),
+    loadPendingAlerts(db, user.id),
     getOrgStages(db),
     db.opportunity.groupBy({
       by: ["stageId"],
@@ -144,8 +151,7 @@ export default async function DashboardPage() {
             openOpportunityAggregate._sum.estimatedValue?.toString() ?? 0,
           )}
           overdueActivityCount={overdueActivityCount}
-          meetingsReadyCount={meetingsReadyCount}
-          meetingsTotalCount={meetingsTotalCount}
+          meetingsLast30Days={meetingsLast30Days}
           currency={org.currency}
           locale={org.locale}
         />
@@ -165,6 +171,12 @@ export default async function DashboardPage() {
           </Link>
         ))}
       </div>
+
+      {pendingAlerts.total > 0 && (
+        <div className="mb-4">
+          <CommercialAlertsWidget {...pendingAlerts} userId={user.id} />
+        </div>
+      )}
 
       <div className="mb-4">
         <InboundLeadsWidget newCount={newLeadCount} recentLeads={recentNewLeads} />

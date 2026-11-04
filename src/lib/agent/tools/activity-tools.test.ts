@@ -16,7 +16,6 @@ import {
   loggedActivityFromJson,
   loggedActivityToJson,
   manualMeetingFromJson,
-  manualMeetingToJson,
   taskUpdateFromJson,
   taskUpdateToJson,
   type LoggedActivityInput,
@@ -274,27 +273,23 @@ describe("create_meeting", () => {
     nextSteps: ["Enviar propuesta"],
   };
 
-  it("crea una reunión lista, sin transcripción, visible en list_meetings y get_meeting", async () => {
+  it("registra la reunión como actividad, visible en list_meetings y get_meeting", async () => {
     const { activityTools, rows, ctx } = setup();
     const result = await activityTools.create_meeting.execute(validArgs);
     assert.equal(result.status, "created");
     assert.ok("meetingId" in result);
 
-    const [meeting] = rows("meeting");
-    assert.equal(meeting.processingStatus, "ready");
-    assert.equal(meeting.sourceType, "manual");
-    assert.equal(meeting.rawTranscript, null);
-    assert.deepEqual(meeting.participants, [
-      {
-        name: "Ana Pérez",
-        email: "ana@acme.com",
-        company: "Acme",
-        role: "CFO",
-        internal: false,
-      },
-      { name: "Tomás", internal: true },
-    ]);
-    assert.equal(rows("timelineEvent")[0].type, "meeting_created");
+    assert.equal(rows("meeting").length, 0);
+    const [meeting] = rows("activity");
+    assert.equal(meeting.type, "meeting");
+    assert.equal(meeting.status, "done");
+    assert.equal(meeting.channel, "discovery");
+    assert.match(String(meeting.description), /Interés en el módulo de reportes\./);
+    assert.match(String(meeting.description), /Puntos clave:\n- Usan Excel hoy/);
+    assert.match(String(meeting.description), /Participantes: Ana Pérez, Tomás/);
+    assert.match(String(meeting.outcomes), /Acuerdos:\n- Avanzar con demo/);
+    assert.match(String(meeting.outcomes), /Próximas acciones:\n- Enviar propuesta/);
+    assert.equal(rows("timelineEvent")[0].type, "activity_logged");
 
     const meetingTools = buildMeetingTools(ctx);
     const list = await meetingTools.list_meetings.execute({
@@ -310,15 +305,8 @@ describe("create_meeting", () => {
       meetingId: result.meetingId,
     });
     assert.ok("summary" in detail);
-    assert.deepEqual(detail.summary, {
-      headline: "Interés en el módulo de reportes.",
-      keyPoints: ["Usan Excel hoy"],
-      decisions: ["Avanzar con demo"],
-      risks: ["Presupuesto Q1"],
-      nextSteps: ["Enviar propuesta"],
-      source: "manual",
-    });
-    assert.equal(detail.transcriptChars, 0);
+    assert.match(String(detail.outcomes), /Avanzar con demo/);
+    assert.ok(!("transcriptChars" in detail));
   });
 
   it("usa discovery como tipo por defecto", async () => {
@@ -328,7 +316,7 @@ describe("create_meeting", () => {
       title: "Reunión breve",
       date: PAST,
     });
-    assert.equal(rows("meeting")[0].meetingType, "discovery");
+    assert.equal(rows("activity")[0].channel, "discovery");
   });
 
   it("rechaza ids inexistentes", async () => {
@@ -349,7 +337,7 @@ describe("create_meeting", () => {
         }),
       /Oportunidad no encontrada/,
     );
-    assert.equal(rows("meeting").length, 0);
+    assert.equal(rows("activity").length, 0);
   });
 
   it("valida campos requeridos", () => {
@@ -374,8 +362,8 @@ describe("create_meeting", () => {
     ctx.turnState.changeCount = 1;
     const result = await activityTools.create_meeting.execute(validArgs);
     assert.equal(result.status, "moved_to_proposal");
-    assert.equal(rows("meeting").length, 0);
-    assert.equal(rows("cRMChangeItem")[0].type, "create_meeting");
+    assert.equal(rows("activity").length, 0);
+    assert.equal(rows("cRMChangeItem")[0].type, "log_activity");
   });
 });
 
@@ -754,10 +742,12 @@ describe("afterValue de propuestas (ida y vuelta a JSON)", () => {
     );
   });
 
-  it("conserva los datos de una reunión manual", () => {
+  it("lee propuestas de create_meeting anteriores al retiro de la tabla", () => {
     const input: ManualMeetingInput = {
       companyId: "co-1",
       opportunityId: null,
+      commercialLeadId: null,
+      personIds: [],
       title: "Técnica",
       meetingType: "técnica",
       meetingDate: new Date(PAST),
@@ -777,7 +767,10 @@ describe("afterValue de propuestas (ida y vuelta a JSON)", () => {
       nextSteps: ["b"],
     };
     assert.deepEqual(
-      manualMeetingFromJson(manualMeetingToJson(input), null),
+      manualMeetingFromJson(
+        { ...input, meetingDate: input.meetingDate.toISOString() },
+        null,
+      ),
       input,
     );
   });

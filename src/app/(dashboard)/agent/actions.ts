@@ -22,14 +22,24 @@ async function requireOwnedThread(
   return thread;
 }
 
+// Los leads no son un EntityType: el hilo se crea sin vínculo y el contexto de
+// página se resuelve igual en cada turno.
+const THREAD_CONTEXT_TYPES = new Set<string>([
+  "company",
+  "person",
+  "opportunity",
+]);
+
 export async function ensureAgentThread(context?: PageContext | null) {
   const { user, org, db } = await requireOrgContext();
+  const threadContext =
+    context && THREAD_CONTEXT_TYPES.has(context.entityType) ? context : null;
   const thread = await db.agentChatThread.create({
     data: {
       organizationId: org.id,
       userId: user.id,
-      contextType: (context?.entityType as EntityType | undefined) ?? null,
-      contextId: context?.entityId ?? null,
+      contextType: (threadContext?.entityType as EntityType | undefined) ?? null,
+      contextId: threadContext?.entityId ?? null,
     },
     select: { id: true },
   });

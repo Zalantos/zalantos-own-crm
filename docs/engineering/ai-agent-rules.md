@@ -23,7 +23,7 @@ Condicional:
 
 - `context-extended.md` → pipelines, agente, workflows
 - `decisions.md` → arquitectura, infra, auth
-- `integrations.md` → APIs, IA, R2, gateway, Telegram
+- `integrations.md` → APIs, IA, gateway, Telegram
 - `docs/integrations/telegram-copiloto.md` → contrato n8n ↔ Telegram
 - `security-checklist.md` → auth, PII, producción
 - `testing-strategy.md` → lógica de negocio
@@ -83,7 +83,6 @@ Actualizar docs cuando cambie:
 
 ## Reglas de prompts / proveedores IA
 
-- Prompts de meeting en `src/lib/meeting-intelligence/prompts/`.
 - No hardcodear API keys; usar env vars.
 - Modelos configurables vía `AGENT_MODEL`, `MEETING_REASONING_MODEL`.
 - Mantener trazabilidad: `CRMChangeProposal.model`, `rawModelOutput`.

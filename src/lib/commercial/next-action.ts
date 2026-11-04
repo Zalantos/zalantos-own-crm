@@ -295,8 +295,7 @@ export function leadSuggestions(
 }
 
 export type PartnerActionFacts = {
-  allianceStage: string | null;
-  allianceStatus: string;
+  isActive: boolean;
   ownerId: string | null;
   nextStep: string | null;
   nextStepDueDate: Date | null;
@@ -307,28 +306,19 @@ export function partnerSuggestions(
   now: Date = new Date(),
 ): NextActionSuggestion[] {
   const out: NextActionSuggestion[] = [];
-  if (!facts.allianceStage || facts.allianceStatus !== "open") return out;
+  if (!facts.isActive) return out;
   if (!facts.ownerId) {
     out.push({
       code: "partner_without_owner",
-      title: "Asignar responsable de la alianza",
+      title: "Asignar responsable del partner",
       channel: null,
-      reason: "La alianza no tiene responsable en Zalantos.",
+      reason: "El partner no tiene responsable en Zalantos.",
       severity: "warning",
       suggestedDueDate: startOfDay(now),
     });
   }
   const state = nextActionState(facts.nextStep, facts.nextStepDueDate, now);
-  if (state === "missing") {
-    out.push({
-      code: "missing_next_action",
-      title: "Definir la próxima acción de la alianza",
-      channel: null,
-      reason: "Alianza en desarrollo sin seguimiento definido.",
-      severity: "info",
-      suggestedDueDate: addDays(now, 3),
-    });
-  } else if (state === "overdue" && facts.nextStepDueDate) {
+  if (state === "overdue" && facts.nextStepDueDate) {
     out.push({
       code: "next_action_overdue",
       title: `Próxima acción vencida: ${facts.nextStep}`,

@@ -20,7 +20,7 @@ export const listTasksInputSchema = z.object({
   commercialPartnerId: z
     .string()
     .optional()
-    .describe("Alianza/partner (id de list_partners)"),
+    .describe("Partner (id de list_partners)"),
   assigneeId: z
     .string()
     .optional()

@@ -32,7 +32,7 @@ Fuente de verdad: `prisma/schema.prisma`.
 | `Campaign`                  | `campaigns`                    | Campañas por org; `key` = utm_campaign/campaign_id                 |
 | `OpportunityStageHistory`   | `opportunity_stage_history`    | Períodos por etapa (`enteredAt` null = legacy desconocido)         |
 | `CommercialStatusChange`    | `commercial_status_changes`    | Bitácora append-only de estados (lead, oportunidad, alianza)       |
-| `CommercialPartnerContact`  | `commercial_partner_contacts`  | Contactos de una alianza                                           |
+| `CommercialPartnerContact`  | `commercial_partner_contacts`  | Contactos de un partner                                           |
 | `RumboHandoff`              | `rumbo_handoffs`               | Traspaso a Rumbo, una fila por oportunidad                         |
 
 ### Partners y ofertas comerciales
@@ -64,12 +64,20 @@ Fuente de verdad: `prisma/schema.prisma`.
 | `WorkflowLog`         | `workflow_logs`          | Auditoría de ejecución                      |
 | `IntegrationDelivery` | `integration_deliveries` | Cola de despacho al gateway; dedupe por org |
 
-### Meeting Intelligence
+### Actores y alertas
+
+| Modelo                | Tabla                    | Notas                                                                  |
+| --------------------- | ------------------------ | ---------------------------------------------------------------------- |
+| `CommercialActorLink` | `commercial_actor_links` | Actor (persona, empresa o partner) en un lead u oportunidad, con rol   |
+| `CommercialAlertRule` | `commercial_alert_rules` | Regla por etapa y condición (única por org, pipeline, etapa, condición) |
+| `CommercialAlert`     | `commercial_alerts`      | Alerta detectada, con motivo y `dedupeKey`                             |
+
+### Bitácora IA e histórico de reuniones
 
 | Modelo              | Tabla                  | Notas                                           |
 | ------------------- | ---------------------- | ----------------------------------------------- |
-| `Meeting`           | `meetings`             | `processingStatus` enum; evidencia y propuestas |
-| `Evidence`          | `evidence`             | Archivos en R2; `extractedText`                 |
+| `Meeting`           | `meetings`             | **Histórico**: ningún flujo activo escribe aquí |
+| `Evidence`          | `evidence`             | **Histórico**: archivos en R2; `extractedText`  |
 | `CRMChangeProposal` | `crm_change_proposals` | Lote/bitácora IA, canal e iniciador             |
 | `CRMChangeItem`     | `crm_change_items`     | Cambios atómicos aplicables y reversibles       |
 | `TimelineEvent`     | `timeline_events`      | Historial por empresa                           |
@@ -80,7 +88,7 @@ Fuente de verdad: `prisma/schema.prisma`.
 | ------------------ | --------------------- | --------------------------- |
 | `AgentChatThread`  | `agent_chat_threads`  | Contexto de página opcional |
 | `AgentChatMessage` | `agent_chat_messages` | Parts JSON (AI SDK)         |
-| `AgentAttachment`  | `agent_attachments`   | Adjuntos en R2              |
+| `AgentAttachment`  | `agent_attachments`   | Texto extraído de adjuntos  |
 
 ### Telegram (canal copiloto)
 
@@ -124,6 +132,10 @@ usuario y organización, las tools operan con `forOrg(organizationId)`.
 
 ### Company
 
+- `wikiClientId`: `client_id` de la empresa en la Wiki corporativa. Opcional, único
+  por organización (`@@unique([organizationId, wikiClientId])`) y editable solo por
+  ADMIN de una organización habilitada. No reemplaza a `id` y el agente no lo escribe.
+
 - Perfil comercial estándar editable manualmente y vía propuestas IA:
   `source`, `priority`, `mainPain`, `productInterest`, `potentialValue`,
   `buyingTiming`, `urgency`, `competitor`, `currentProvider`, `nextStep`,
@@ -156,7 +168,7 @@ usuario y organización, las tools operan con `forOrg(organizationId)`.
   por relación. Solo puede existir una relación principal activa por persona.
 - `Person.companyId` y `Person.roleTitle` se mantienen temporalmente como espejo
   de la relación principal para compatibilidad. Las escrituras manuales,
-  inbound y de Meeting Intelligence crean/sincronizan las relaciones.
+  inbound y de IA crean/sincronizan las relaciones.
 - El email sigue siendo único por organización. El match alternativo por nombre
   se evalúa contra cualquiera de las empresas activas relacionadas.
 - La migración es expansiva: crea la relación principal desde los campos legacy
@@ -269,17 +281,30 @@ en propuestas anteriores a la migración.
   `update_task` las excluyen (`occurredAt: null`). Lógica compartida en
   `src/lib/crm/activity-records.ts`.
 
-### Meeting manual
+### Reunión comercial
 
-- Una reunión sin grabación (tool `create_meeting`) se guarda con
-  `sourceType="manual"`, `processingStatus="ready"`, sin `rawTranscript`, y con
-  `aiSummary` en el mismo formato que produce el pipeline (`headline`,
-  `keyPoints`, `decisions`, `risks`) más `nextSteps` y `source: "manual"`.
-  `participants` admite `{ name, email?, company?, role?, internal? }`.
+- Una reunión es `Activity(type="meeting")`: `occurredAt` es la fecha,
+  `description` el resumen, `outcomes` los acuerdos y próximas acciones,
+  `channel` el tipo de reunión y `participants` las personas del CRM. Puede tener
+  fecha futura (agendada).
+- Las filas de `meetings` se copiaron a `activities` con
+  `externalSource="legacy_meeting"`, `externalId=<meeting.id>`. El original queda
+  intacto, incluida la transcripción. `get_meeting` acepta ambos ids.
+
+### Actores y alertas
+
+- `CommercialActorLink`: CHECK exige exactamente un destino
+  (`commercialLeadId`/`opportunityId`) y un actor
+  (`personId`/`companyId`/`commercialPartnerId`). `actorKey` =
+  `person:<id>`/`company:<id>`/`partner:<id>`, único por registro.
+- Decisor y sponsor persona de una oportunidad no se guardan aquí, sino en
+  `decisionMakerId`/`sponsorId`.
+- `CommercialAlert.dedupeKey` es único por org: regla + registro + fecha ancla.
+- Reglas de negocio en `docs/context/commercial-process.md`.
 
 ### Person dedup
 
-- Lógica en `src/lib/crm/person-dedup.ts` y `src/lib/meeting-intelligence/dedup-items.ts`.
+- Lógica en `src/lib/crm/person-dedup.ts` y `src/lib/ai-changes/dedup-items.ts`.
 - `duplicateOfId` en items de tipo `link_contact`.
 - El email se persiste normalizado (`trim` + minúsculas; vacío → `null`) y es
   único por organización mediante `@@unique([organizationId, email])`.
@@ -306,7 +331,7 @@ externalId])`. El ingest hace `create` directo y resuelve el conflicto
 - La conversión reutiliza `findExistingPerson` (mismo dedup que el resto del
   CRM) y dos entidades ya existentes pero antes no exportadas: el helper
   queda en `lib/inbound-leads/convert.ts` para poder testearlo sin DB real
-  (mismo patrón que `meeting-intelligence/apply.ts`).
+  (mismo patrón que `ai-changes/apply.ts`).
 - Entidades creadas en la conversión llevan `createdVia: "inbound_lead"`
   (agregado a los valores esperados de `createdVia`).
 
@@ -354,6 +379,8 @@ Ver `@@index` en `schema.prisma` — la mayoría compuestos con `organizationId`
 | `logged_activities_and_task_priority`  | Aditiva: `priority`, `occurredAt`, `durationMinutes`, `channel`, `outcomes` en `activities`; tabla `activity_people` con RLS                                          |
 | `ai_change_traceability`               | Canal/iniciador/fin de lote, snapshots, errores, expiración de reversión y relación de efectos internos; estados parciales/fallidos/revertidos                        |
 | `commercial_data_partners`             | Relaciones persona–empresa N:M, catálogo/asignación de partners, ofertas versionadas, reparto de utilidad, feriados, backfill legacy y RLS                            |
+| `commercial_actors_and_alerts`         | Estructural e idempotente: `commercial_actor_links`, `commercial_alert_rules`, `commercial_alerts`, CHECKs y RLS                                                      |
+| `commercial_actors_alerts_backfill`    | Aditiva e idempotente: actores desde partners y referidores, reglas por defecto, reuniones a `activities`, alianzas descartadas a partner inactivo                    |
 
 ## Qué no debe romperse
 
@@ -393,7 +420,7 @@ Reglas completas en `docs/context/commercial-process.md`.
 - `InboundLead`: `phone`, `attributionId`; relación 1:1 con `CommercialLead`.
 - `Workflow.configWarning`: advertencia de compatibilidad (no desactiva).
 - CHECKs SQL: estados de lead, prioridad, canal de atribución, etapa/estado de
-  alianza, estado de handoff, sujeto del lead, rango de probabilidad.
+  partner, estado de handoff, sujeto del lead, rango de probabilidad.
 - RLS `tenant_isolation` en las 7 tablas nuevas (`check-rls-coverage`: 46 OK).
 
 ### Migraciones

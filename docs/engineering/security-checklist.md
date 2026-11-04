@@ -37,16 +37,20 @@
 
 ## Storage (R2)
 
-- [ ] Presign con expiración corta.
-- [ ] Keys de objeto no adivinables (generadas server-side).
-- [ ] Credenciales R2 solo en servidor.
+- [ ] Credenciales R2 solo en servidor; idealmente token de solo lectura.
 
 ## APIs
 
 - [ ] Crons requieren `CRON_SECRET` ≥ 16 chars, no placeholders.
-- [ ] `/api/meetings/process` protegido con mismo secret.
+- [ ] `/api/entity-context/process` protegido con mismo secret.
 - [ ] `/api/telegram/*` requiere Bearer `INTEGRATION_GATEWAY_SECRET` (timing-safe).
 - [ ] Validar input con Zod en todas las rutas que aceptan body.
+
+## Wiki corporativa
+
+- [ ] `WIKI_MCP_ALLOWED_ORG_IDS` contiene solo la organización interna.
+- [ ] La credencial solo ve contenido apto para todo el equipo comercial.
+- [ ] Renovación de `WIKI_MCP_TOKEN` (o del secreto de Entra) agendada antes de caducar.
 
 ## Logs
 
@@ -81,5 +85,5 @@
 
 - [ ] Migraciones aplicadas (`npm run prisma:migrate:deploy`, paso explícito; `start` ya no migra).
 - [ ] Verificar login y una operación CRM post-deploy.
-- [ ] Verificar cron `process-evidence` responde 401 sin secret.
+- [ ] Verificar cron `commercial-follow-ups` responde 401 sin secret.
 - [ ] GAP: backup automático de Postgres documentado externamente.

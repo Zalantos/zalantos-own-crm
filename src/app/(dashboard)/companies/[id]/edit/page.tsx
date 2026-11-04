@@ -5,6 +5,7 @@ import { CustomFieldsFormSection } from "@/components/shared/custom-fields/custo
 import { DeleteRecordSection } from "@/components/shared/delete-record-section";
 import { CompanyForm } from "../../company-form";
 import { deleteCompany } from "../../actions";
+import { isWikiEnabledForOrg } from "@/lib/wiki-mcp/authorization";
 
 export default async function EditCompanyPage({
   params,
@@ -12,7 +13,7 @@ export default async function EditCompanyPage({
   params: Promise<{ id: string }>;
 }) {
   const { id } = await params;
-  const { user, db } = await requireOrgContext();
+  const { user, org, db } = await requireOrgContext();
   const company = await db.company.findUnique({ where: { id } });
   if (!company) notFound();
   const canDelete = user.role === "ADMIN" || company.createdById === user.id;
@@ -22,6 +23,9 @@ export default async function EditCompanyPage({
       <PageHeader title={`Editar ${company.name}`} />
       <CompanyForm
         company={company}
+        canEditWikiClientId={
+          user.role === "ADMIN" && isWikiEnabledForOrg(org.id)
+        }
         customFieldsSection={
           <CustomFieldsFormSection entityType="company" entityId={company.id} />
         }

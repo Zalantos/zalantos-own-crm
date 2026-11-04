@@ -129,13 +129,11 @@ export default async function ActivityPage({
       <DataTable
         rows={events}
         rowHref={(row) =>
-          row.refType === "meeting"
-            ? `/meetings/${row.refId}`
-            : row.refType === "proposal"
-              ? row.opportunityId
-                ? `/opportunities/${row.opportunityId}`
-                : `/companies/${row.companyId}`
-              : undefined
+          row.refType === "meeting" || row.refType === "proposal"
+            ? row.opportunityId
+              ? `/opportunities/${row.opportunityId}`
+              : `/companies/${row.companyId}`
+            : undefined
         }
         emptyMessage="Todavía no hay actividad registrada."
         columns={[

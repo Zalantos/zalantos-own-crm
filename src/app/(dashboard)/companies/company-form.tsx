@@ -29,9 +29,11 @@ function dateInputValue(value?: Date | string | null): string {
 export function CompanyForm({
   company,
   customFieldsSection,
+  canEditWikiClientId = false,
 }: {
   company?: Company;
   customFieldsSection?: React.ReactNode;
+  canEditWikiClientId?: boolean;
 }) {
   const action = company ? updateCompany : createCompany;
   const [state, formAction] = useActionState<FormState, FormData>(
@@ -84,6 +86,14 @@ export function CompanyForm({
             defaultValue={company?.linkedinUrl ?? ""}
             error={state?.fieldErrors?.linkedinUrl}
           />
+          {canEditWikiClientId && (
+            <Field
+              label="ID de cliente en Wiki"
+              name="wikiClientId"
+              defaultValue={company?.wikiClientId ?? ""}
+              error={state?.fieldErrors?.wikiClientId}
+            />
+          )}
           <div className="space-y-2">
             <Label htmlFor="status">Estado</Label>
             <Select name="status" defaultValue={company?.status ?? "active"}>

@@ -22,7 +22,6 @@ npm run dev                  # http://localhost:3000
 
 - Local: Ctrl+C y `npm run dev`.
 - Producción: restart del servicio en Railway.
-- Tras restart, cron `process-evidence` recupera meetings atascados.
 
 ## Migraciones
 
@@ -63,25 +62,9 @@ npx tsx scripts/check-rls-coverage.ts
 - Aumentar `TENANT_DB_POOL_MAX` o reducir paralelismo.
 - Ver comentarios en `src/lib/tenant.ts`.
 
-### Meeting atascado en `extracting` / `transcribing`
-
-- Verificar `GROQ_API_KEY` y cuota Groq.
-- Verificar credenciales R2 y que el archivo exista en bucket.
-- Invocar cron catch-up:
-
-```bash
-curl -X POST "$APP_URL/api/cron/process-evidence" \
-  -H "Authorization: Bearer $CRON_SECRET"
-```
-
-### Meeting en `failed`
-
-- Revisar `processingError` en DB o UI.
-- Requiere reintento manual (no auto-loop por diseño).
-
 ### Fuente de contexto atascada (`uploaded` / `extracting` / `analyzing`)
 
-- Verificar R2 + `GROQ_API_KEY` / modelo (`ENTITY_CONTEXT_MODEL` o fallback).
+- Verificar `GROQ_API_KEY` / modelo (R2 solo si es una fuente histórica sin texto) (`ENTITY_CONTEXT_MODEL` o fallback).
 - Catch-up:
 
 ```bash
@@ -115,15 +98,22 @@ curl -X POST "$APP_URL/api/cron/process-entity-context" \
 
 ### Groq caído o rate limited
 
-- Meetings quedan en estado intermedio o `failed`.
-- Activar cron `process-evidence` cuando el servicio recupere.
-- Considerar fallback de modelo vía `MEETING_REASONING_MODEL`.
+- Las fuentes de contexto quedan en estado intermedio o `failed`.
+- Invocar `process-entity-context` cuando el servicio se recupere.
+- Considerar fallback de modelo vía `ENTITY_CONTEXT_MODEL`.
 
 ### R2 inaccesible
 
-- Uploads y pipeline fallan en extracción/transcripción.
-- Verificar credenciales y estado de Cloudflare.
-- Evidencia con `storagePath` vacío = transcript manual inline.
+- Solo afecta el reintento de fuentes de contexto históricas sin texto.
+- El resto del CRM no depende de R2.
+
+### Alertas comerciales no se actualizan
+
+- Verificar que el scheduler invoque `POST /api/cron/commercial-follow-ups`.
+  Se recomienda cada hora: tableros y listas muestran lo último sincronizado.
+- Revisar en la respuesta `alertsCreated` y `alertsResolved`.
+- Reglas en `/admin/settings/alerts`; una etapa renombrada o retirada aparece como
+  "(retirada)" y deja de evaluarse.
 
 ### Gateway webhook caído
 
@@ -139,6 +129,14 @@ curl -X POST "$APP_URL/api/cron/process-entity-context" \
    `/admin/settings/telegram`.
 4. Si 401: secret incorrecto o ausente.
 5. Contrato: `docs/integrations/telegram-copiloto.md`.
+
+## Wiki corporativa
+
+Si el agente dice que la Wiki no está disponible o no autorizada, buscar `[wiki-mcp]`
+en los logs y seguir la tabla de `error_type` de `docs/integrations/wiki-mcp.md`. El
+agente sigue funcionando con el CRM. `unauthorized` con `WIKI_MCP_TOKEN` suele ser un
+token caducado: crear otro en la Wiki. Si todo devuelve "sin evidencia", revisar que la
+credencial tenga espacios asignados.
 
 ## Proceso comercial (HU-CRM-02)
 

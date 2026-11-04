@@ -1,7 +1,7 @@
 import {
   isAuthorized,
   isCronSecretConfigured,
-} from "@/lib/meeting-intelligence/internal-auth";
+} from "@/lib/internal-auth";
 
 // Auth para los endpoints entrantes de Telegram (n8n → backend). Reutiliza el
 // secreto compartido del gateway de integraciones (INTEGRATION_GATEWAY_SECRET):

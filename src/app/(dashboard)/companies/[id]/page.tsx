@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { requireOrgContext } from "@/lib/tenant";
+import { isWikiEnabledForOrg } from "@/lib/wiki-mcp/authorization";
 import { PageHeader } from "@/components/shared/page-header";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -13,6 +14,8 @@ import {
   loadEntityContextData,
 } from "@/components/shared/entity-context/entity-context-panel";
 import { StatCard } from "@/components/shared/stat-card";
+import { ActorParticipationCards } from "@/components/shared/commercial/actor-participation-card";
+import { loadActorParticipation } from "@/lib/commercial/actor-service";
 import {
   LinkifiedText,
   toExternalHref,
@@ -67,7 +70,7 @@ export default async function CompanyDetailPage({
   if (!company) notFound();
   const canDelete = user.role === "ADMIN" || company.createdById === user.id;
   const formatters = createFormatters(org);
-  const [contextData, partnerCatalog, companyOptions, personOptions] =
+  const [contextData, partnerCatalog, companyOptions, personOptions, participation] =
     await Promise.all([
       loadEntityContextData(db, "company", company.id),
       db.commercialPartner.findMany({
@@ -82,6 +85,7 @@ export default async function CompanyDetailPage({
         orderBy: { firstName: "asc" },
         select: { id: true, firstName: true, lastName: true },
       }),
+      loadActorParticipation(db, { type: "company", id: company.id }),
     ]);
   const potentialValue =
     company.potentialValue != null
@@ -147,6 +151,13 @@ export default async function CompanyDetailPage({
           value={formatters.dateTime(company.createdAt)}
           variant="compact"
         />
+        {isWikiEnabledForOrg(org.id) && (
+          <StatCard
+            label="ID de cliente en Wiki"
+            value={company.wikiClientId ?? "Sin vincular"}
+            variant="compact"
+          />
+        )}
       </div>
 
       <section className="mb-6 space-y-3">
@@ -249,6 +260,7 @@ export default async function CompanyDetailPage({
           <TabsTrigger value="partners">
             Partners ({company.commercialPartnerAssignments.length})
           </TabsTrigger>
+          <TabsTrigger value="participation">Negocios como actor</TabsTrigger>
           <TabsTrigger value="context">Contexto</TabsTrigger>
           <TabsTrigger value="activities">Actividades</TabsTrigger>
           <TabsTrigger value="notes">Notas</TabsTrigger>
@@ -394,6 +406,12 @@ export default async function CompanyDetailPage({
           />
         </TabsContent>
 
+        <TabsContent value="participation" className="pt-4">
+          <ActorParticipationCards
+            actor={{ type: "company", id: company.id }}
+            participation={participation}
+          />
+        </TabsContent>
         <TabsContent value="context" className="pt-4">
           <EntityContextPanel
             entityType="company"

@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useDraggable } from "@dnd-kit/core";
 import { CSS } from "@dnd-kit/utilities";
 import { Badge } from "@/components/ui/badge";
+import { ActorIndicator, AlertIndicator } from "@/components/shared/commercial/record-indicators";
 import { formatCurrencyValue } from "@/lib/format";
 
 // Datos mínimos de la tarjeta: el detalle completo vive en la ficha.
@@ -17,6 +18,9 @@ export type KanbanOpportunity = {
   nextStepDueDate: Date | null;
   company: { name: string };
   owner?: { name: string | null; email: string } | null;
+  // Etiquetas de actores y alertas abiertas: solo indicadores compactos.
+  actorLabels?: string[];
+  alerts?: { severity: string; title: string }[];
 };
 
 function shortDate(date: Date) {
@@ -80,6 +84,8 @@ export function KanbanCard({
         {opportunity.probability !== null && (
           <Badge variant="outline">{opportunity.probability}%</Badge>
         )}
+        <ActorIndicator labels={opportunity.actorLabels ?? []} />
+        <AlertIndicator alerts={opportunity.alerts ?? []} />
       </div>
       {missingNext ? (
         <p className="text-xs text-amber-600 dark:text-amber-400">

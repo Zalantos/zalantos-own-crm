@@ -1,8 +1,9 @@
 # Proceso comercial — CRM Zalantos
 
 Rediseño HU-CRM-02 (ver `planning/stories/HU-CRM-02-commercial-process-redesign.md`).
-Tres procesos conectados: **Prospección**, **Oportunidades** y **Alianzas**.
-El trabajo comercial vive en el CRM hasta el compromiso formal; la ejecución
+Dos procesos conectados: **Prospección** y **Oportunidades**. Toda oportunidad
+usa el mismo pipeline, venga directa, de un referido o de un partner. Los
+partners participan como **actores**. El trabajo comercial vive en el CRM hasta el compromiso formal; la ejecución
 del proyecto vive en **Rumbo**.
 
 ## Conceptos
@@ -14,7 +15,8 @@ del proyecto vive en **Rumbo**.
 | Contactado | Se hizo un **intento** de contacto (email, WhatsApp, llamada, LinkedIn…). No es una respuesta positiva. | `CommercialLead(status=contacted)` |
 | Lead | Manifestó interés o hay una necesidad reconocible (`interestSignal`). | `CommercialLead(status=lead)` |
 | Oportunidad | Proyecto o necesidad concreta que Zalantos puede abordar. Una empresa o un lead pueden tener varias. | `Opportunity` |
-| Alianza | Relación con un partner que genera referidos y oportunidades. No es una venta. | `CommercialPartner.alliance*` |
+| Partner | Relación comercial del directorio (`/partners`): acuerdos, contactos y comisiones. No tiene pipeline propio. | `CommercialPartner` |
+| Actor | Persona, empresa o partner que participa o influye en un prospecto, lead u oportunidad. No es el responsable interno (`ownerId`). | `CommercialActorLink` + `decisionMakerId`/`sponsorId` |
 | Lead entrante | Bandeja de recepción de formularios externos, previa a la revisión humana. | `InboundLead` (`/leads`) |
 
 ## Prospección (`/prospecting`)
@@ -99,10 +101,14 @@ persona/partner, detalle, `touchedAt`, `method`). Canales:
 
 - **Tarea** = algo pendiente (`occurredAt = null`, estados
   `todo/in_progress/blocked/done`, `plannedDate` ≠ `dueDate`, prioridad).
+- **Reunión comercial** = una interacción con `type=meeting`: fecha,
+  participantes, empresa, prospecto u oportunidad, resumen (`description`) y
+  acuerdos/próximas acciones (`outcomes`). No hay transcripción ni análisis
+  automático.
 - **Interacción** = algo que ocurrió (`occurredAt`, tipo/canal email,
   whatsapp, call, linkedin, meeting, other; resultado en `outcomes`). Nace
   `done` y no cuenta como pendiente.
-- Ambas se vinculan a oportunidad, prospecto (`commercialLeadId`) o alianza
+- Ambas se vinculan a oportunidad, prospecto (`commercialLeadId`) o partner
   (`commercialPartnerId`). Los ids vinculados se validan contra la
   organización (`resolveRecordLinks`).
 - `/activities` es solo de tareas; filtros por vínculo, responsable,
@@ -122,23 +128,92 @@ siguiente.
   render): sin responsable, sin acción o sin fecha, acción vencida, propuesta
   enviada sin respuesta (≥ 5 días o pasó la respuesta esperada), reunión sin
   próximo paso posterior, pausa por reactivar, tareas vencidas, contactado sin
-  respuesta (≥ 7 días), lead sin oportunidad (≥ 14 días).
+  respuesta (≥ 7 días), lead sin oportunidad (≥ 14 días). Si hay una alerta por
+  etapa equivalente, manda la alerta y su umbral configurado.
 - **Nivel 2 — IA** bajo demanda ("Sugerir con IA"): una llamada al modelo con
   contexto acotado; no escribe nada. Las sugerencias se muestran como "no
   confirmadas" hasta que el usuario las usa.
 - Cron `POST /api/cron/commercial-follow-ups`: para pausadas con
   `reactivateAt` vencido crea **una** tarea de seguimiento (idempotente por
-  `externalSource=system`, `externalId=reactivation:<id>:<fecha>`) y emite
-  `reactivation_due`. No cambia estados.
+  `externalSource=system`, `externalId=reactivation:<id>:<fecha>`), emite
+  `reactivation_due` y reconcilia las alertas por etapa. No cambia estados.
 
-## Alianzas (`/partners`)
+## Actores comerciales
 
-Pipeline sobre `CommercialPartner`: `identified → contacted → exploration →
-negotiation → agreement → active`; estado `open | paused | discarded`
-(pausar/descartar exige motivo). Acuerdo/Activo exigen `agreementTerms`.
-Contactos en `CommercialPartnerContact`. Referidos = atribuciones con
-`referrerPartnerId`; negocios = `OpportunityCommercialPartner` + referidos.
-Porcentajes, snapshots y reparto de ofertas no cambian.
+`CommercialActorLink` asocia un actor a un prospecto/lead u oportunidad, con
+rol, descripción, fecha y quién lo registró. Servicios en
+`src/lib/commercial/actor-service.ts`.
+
+| Rol | Key |
+| --- | --- |
+| Referidor | `referrer` |
+| Partner comercial | `commercial_partner` |
+| Intermediario | `intermediary` |
+| Colaborador | `collaborator` |
+| Sponsor | `sponsor` |
+| Decisor | `decision_maker` |
+| Otro | `other` |
+
+- Opcionales y múltiples; un actor por registro (`actorKey` deduplica) y puede
+  tener roles distintos en negocios distintos.
+- **Decisor y sponsor persona** de una oportunidad viven en `decisionMakerId` y
+  `sponsorId`: no se duplican como vínculo, y la sección los muestra junto al
+  resto. Si el campo ya está ocupado por otra persona, hay que desvincularla
+  antes. Una empresa o partner sí se guarda como vínculo con esos roles.
+- **Vincular no asigna comisión.** La participación económica sigue en
+  `OpportunityCommercialPartner` y las ofertas. Asignar un partner económico
+  crea su vínculo de actor; un partner con participación económica no se
+  desvincula hasta retirarla en la pestaña Partners.
+- **Referidores:** el referidor de una atribución queda como actor del lead y de
+  la oportunidad.
+- **Conversión de lead:** copia los actores a la oportunidad, conserva su fecha y
+  mantiene los del lead. Decisor/sponsor persona pasan a los campos si están
+  libres; si no, quedan como `other` con el rol original en la descripción.
+- Filtro por actor o partner (`?actor=partner:<id>`) en tableros y listas.
+
+## Partners (`/partners`)
+
+Directorio de relaciones comerciales, sin Kanban ni etapas: tipo, responsable,
+acuerdo y condiciones, contactos, notas, interacciones y los prospectos y
+oportunidades en los que participa. `isActive` reemplaza a pausar/descartar. Las
+columnas `alliance*` de etapa y estado solo conservan el histórico; una alianza
+descartada quedó como partner inactivo. Porcentajes, snapshots y reparto de
+ofertas no cambian.
+
+## Alertas por etapa
+
+Reglas configurables en `/admin/settings/alerts` (`CommercialAlertRule`). La
+detección es determinística (`src/lib/commercial/alerts.ts`): no usa modelos.
+
+| Condición | Se cumple cuando | Plazo desde |
+| --- | --- | --- |
+| `stage_stale` | Lleva X días en la etapa | Entrada real a la etapa |
+| `no_interaction` | X días sin interacción | Lo más reciente entre interacción y entrada a la etapa |
+| `no_next_action` | Sin próxima acción | Entrada a la etapa |
+| `next_action_overdue` | Próxima acción vencida hace X días | Vencimiento |
+| `reactivation_due` | Pausada alcanzó su reactivación (solo etapa `paused`) | `reactivateAt` |
+
+- Cada regla define etapa, condición, días, corridos o hábiles (usa
+  `BusinessHoliday`), severidad, activación y destinatario (responsable del
+  registro o un usuario).
+- **Fechas reales:** oportunidades usan el período abierto de
+  `OpportunityStageHistory`; leads, `statusChangedAt` y sus fechas por estado.
+  Con `enteredAt` desconocido, las reglas de plazo por etapa no se evalúan.
+- **Sin duplicados:** `dedupeKey` = regla + registro + fecha ancla. Mientras dure
+  el período no se repite, ni siquiera tras resolverla a mano. Si cambia el
+  ancla (entró de nuevo a la etapa, hubo otra interacción) es un período nuevo.
+- **Ciclo:** `open` → `acknowledged` (reconocida: visible en la ficha, sin marcar
+  tarjetas) → `resolved`. Se resuelve sola (`resolution=auto`) cuando la condición
+  deja de cumplirse, se cierra el negocio o se desactiva la regla.
+- **Ganadas, perdidas y archivadas nunca se evalúan.**
+- **Evaluación:** cron `POST /api/cron/commercial-follow-ups`, al abrir la ficha y
+  tras acciones de UI que cambian etapa, estado, próxima acción o interacciones.
+  Tableros y listas muestran lo último sincronizado.
+- **Avisos:** una alerta nueva escribe timeline, emite el evento de workflow
+  `alert_raised` (oportunidades) y, con gateway configurado, un email único por
+  alerta (`commercial.alert`).
+- **Próxima mejor acción:** las alertas abiertas lideran las sugerencias y
+  reemplazan a la regla fija equivalente (`mergeAlertSuggestions`).
 
 ## Traspaso a Rumbo
 

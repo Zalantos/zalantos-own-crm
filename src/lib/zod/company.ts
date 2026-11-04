@@ -35,6 +35,11 @@ export const companyCreateSchema = z.object({
   nextStep: optionalString,
   nextStepDueDate: optionalDate,
   lastContactAt: optionalDate,
+  // Vacío borra el vínculo (null); ausente no lo toca. Límite del client_id en la Wiki.
+  wikiClientId: z.preprocess(
+    (val) => (typeof val === "string" ? val.trim() || null : val),
+    z.string().max(100, "Máximo 100 caracteres").nullable().optional(),
+  ),
 });
 
 export const companyUpdateSchema = companyCreateSchema.partial().extend({

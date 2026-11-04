@@ -139,6 +139,9 @@ model Organization {
   commercialStatusChanges       CommercialStatusChange[]
   commercialPartnerContacts     CommercialPartnerContact[]
   rumboHandoffs                 RumboHandoff[]
+  commercialActorLinks          CommercialActorLink[]
+  commercialAlertRules          CommercialAlertRule[]
+  commercialAlerts              CommercialAlert[]
 
   @@map("organizations")
 }
@@ -232,6 +235,8 @@ model Company {
   nextStep        String?
   nextStepDueDate DateTime?
   lastContactAt   DateTime?
+  // client_id de esta empresa en la Wiki corporativa. No reemplaza a id.
+  wikiClientId    String?
   createdById     String?
   createdBy       User?        @relation(fields: [createdById], references: [id], onDelete: SetNull)
   createdVia      String       @default("manual")
@@ -249,7 +254,9 @@ model Company {
   linkedCommercialPartners     CommercialPartner[]         @relation("CommercialPartnerLinkedCompany")
   commercialPartnerAssignments CompanyCommercialPartner[]
   commercialLeads              CommercialLead[]
+  actorLinks                   CommercialActorLink[]
 
+  @@unique([organizationId, wikiClientId])
   @@index([organizationId, name])
   @@index([organizationId, status])
   @@index([createdById])
@@ -288,6 +295,7 @@ model Person {
   commercialLeads              CommercialLead[]
   referredAttributions         CommercialAttribution[]     @relation("AttributionReferrerPerson")
   partnerContacts              CommercialPartnerContact[]
+  actorLinks                   CommercialActorLink[]
 
   @@unique([organizationId, email])
   @@index([organizationId])
@@ -385,6 +393,8 @@ model Opportunity {
   stageHistory          OpportunityStageHistory[]
   rumboHandoff          RumboHandoff?
   legacyOfLead          CommercialLead?                @relation("CommercialLeadLegacyOpportunity")
+  actorLinks            CommercialActorLink[]
+  alerts                CommercialAlert[]
 
   @@index([organizationId, stageId])
   @@index([organizationId, status])
@@ -438,10 +448,9 @@ model CommercialPartner {
   createdAt       DateTime     @default(now())
   updatedAt       DateTime     @updatedAt
 
-  // Pipeline de alianzas: identified | contacted | exploration | negotiation |
-  // agreement | active. Null = partner fuera del pipeline (solo catálogo).
+  // Retirados del flujo activo: el pipeline de alianzas se eliminó y estas
+  // columnas solo conservan el histórico (ver /partners, sin Kanban).
   allianceStage          String?
-  // open | paused | discarded (no son etapas del flujo activo).
   allianceStatus         String    @default("open")
   allianceStatusReason   String?   @db.Text
   allianceStageChangedAt DateTime?
@@ -468,6 +477,7 @@ model CommercialPartner {
   referredAttributions   CommercialAttribution[]        @relation("AttributionReferrerPartner")
   activities             Activity[]
   notesRel               Note[]
+  actorLinks             CommercialActorLink[]
 
   @@index([organizationId, allianceStage])
   @@index([organizationId, isActive])
@@ -697,6 +707,8 @@ model CommercialLead {
   opportunities Opportunity[] @relation("OpportunityCommercialLead")
   activities    Activity[]
   notes         Note[]
+  actorLinks    CommercialActorLink[]
+  alerts        CommercialAlert[]
 
   @@index([organizationId, status])
   @@index([organizationId, ownerId])
@@ -835,6 +847,128 @@ model CommercialPartnerContact {
   @@unique([commercialPartnerId, personId])
   @@index([organizationId, commercialPartnerId])
   @@map("commercial_partner_contacts")
+}
+
+// Actor comercial: persona, empresa o partner que participa o influye en un
+// prospecto, lead u oportunidad. Exactamente un destino y un actor (CHECK en
+// SQL). actorKey = "person:<id>" | "company:<id>" | "partner:<id>" deduplica un
+// actor por registro. Vincular un actor NO asigna comisión: la participación
+// económica sigue en OpportunityCommercialPartner y en las ofertas. El decisor
+// y el sponsor persona de una oportunidad viven en decisionMakerId/sponsorId.
+model CommercialActorLink {
+  id                  String             @id @default(cuid())
+  organizationId      String
+  organization        Organization       @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  commercialLeadId    String?
+  commercialLead      CommercialLead?    @relation(fields: [commercialLeadId], references: [id], onDelete: Cascade)
+  opportunityId       String?
+  opportunity         Opportunity?       @relation(fields: [opportunityId], references: [id], onDelete: Cascade)
+  personId            String?
+  person              Person?            @relation(fields: [personId], references: [id], onDelete: Cascade)
+  companyId           String?
+  company             Company?           @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  commercialPartnerId String?
+  commercialPartner   CommercialPartner? @relation(fields: [commercialPartnerId], references: [id], onDelete: Cascade)
+  actorKey            String
+  // referrer | commercial_partner | intermediary | collaborator | sponsor |
+  // decision_maker | other
+  role                String
+  description         String?            @db.Text
+  linkedAt            DateTime           @default(now())
+  createdById         String?
+  createdBy           User?              @relation("ActorLinkCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+  // manual | agent | attribution | partner_assignment | lead_conversion | migration
+  source              String             @default("manual")
+  createdAt           DateTime           @default(now())
+  updatedAt           DateTime           @updatedAt
+
+  @@unique([commercialLeadId, actorKey])
+  @@unique([opportunityId, actorKey])
+  @@index([organizationId, actorKey])
+  @@index([organizationId, opportunityId])
+  @@index([organizationId, commercialLeadId])
+  @@index([personId])
+  @@index([companyId])
+  @@index([commercialPartnerId])
+  @@map("commercial_actor_links")
+}
+
+// Regla de seguimiento por etapa, configurable en /admin/settings/alerts. Una
+// por (pipeline, etapa, condición). Ver src/lib/commercial/alerts.ts.
+model CommercialAlertRule {
+  id              String       @id @default(cuid())
+  organizationId  String
+  organization    Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  // prospecting | opportunity
+  pipeline        String
+  // Prospección: prospect | contacted | lead. Oportunidades: PipelineStage.key,
+  // o "paused" para las pausadas.
+  stageKey        String
+  // stage_stale | no_interaction | no_next_action | next_action_overdue |
+  // reactivation_due
+  condition       String
+  thresholdDays   Int          @default(0)
+  // calendar | business
+  dayType         String       @default("calendar")
+  // info | warning | critical
+  severity        String       @default("warning")
+  isActive        Boolean      @default(true)
+  // owner (responsable del registro) | user (recipientUserId)
+  recipientType   String       @default("owner")
+  recipientUserId String?
+  recipientUser   User?        @relation("AlertRuleRecipient", fields: [recipientUserId], references: [id], onDelete: SetNull)
+  createdAt       DateTime     @default(now())
+  updatedAt       DateTime     @updatedAt
+
+  alerts CommercialAlert[]
+
+  @@unique([organizationId, pipeline, stageKey, condition])
+  @@index([organizationId, isActive])
+  @@map("commercial_alert_rules")
+}
+
+// Alerta detectada por una regla. dedupeKey = regla + registro + fecha ancla:
+// el mismo período nunca genera una segunda alerta, aunque se haya resuelto.
+model CommercialAlert {
+  id               String               @id @default(cuid())
+  organizationId   String
+  organization     Organization         @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  ruleId           String?
+  rule             CommercialAlertRule? @relation(fields: [ruleId], references: [id], onDelete: SetNull)
+  commercialLeadId String?
+  commercialLead   CommercialLead?      @relation(fields: [commercialLeadId], references: [id], onDelete: Cascade)
+  opportunityId    String?
+  opportunity      Opportunity?         @relation(fields: [opportunityId], references: [id], onDelete: Cascade)
+  pipeline         String
+  stageKey         String
+  condition        String
+  severity         String
+  title            String
+  // Motivo que originó la alerta, con las fechas reales usadas.
+  reason           String               @db.Text
+  // Fecha desde la que corre el plazo (entrada a etapa, último contacto...).
+  anchorAt         DateTime
+  dedupeKey        String
+  // open | acknowledged | resolved
+  status           String               @default("open")
+  recipientUserId  String?
+  recipientUser    User?                @relation("AlertRecipient", fields: [recipientUserId], references: [id], onDelete: SetNull)
+  detectedAt       DateTime             @default(now())
+  acknowledgedAt   DateTime?
+  acknowledgedById String?
+  resolvedAt       DateTime?
+  resolvedById     String?
+  // manual | auto (dejó de cumplirse la condición)
+  resolution       String?
+  createdAt        DateTime             @default(now())
+  updatedAt        DateTime             @updatedAt
+
+  @@unique([organizationId, dedupeKey])
+  @@index([organizationId, status])
+  @@index([organizationId, opportunityId, status])
+  @@index([organizationId, commercialLeadId, status])
+  @@index([organizationId, recipientUserId, status])
+  @@map("commercial_alerts")
 }
 
 // Traspaso de una oportunidad ganada a Rumbo (ejecución). Una fila por
@@ -1234,6 +1368,9 @@ model User {
   recordedAttributions     CommercialAttribution[] @relation("AttributionRecordedBy")
   requestedRumboHandoffs   RumboHandoff[]          @relation("RumboHandoffRequestedBy")
   responsibleRumboHandoffs RumboHandoff[]          @relation("RumboHandoffResponsible")
+  recordedActorLinks       CommercialActorLink[]   @relation("ActorLinkCreatedBy")
+  alertRulesToReceive      CommercialAlertRule[]   @relation("AlertRuleRecipient")
+  receivedAlerts           CommercialAlert[]       @relation("AlertRecipient")
 
   @@index([organizationId])
   @@map("users")
@@ -1262,8 +1399,11 @@ model TeamMember {
   @@map("team_members")
 }
 
-// ---------- Meeting Intelligence ----------
+// ---------- Meeting Intelligence (retirado) ----------
 
+// Solo histórico: las reuniones comerciales viven en Activity(type=meeting) y
+// estas filas se copiaron allí con externalSource=legacy_meeting. Se conservan
+// transcripciones y evidencias; ningún flujo activo escribe en estas tablas.
 model Meeting {
   id               String           @id @default(cuid())
   organizationId   String
@@ -1438,7 +1578,7 @@ model CRMChangeItem {
   // stage_change | create_task | add_contact | link_contact | update_pain |
   // add_note | update_sponsor | update_decision_maker | update_field |
   // log_activity | create_meeting | update_task | update_note |
-  // update_activity | update_meeting
+  // update_activity | update_meeting | link_actor | update_actor | unlink_actor
   type             String
   // Target entity type: company | opportunity | person | activity | note
   entity           String
@@ -1537,7 +1677,7 @@ model AgentAttachment {
   threadId       String
   filename       String
   mimeType       String
-  // Object key in R2; empty when R2 isn't configured (text-only fallback).
+  // Object key in R2 de adjuntos históricos; vacío en los nuevos (solo texto).
   storagePath    String
   sizeBytes      Int?
   extractedText  String?      @db.Text

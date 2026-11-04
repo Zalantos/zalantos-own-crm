@@ -4,9 +4,9 @@ Instrucciones específicas para Claude Code al trabajar en este repositorio.
 
 ## Resumen del proyecto
 
-CRM multi-tenant Next.js + Prisma + PostgreSQL para Zalantos. Incluye Meeting
-Intelligence (pipeline de evidencia → transcripción → propuestas CRM), agente IA
-copiloto con herramientas de lectura/escritura del CRM, y canal Telegram vía n8n.
+CRM multi-tenant Next.js + Prisma + PostgreSQL para Zalantos. Incluye proceso
+comercial con actores y alertas por etapa, agente IA copiloto con herramientas de
+lectura/escritura del CRM, y canal Telegram vía n8n.
 
 ## Comandos clave
 
@@ -82,9 +82,10 @@ actualizar los docs correspondientes en `docs/` y marcar el checklist del PR.
 |------|----------------|
 | Multi-tenancy | `src/lib/tenant.ts`, `src/lib/prisma.ts` |
 | Auth | `src/lib/auth.ts`, `src/lib/auth.config.ts` |
-| Meeting pipeline | `src/lib/meeting-intelligence/pipeline.ts` |
+| Actores y alertas | `src/lib/commercial/actor-service.ts`, `src/lib/commercial/alert-service.ts` |
 | Agente IA | `src/lib/agent/`, `src/app/api/agent/` |
 | Telegram | `src/lib/telegram/`, `src/app/api/telegram/` |
 | Integraciones | `src/lib/integrations/gateway.ts` |
-| Actividad IA | `src/lib/agent/proposals.ts`, `src/lib/meeting-intelligence/apply.ts` |
+| Wiki MCP | `src/lib/wiki-mcp/`, `src/lib/agent/tools/wiki.ts` |
+| Actividad IA | `src/lib/agent/proposals.ts`, `src/lib/ai-changes/apply.ts` |
 | RLS | `scripts/sql/setup-roles.sql`, migración `enable_row_level_security` |

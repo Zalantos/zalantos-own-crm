@@ -1,7 +1,6 @@
 import { defineAgentTool } from "@/lib/agent/tool-definition";
 import { z } from "zod";
 import type { Prisma } from "@prisma/client";
-import { extractHeadline } from "./meetings";
 import type { AgentToolContext } from "@/lib/agent/executor";
 import { ACTIVITY_OPEN_STATUSES } from "@/lib/activity-status";
 
@@ -99,29 +98,25 @@ export function buildAgendaTools(ctx: AgentToolContext) {
               company: { select: { name: true } },
             },
           }),
-          db.meeting.findMany({
+          db.activity.findMany({
             where: {
-              createdBy: ctx.userId,
-              meetingDate: { gte: since, lt: now },
-              processingStatus: "ready",
+              type: "meeting",
+              createdById: ctx.userId,
+              occurredAt: { gte: since, lt: now },
             },
-            orderBy: { meetingDate: "desc" },
+            orderBy: { occurredAt: "desc" },
             take: 5,
-            select: {
-              id: true,
-              title: true,
-              meetingDate: true,
-              aiSummary: true,
-            },
+            select: { id: true, title: true, occurredAt: true, description: true },
           }),
-          db.meeting.findMany({
+          db.activity.findMany({
             where: {
-              createdBy: ctx.userId,
-              meetingDate: { gte: now, lte: until },
+              type: "meeting",
+              createdById: ctx.userId,
+              occurredAt: { gte: now, lte: until },
             },
-            orderBy: { meetingDate: "asc" },
+            orderBy: { occurredAt: "asc" },
             take: 5,
-            select: { id: true, title: true, meetingDate: true },
+            select: { id: true, title: true, occurredAt: true },
           }),
         ]);
 
@@ -148,13 +143,13 @@ export function buildAgendaTools(ctx: AgentToolContext) {
           recentMeetings: recentMeetings.map((meeting) => ({
             id: meeting.id,
             title: meeting.title,
-            date: meeting.meetingDate.toISOString(),
-            headline: extractHeadline(meeting.aiSummary),
+            date: meeting.occurredAt?.toISOString() ?? null,
+            headline: meeting.description?.split("\n")[0] ?? null,
           })),
           upcomingMeetings: upcomingMeetings.map((meeting) => ({
             id: meeting.id,
             title: meeting.title,
-            date: meeting.meetingDate.toISOString(),
+            date: meeting.occurredAt?.toISOString() ?? null,
           })),
         };
       },

@@ -66,8 +66,7 @@ function overdue(tasks: FollowUpRecords["openTasks"], now: Date) {
     .map((task) => ({ title: task.title, dueDate: task.dueDate as Date }));
 }
 
-export async function opportunityFollowUpSuggestions(
-  db: TenantClient,
+export function opportunityFollowUpSuggestions(
   opportunity: {
     id: string;
     status: string;
@@ -82,12 +81,12 @@ export async function opportunityFollowUpSuggestions(
   },
   records: FollowUpRecords,
   now: Date = new Date(),
-): Promise<NextActionSuggestion[]> {
-  const lastMeeting = await db.meeting.findFirst({
-    where: { opportunityId: opportunity.id, meetingDate: { lte: now } },
-    orderBy: { meetingDate: "desc" },
-    select: { meetingDate: true },
-  });
+): NextActionSuggestion[] {
+  // Las reuniones agendadas a futuro todavía no cuentan como interacción.
+  const past = records.interactions.filter(
+    (activity) => activity.occurredAt && activity.occurredAt <= now,
+  );
+  const lastMeeting = past.find((activity) => activity.type === "meeting");
   return opportunitySuggestions(
     {
       status: opportunity.status,
@@ -99,8 +98,8 @@ export async function opportunityFollowUpSuggestions(
       proposalSentAt: opportunity.proposalSentAt,
       expectedResponseAt: opportunity.expectedResponseAt,
       reactivateAt: opportunity.reactivateAt,
-      lastInteractionAt: records.interactions[0]?.occurredAt ?? null,
-      lastMeetingAt: lastMeeting?.meetingDate ?? null,
+      lastInteractionAt: past[0]?.occurredAt ?? null,
+      lastMeetingAt: lastMeeting?.occurredAt ?? null,
       overdueTasks: overdue(records.openTasks, now),
     },
     now,
@@ -155,7 +154,7 @@ export const aiSuggestionSchema = z.object({
 
 export type AiNextActionSuggestion = z.infer<typeof aiSuggestionSchema>;
 
-const AI_INSTRUCTIONS = `Sos un asistente comercial B2B. Con el contexto JSON de una ficha del CRM (etapa, estado, interacciones, tareas, notas y reuniones) sugerí UNA próxima mejor acción concreta y realista.
+const AI_INSTRUCTIONS = `Sos un asistente comercial B2B. Con el contexto JSON de una ficha del CRM (etapa, estado, alertas, interacciones, tareas, notas y reuniones) sugerí UNA próxima mejor acción concreta y realista.
 Reglas:
 - No inventes datos que no estén en el contexto (montos, personas, fechas).
 - La acción la ejecuta un humano: nunca digas que ya se envió algo.

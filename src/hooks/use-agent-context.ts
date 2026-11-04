@@ -7,6 +7,8 @@ const PATTERNS: [RegExp, PageContext["entityType"]][] = [
   [/^\/companies\/([^/]+)/, "company"],
   [/^\/opportunities\/([^/]+)/, "opportunity"],
   [/^\/people\/([^/]+)/, "person"],
+  [/^\/prospecting\/([^/]+)/, "lead"],
+  [/^\/leads\/([^/]+)/, "inbound_lead"],
 ];
 
 // Derives the record the user is viewing from the URL so the agent can

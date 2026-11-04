@@ -1,7 +1,7 @@
 export const CREATED_VIA_LABELS: Record<string, string> = {
   manual: "Formulario manual",
   agent: "Agente IA",
-  meeting: "Meeting Intelligence",
+  meeting: "Meeting Intelligence (histórico)",
   enrichment: "Enriquecimiento de contexto",
   workflow: "Workflow",
   inbound_lead: "Lead entrante",

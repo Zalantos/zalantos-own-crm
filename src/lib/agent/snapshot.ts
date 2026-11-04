@@ -5,11 +5,9 @@ import type { TenantClient } from "@/lib/tenant";
 
 // Compact, serializable view of one company that the model reasons against.
 // Kept bounded on purpose (recent records only) to control token cost.
-// Extracted from the Meeting Intelligence snapshot so chat and pipeline share it.
 export async function buildCompanySnapshot(
   db: TenantClient,
   companyId: string,
-  options: { excludeMeetingId?: string } = {},
 ) {
   const company = await db.company.findUnique({ where: { id: companyId } });
   if (!company) throw new Error(`Empresa no encontrada: ${companyId}`);
@@ -61,17 +59,11 @@ export async function buildCompanySnapshot(
       orderBy: { createdAt: "desc" },
       take: 10,
     }),
-    db.meeting.findMany({
-      where: {
-        companyId,
-        ...(options.excludeMeetingId
-          ? { id: { not: options.excludeMeetingId } }
-          : {}),
-        processingStatus: "ready",
-      },
-      orderBy: { meetingDate: "desc" },
+    db.activity.findMany({
+      where: { companyId, type: "meeting", occurredAt: { not: null } },
+      orderBy: { occurredAt: "desc" },
       take: 5,
-      select: { id: true, title: true, meetingDate: true, aiSummary: true },
+      select: { id: true, title: true, occurredAt: true, description: true, outcomes: true },
     }),
     snapshotCustomFields(db, "company", companyId),
     db.entityContextProfile.findFirst({
@@ -212,8 +204,9 @@ export async function buildCompanySnapshot(
     })),
     priorMeetings: priorMeetings.map((m) => ({
       title: m.title,
-      date: m.meetingDate,
-      summary: m.aiSummary,
+      date: m.occurredAt,
+      summary: m.description,
+      outcomes: m.outcomes,
     })),
     contextProfile: contextProfile
       ? {

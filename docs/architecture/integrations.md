@@ -5,10 +5,10 @@
 | Servicio                | Uso                                                        | Credenciales                                                      |
 | ----------------------- | ---------------------------------------------------------- | ----------------------------------------------------------------- |
 | PostgreSQL              | Base de datos principal                                    | `DATABASE_URL`, `TENANT_DATABASE_URL`                             |
-| Groq                    | Transcripción (Whisper) y razonamiento de reuniones/fichas | `GROQ_API_KEY`                                                    |
+| Groq                    | Razonamiento de fichas y dictado del copiloto              | `GROQ_API_KEY`                                                    |
 | Anthropic               | Modelo alternativo (agente/reuniones)                      | `ANTHROPIC_API_KEY`                                               |
 | OpenAI                  | Agente copiloto (`gpt-6-luna` por defecto)                 | `OPENAI_API_KEY`                                                  |
-| Cloudflare R2           | Evidencia y adjuntos                                       | `R2_*`                                                            |
+| Cloudflare R2           | Solo lectura de fuentes históricas                         | `R2_*`                                                            |
 | Gateway webhook         | Email, Slack, automaciones (saliente)                      | `INTEGRATION_GATEWAY_*`                                           |
 | Telegram (vía n8n)      | Canal entrante al copiloto IA                              | `INTEGRATION_GATEWAY_SECRET`, `NEXT_PUBLIC_TELEGRAM_BOT_USERNAME` |
 | Inbound Leads (vía n8n) | Bandeja de leads externos (`/leads`)                       | `INBOUND_LEADS_SECRET`, `INBOUND_LEADS_ORGANIZATION_SLUG`         |
@@ -35,15 +35,6 @@ Estados de delivery: `pending` → `sent` | `failed`
 
 **Riesgo:** si el gateway está caído, los deliveries quedan en `failed` con
 `lastError`. GAP: estrategia de reintento automático no documentada en código.
-
-## IA — Meeting Intelligence
-
-| Paso                      | Proveedor             | Env                        |
-| ------------------------- | --------------------- | -------------------------- |
-| Transcripción audio/video | Groq Whisper          | `GROQ_TRANSCRIPTION_MODEL` |
-| Análisis y propuestas     | Groq/Anthropic/OpenAI | `MEETING_REASONING_MODEL`  |
-
-Prompts en `src/lib/meeting-intelligence/prompts/*.md`.
 
 ## IA — Dictado del copiloto web
 
@@ -112,13 +103,22 @@ MCP expone `list_ai_changes`, `get_ai_change`, `revert_ai_change_item` y
 mantienen para propuestas históricas y acciones destructivas, sin límite por
 cantidad de ítems cuando la aprobación es explícita.
 
-Web, Telegram, MCP, Meeting Intelligence y enriquecimiento convergen en la
+Web, Telegram, MCP y enriquecimiento convergen en la
 misma bitácora. Las actividades creadas por workflows derivados quedan como
 ítems hijos; efectos externos como correos, mensajes o webhooks no se anuncian
 como reversibles.
 
 UI admin: `/admin/settings/mcp` (crear, copiar una vez y revocar tokens propios).
 La URL publicada se construye con `APP_URL`; MCP no agrega variables nuevas.
+
+## Wiki corporativa (cliente MCP)
+
+El agente consulta la Wiki de zalantos con `wiki_search_knowledge` y
+`wiki_read_document`, de solo lectura, por MCP Streamable HTTP con `WIKI_MCP_TOKEN`
+o, si no existe, client credentials de Entra. Solo para las organizaciones de
+`WIKI_MCP_ALLOWED_ORG_IDS`, y sin exposición en `/api/mcp`. Un fallo vuelve como
+resultado de la tool y el agente sigue con el CRM. Ver
+`docs/integrations/wiki-mcp.md`.
 
 ## Inbound Leads (webhook entrante)
 
@@ -172,12 +172,9 @@ Tras cada ejecución de IA (éxito o error) se envía un evento single a
 
 ## Almacenamiento — Cloudflare R2
 
-- S3-compatible API vía `@aws-sdk/client-s3`.
-- Bucket: `R2_BUCKET`
-- Presign upload: `POST /api/evidence/presign`
-- Adjuntos agente: `POST /api/agent/attachments`
-
-Si R2 no está configurado, adjuntos de texto pueden funcionar sin storage.
+Solo lectura, para reintentar fuentes de contexto históricas sin texto extraído
+(`src/lib/storage/r2.ts`). El CRM no sube ni borra objetos. Auditoría y plan de
+retiro en `docs/architecture/knowledge-sources.md`.
 
 ## Auth
 
@@ -190,7 +187,6 @@ Endpoints internos que un scheduler debe llamar:
 
 | Ruta                                    | Propósito                                                                         |
 | --------------------------------------- | --------------------------------------------------------------------------------- |
-| `POST /api/cron/process-evidence`       | Catch-up pipeline meetings                                                        |
 | `POST /api/cron/process-entity-context` | Catch-up enriquecimiento de fichas                                                |
 | `POST /api/cron/check-overdue`          | Alertas de vencimiento                                                            |
 | `POST /api/cron/send-task-reminders`    | Resumen diario de tareas vencidas (18:00, timezone de la org) por mail y Telegram |
@@ -210,8 +206,6 @@ El scheduler es externo. Hay que invocarlo al menos una vez por hora para que
 cada timezone cruce las 18:00. Si se llama antes, no se envía nada y la
 respuesta cuenta esa org en `deferred`. El payload de mail trae `subject`, `text` y `html`; el de
 Telegram trae `text`. Tipo de notificación: `task.daily_overdue`.
-
-Pipeline de meeting también: `POST /api/meetings/process`
 
 ## Webhooks entrantes
 
@@ -237,7 +231,6 @@ El campo `Meeting.sourceType` anticipa orígenes futuros.
 | --------- | ---------------------------------- | ------------------- |
 | `APP_URL` | `http://localhost:3000`            | URL pública Railway |
 | Gateway   | Local/staging n8n                  | Prod n8n            |
-| R2        | Bucket dev                         | Bucket prod         |
 | Groq      | Misma API key (cuidado con costos) | Key de prod         |
 
 ## Riesgos

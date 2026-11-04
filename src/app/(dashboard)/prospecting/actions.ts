@@ -1,5 +1,7 @@
 "use server";
 
+import { after } from "next/server";
+import { refreshRecordAlerts } from "@/lib/commercial/alert-service";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { requireOrgContext } from "@/lib/tenant";
@@ -112,6 +114,7 @@ export async function changeLeadStatusAction(
         : null,
     },
   );
+  after(() => refreshRecordAlerts(db, org.id, { entity: "commercial_lead", id }));
   revalidateLead(id);
   return result.ok ? { ok: true, message: "Estado actualizado." } : { error: result.error };
 }

@@ -22,7 +22,7 @@ repositorio.
 
 1. **App Next.js** — proceso Node ≥ 22.
 2. **PostgreSQL** — vinculado a la app.
-3. **Cloudflare R2** — bucket para evidencia (opcional en dev).
+3. **Cloudflare R2** — opcional: solo lectura de fuentes históricas.
 4. **Scheduler externo** — invocar crons HTTP (Railway Cron u otro).
 5. **Gateway webhook** — n8n u host de automatización.
 
@@ -66,8 +66,8 @@ fallida no deja la app en crash-loop.
 | `AUTH_TRUST_HOST`         | Sí (proxy)                |
 | `APP_URL`                 | Sí                        |
 | `CRON_SECRET`             | Sí (si hay crons)         |
-| `GROQ_API_KEY`            | Sí (Meeting Intelligence) |
-| `R2_*`                    | Sí (uploads)              |
+| `GROQ_API_KEY`            | Sí (agente y contexto)    |
+| `R2_*`                    | No (fuentes históricas)   |
 | `INTEGRATION_GATEWAY_*`   | Si hay notificaciones     |
 | `TENANT_DATABASE_URL`     | Recomendado (RLS)         |
 | `SETTINGS_ENCRYPTION_KEY` | Si gateway por org        |

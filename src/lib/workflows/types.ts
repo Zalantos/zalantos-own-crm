@@ -4,7 +4,8 @@ export type WorkflowTriggerEvent =
   | "stage_changed"
   | "field_overdue"
   | "status_changed"
-  | "reactivation_due";
+  | "reactivation_due"
+  | "alert_raised";
 
 export type WorkflowEvent = {
   entityType: EntityType;

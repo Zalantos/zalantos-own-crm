@@ -5,7 +5,7 @@ import { runEntityContextPipeline } from "@/lib/entity-context/pipeline";
 import {
   isAuthorized,
   isCronSecretConfigured,
-} from "@/lib/meeting-intelligence/internal-auth";
+} from "@/lib/internal-auth";
 
 // Catch-up worker for entity context sources stuck mid-pipeline.
 export async function POST(request: NextRequest) {

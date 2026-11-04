@@ -11,6 +11,16 @@ import {
   type CreateLeadInput,
   type LeadStatus,
 } from "@/lib/commercial/leads";
+import {
+  clearOpportunityRoleFieldTx,
+  linkActorTx,
+  restoreActorLinkTx,
+  unlinkActorTx,
+  updateActorLinkTx,
+  type ActorFieldName,
+  type ActorLinkSnapshot,
+} from "@/lib/commercial/actor-service";
+import { isActorRole, parseActorKey, type ActorTarget } from "@/lib/commercial/actors";
 import type { SettableOpportunityStatus } from "@/lib/opportunities/status";
 
 // Tipos de ítem de la bitácora IA (CRMChangeItem) del proceso comercial.
@@ -23,6 +33,9 @@ export const COMMERCIAL_ITEM_TYPES = [
   "commercial_lead_status",
   "convert_lead",
   "set_next_action",
+  "link_actor",
+  "update_actor",
+  "unlink_actor",
 ] as const;
 
 export type CommercialItemType = (typeof COMMERCIAL_ITEM_TYPES)[number];
@@ -60,6 +73,11 @@ export type CommercialRevertData = {
   loggedActivity?: LoggedActivityRevert | null;
   convertedLeadId?: string;
   statusChange?: { from: string; to: string };
+  // Deshacer vínculos de actores: lo creado se borra, lo quitado se restaura y
+  // los campos decisor/sponsor vuelven a su valor anterior.
+  createdActorLinkId?: string;
+  restoreActorLinks?: ActorLinkSnapshot[];
+  actorField?: { opportunityId: string; field: ActorFieldName; previous: string | null };
 };
 
 const OPPORTUNITY_STATUS_FIELDS = [
@@ -277,6 +295,58 @@ export async function applyCommercialItem(
       });
       return { restore: { model, id: item.entityId, previous: jsonable(previous) as Record<string, unknown> } };
     }
+    case "link_actor": {
+      const actor = parseActorKey(str(after.actorKey));
+      const targetId = str(after.targetId);
+      const role = after.role;
+      if (!actor || !targetId || !isActorRole(role)) throw new Error("Vínculo de actor inválido");
+      const target: ActorTarget = {
+        type: after.targetType === "commercial_lead" ? "commercial_lead" : "opportunity",
+        id: targetId,
+      };
+      const result = await linkActorTx(
+        tx,
+        { organizationId: ctx.organizationId, userId: ctx.actorId, source: ctx.createdVia },
+        { target, actor, role, description: str(after.description) },
+      );
+      if (result.kind === "link") return { createdActorLinkId: result.linkId };
+      return {
+        actorField: { opportunityId: targetId, field: result.field, previous: result.previous },
+        restoreActorLinks: result.removedLink ? [result.removedLink] : [],
+      };
+    }
+    case "update_actor": {
+      const linkId = item.entityId;
+      if (!linkId || !isActorRole(after.role)) throw new Error("Vínculo de actor inválido");
+      const { before, result } = await updateActorLinkTx(
+        tx,
+        { organizationId: ctx.organizationId, userId: ctx.actorId, source: ctx.createdVia },
+        linkId,
+        { role: after.role, description: str(after.description) },
+      );
+      if (result.kind === "field") {
+        return {
+          actorField: {
+            opportunityId: before.opportunityId as string,
+            field: result.field,
+            previous: result.previous,
+          },
+          restoreActorLinks: [before],
+        };
+      }
+      return { restoreActorLinks: [before], createdActorLinkId: linkId };
+    }
+    case "unlink_actor": {
+      const context = { organizationId: ctx.organizationId, userId: ctx.actorId, source: ctx.createdVia };
+      const field = str(after.field);
+      if (field === "decisionMakerId" || field === "sponsorId") {
+        if (!item.entityId) throw new Error("Falta oportunidad destino");
+        const previous = await clearOpportunityRoleFieldTx(tx, context, item.entityId, field);
+        return { actorField: { opportunityId: item.entityId, field, previous } };
+      }
+      if (!item.entityId) throw new Error("Falta vínculo de actor");
+      return { restoreActorLinks: [await unlinkActorTx(tx, context, item.entityId)] };
+    }
   }
 }
 
@@ -407,6 +477,7 @@ async function deleteIfOrphan(tx: Tx, organizationId: string, kind: "person" | "
       () => tx.opportunity.count({ where: { organizationId, OR: [{ decisionMakerId: id }, { sponsorId: id }] } }),
       () => tx.commercialLead.count({ where: { organizationId, personId: id } }),
       () => tx.activityPerson.count({ where: { organizationId, personId: id } }),
+      () => tx.commercialActorLink.count({ where: { organizationId, personId: id } }),
     ]);
     if (references === 0) await tx.person.deleteMany({ where: { id, organizationId } });
     return;
@@ -418,6 +489,7 @@ async function deleteIfOrphan(tx: Tx, organizationId: string, kind: "person" | "
     () => tx.activity.count({ where: { organizationId, companyId: id } }),
     () => tx.note.count({ where: { organizationId, companyId: id } }),
     () => tx.meeting.count({ where: { organizationId, companyId: id } }),
+    () => tx.commercialActorLink.count({ where: { organizationId, companyId: id } }),
   ]);
   if (references === 0) {
     await tx.timelineEvent.deleteMany({ where: { organizationId, companyId: id } });
@@ -478,6 +550,18 @@ export async function revertCommercialItem(
         reason: "Cambio de IA deshecho",
       });
     }
+  }
+  if (revert.createdActorLinkId) {
+    await tx.commercialActorLink.deleteMany({ where: { id: revert.createdActorLinkId, organizationId } });
+  }
+  if (revert.actorField) {
+    await tx.opportunity.update({
+      where: { id: revert.actorField.opportunityId, organizationId },
+      data: { [revert.actorField.field]: revert.actorField.previous },
+    });
+  }
+  for (const snapshot of revert.restoreActorLinks ?? []) {
+    await restoreActorLinkTx(tx, organizationId, snapshot);
   }
   if (type === "add_commercial_lead" && revert.createdEntityId) {
     await tx.activity.deleteMany({ where: { organizationId, commercialLeadId: revert.createdEntityId } });

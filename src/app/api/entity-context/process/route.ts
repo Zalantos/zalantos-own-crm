@@ -4,7 +4,7 @@ import { runEntityContextPipeline } from "@/lib/entity-context/pipeline";
 import {
   isAuthorized,
   isCronSecretConfigured,
-} from "@/lib/meeting-intelligence/internal-auth";
+} from "@/lib/internal-auth";
 
 // Internal worker: process one source by id (CRON_SECRET).
 export async function POST(request: NextRequest) {

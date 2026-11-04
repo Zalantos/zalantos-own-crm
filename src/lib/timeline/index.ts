@@ -29,6 +29,8 @@ export const TYPE_LABELS: Record<string, string> = {
   change_reverted: "Cambio deshecho",
   context_enriched: "Contexto enriquecido",
   commercial_offer_backfilled: "Oferta recuperada",
+  actor_updated: "Actor comercial",
+  alert_raised: "Alerta comercial",
 };
 
 const ACTIVITY_PAGE_SIZE = 25;

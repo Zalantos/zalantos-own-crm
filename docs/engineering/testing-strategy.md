@@ -6,15 +6,15 @@ Hay tests puntuales con el runner nativo de Node:
 
 - `src/lib/observability/reporter.test.ts` → `npm run test:observability`
 - `src/lib/crm/person-dedup.test.ts` y
-  `src/lib/meeting-intelligence/apply-lock.test.ts` /
-  `src/lib/meeting-intelligence/apply-revert.test.ts` →
+  `src/lib/ai-changes/apply-lock.test.ts` /
+  `src/lib/ai-changes/apply-revert.test.ts` →
   `npm run test:contact-dedup`
 - `src/lib/mcp/server.test.ts` y tests de tools del agente →
   `npm run test:mcp-tools`
 - `src/lib/commercial/commercial.test.ts` → `npm run test:commercial`
 - Ingesta y conversión de leads → `npm run test:inbound-leads`
 - Proceso comercial (reglas puras: compuertas, estados, prospección, próxima
-  acción, funnel, atribución, alianzas, payload Rumbo, compatibilidad de
+  acción, funnel, atribución, actores, alertas por etapa, payload Rumbo, compatibilidad de
   workflows) → `npm run test:commercial-process`
 - Escenarios de aceptación A–G contra Postgres local con RLS →
   `INTEGRATION_DATABASE_URL=… INTEGRATION_TENANT_DATABASE_URL=… npm run test:commercial-integration`
@@ -33,7 +33,7 @@ resto del dominio (tenant, propuestas, agent, Telegram).
 | `src/lib/tenant.ts`                     | Crítica   | Aislamiento multi-tenant       |
 | `src/lib/crm/person-dedup.ts`           | Alta      | Evitar duplicados de contactos |
 | `src/lib/agent/proposals.ts`            | Alta      | Registro y ejecución directa   |
-| `src/lib/meeting-intelligence/apply.ts` | Alta      | Aplicar/revertir cambios IA    |
+| `src/lib/ai-changes/apply.ts` | Alta      | Aplicar/revertir cambios IA    |
 | `src/lib/integrations/gateway.ts`       | Media     | Dedupe y despacho              |
 | `src/lib/zod/*`                         | Media     | Validación de input            |
 | Workflows (`src/lib/workflows/`)        | Media     | Automatización                 |
@@ -42,7 +42,7 @@ resto del dominio (tenant, propuestas, agent, Telegram).
 
 - Flujos de login, invite, reset-password.
 - CRUD de empresas, personas, oportunidades.
-- Upload de evidencia y pipeline de meeting (con Groq/R2 configurados).
+- Análisis de contexto con texto pegado (con Groq configurado).
 - Actividad de IA: filtros, atención y reversión individual/grupal.
 - Chat y Telegram: mutación directa, baja confianza y trazabilidad.
 - Acción destructiva: sin escritura previa y aprobación por solicitante/ADMIN.
@@ -66,6 +66,7 @@ GAP: definir framework (recomendado: Vitest para unit, Playwright para E2E).
 | `npm run format:check`                  | Prettier                                             |
 | `npm run test:contact-dedup`            | Normalización de contactos y candado de propuestas   |
 | `npm run test:mcp-tools`                | Contratos de tools agente/MCP y validación de inputs |
+| `npm run test:wiki-mcp`                 | Token de Entra, cliente MCP, autorización y tools de Wiki |
 | `npm run test:observability`            | Test del payload Observability                       |
 | `npm run test:commercial`               | Vigencia, economía, reparto y parser de backfill     |
 | `npm run test:inbound-leads`            | Ingesta, dedupe y conversión persona–empresa         |

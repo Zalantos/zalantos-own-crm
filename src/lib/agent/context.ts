@@ -1,7 +1,7 @@
 import type { TenantClient } from "@/lib/tenant";
 
 export type PageContext = {
-  entityType: "company" | "opportunity" | "person";
+  entityType: "company" | "opportunity" | "person" | "lead" | "inbound_lead";
   entityId: string;
 };
 
@@ -77,6 +77,46 @@ export async function resolvePageContext(
       return {
         description: `El usuario está viendo el contacto "${fullName}" (id ${person.id}${(primaryRelationship?.roleTitle ?? person.roleTitle) ? `, cargo principal: ${primaryRelationship?.roleTitle ?? person.roleTitle}` : ""})${companies ? ` relacionado con: ${companies}` : person.company ? ` de la empresa "${person.company.name}"` : ""}.`,
         companyId: primaryRelationship?.companyId ?? person.companyId,
+        opportunityId: null,
+      };
+    }
+    case "lead": {
+      const lead = await db.commercialLead.findUnique({
+        where: { id: context.entityId },
+        select: {
+          id: true,
+          title: true,
+          status: true,
+          companyId: true,
+          company: { select: { name: true } },
+        },
+      });
+      if (!lead) return null;
+      return {
+        description: `El usuario está viendo el registro de prospección "${lead.title}" (id ${lead.id}, estado: ${lead.status})${lead.company ? ` de la empresa "${lead.company.name}" (id ${lead.companyId})` : ""}.`,
+        companyId: lead.companyId,
+        opportunityId: null,
+      };
+    }
+    case "inbound_lead": {
+      const lead = await db.inboundLead.findUnique({
+        where: { id: context.entityId },
+        select: {
+          id: true,
+          firstName: true,
+          lastName: true,
+          company: true,
+          status: true,
+          commercialLead: { select: { companyId: true } },
+        },
+      });
+      if (!lead) return null;
+      const fullName = [lead.firstName, lead.lastName]
+        .filter(Boolean)
+        .join(" ");
+      return {
+        description: `El usuario está viendo el lead entrante ${lead.id} (estado: ${lead.status})${fullName ? ` de "${fullName}"` : ""}${lead.company ? `, empresa declarada: "${lead.company}"` : ""}.`,
+        companyId: lead.commercialLead?.companyId ?? null,
         opportunityId: null,
       };
     }

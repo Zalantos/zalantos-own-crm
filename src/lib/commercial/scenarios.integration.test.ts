@@ -33,25 +33,26 @@ if (ownerUrl) {
 type Modules = Awaited<ReturnType<typeof loadModules>>;
 
 async function loadModules() {
-  const [prisma, tenant, stages, leads, opportunityService, partners, rumbo, funnel, links, ingest, convert, executor, apply, cron, rumboRoute] =
+  const [prisma, tenant, stages, leads, opportunityService, actors, alerts, rumbo, funnel, links, ingest, convert, executor, apply, cron, rumboRoute] =
     await Promise.all([
       import("@/lib/prisma"),
       import("@/lib/tenant"),
       import("@/lib/pipeline/stages"),
       import("@/lib/commercial/leads"),
       import("@/lib/commercial/opportunity-service"),
-      import("@/lib/commercial/partner-service"),
+      import("@/lib/commercial/actor-service"),
+      import("@/lib/commercial/alert-service"),
       import("@/lib/commercial/rumbo"),
       import("@/lib/commercial/funnel"),
       import("@/lib/commercial/links"),
       import("@/lib/inbound-leads/ingest"),
       import("@/lib/inbound-leads/convert"),
       import("@/lib/agent/executor"),
-      import("@/lib/meeting-intelligence/apply"),
+      import("@/lib/ai-changes/apply"),
       import("@/app/api/cron/commercial-follow-ups/route"),
       import("@/app/api/integrations/rumbo/handoff-status/route"),
     ]);
-  return { prisma, tenant, stages, leads, opportunityService, partners, rumbo, funnel, links, ingest, convert, executor, apply, cron, rumboRoute };
+  return { prisma, tenant, stages, leads, opportunityService, actors, alerts, rumbo, funnel, links, ingest, convert, executor, apply, cron, rumboRoute };
 }
 
 const suffix = Date.now().toString(36);
@@ -253,15 +254,11 @@ describe("Escenario C — oportunidad pausada", { skip }, () => {
 });
 
 describe("Escenario D — partner", { skip }, () => {
-  it("la alianza avanza, refiere un prospecto y el negocio ganado conserva su reparto", async () => {
+  it("el partner refiere un prospecto y el negocio ganado conserva actor y reparto", async () => {
     const ctx = ctxFor(orgA);
     const partner = await ctx.db.commercialPartner.create({
-      data: { organizationId: orgA.id, displayName: `Partner ${suffix}`, kind: "external", allianceStage: "identified", ownerId: orgA.userId },
+      data: { organizationId: orgA.id, displayName: `Partner ${suffix}`, kind: "external", ownerId: orgA.userId },
     });
-    unwrap(await m.partners.changeAlliance(ctx, partner.id, { stage: "exploration" }));
-    assert.equal((await m.partners.changeAlliance(ctx, partner.id, { stage: "agreement" })).ok, false);
-    unwrap(await m.partners.changeAlliance(ctx, partner.id, { stage: "agreement", agreementTerms: "10% del margen por negocio" }));
-    unwrap(await m.partners.changeAlliance(ctx, partner.id, { stage: "active" }));
 
     const lead = unwrap(
       await m.leads.createCommercialLead(ctx, {
@@ -282,11 +279,11 @@ describe("Escenario D — partner", { skip }, () => {
     assert.equal(attribution.referrerPartnerId, partner.id);
     const share = await ctx.db.opportunityCommercialPartner.findFirstOrThrow({ where: { opportunityId } });
     assert.equal(share.profitSharePercentage?.toString(), "10");
-    const stages = await ctx.db.commercialStatusChange.findMany({
-      where: { entityId: partner.id, field: "alliance_stage" },
-      orderBy: { changedAt: "asc" },
-    });
-    assert.deepEqual(stages.map((row) => row.toValue), ["exploration", "agreement", "active"]);
+    // El referidor del lead pasa a ser actor del lead y de la oportunidad.
+    const links = await ctx.db.commercialActorLink.findMany({ where: { actorKey: `partner:${partner.id}` } });
+    assert.equal(links.filter((link) => link.commercialLeadId === lead.id).length, 1);
+    assert.equal(links.filter((link) => link.opportunityId === opportunityId).length, 1);
+    assert.equal(links.every((link) => link.role === "referrer"), true);
   });
 });
 
@@ -406,7 +403,21 @@ describe("Escenario G — multi-tenancy", { skip }, () => {
     assert.equal((await m.leads.createCommercialLead(ctxB, { companyName: "B", attribution: { referrerPartnerId: partnerA.id } })).ok, false, "no asocia un partner ajeno");
     const links = await m.links.resolveRecordLinks(ctxB.db, { commercialLeadId: leadA.id });
     assert.equal(links.ok, false);
-    assert.equal((await m.partners.changeAlliance(ctxB, partnerA.id, { stage: "contacted" })).ok, false);
+    await assert.rejects(
+      () =>
+        m.tenant.withOrgTransaction(orgB.id, (tx) =>
+          m.actors.linkActorTx(
+            tx,
+            { organizationId: orgB.id, userId: orgB.userId, source: "manual" },
+            {
+              target: { type: "commercial_lead", id: leadA.id },
+              actor: { type: "partner", id: partnerA.id },
+              role: "referrer",
+            },
+          ),
+        ),
+      "no vincula actores entre organizaciones",
+    );
 
     // Segunda barrera: RLS bloquea aunque se omita el filtro de app.
     if (process.env.INTEGRATION_TENANT_DATABASE_URL) {
@@ -416,5 +427,90 @@ describe("Escenario G — multi-tenancy", { skip }, () => {
       });
       assert.equal(visible, 0);
     }
+  });
+});
+
+describe("Actores y alertas por etapa", { skip }, () => {
+  it("deduplica, conserva el actor al convertir y no duplica el decisor", async () => {
+    const ctx = ctxFor(orgA);
+    const base = { organizationId: orgA.id, userId: orgA.userId, source: "manual" };
+    const company = await ctx.db.company.create({ data: { organizationId: orgA.id, name: `Actor ${suffix}` } });
+    const person = await ctx.db.person.create({
+      data: { organizationId: orgA.id, firstName: "Juan", lastName: `Actor ${suffix}`, companyId: company.id },
+    });
+    const lead = unwrap(
+      await m.leads.createCommercialLead(ctx, {
+        companyId: company.id,
+        status: "lead",
+        interestSignal: "Nos refirieron",
+      }),
+    );
+    const target = { type: "commercial_lead" as const, id: lead.id };
+    await m.tenant.withOrgTransaction(orgA.id, (tx) =>
+      m.actors.linkActorTx(tx, base, { target, actor: { type: "person", id: person.id }, role: "decision_maker" }),
+    );
+    await assert.rejects(
+      () =>
+        m.tenant.withOrgTransaction(orgA.id, (tx) =>
+          m.actors.linkActorTx(tx, base, { target, actor: { type: "person", id: person.id }, role: "other" }),
+        ),
+      /ya está vinculado/,
+    );
+
+    const { opportunityId } = unwrap(await m.leads.convertLeadToOpportunity(ctx, lead.id, { name: "Con actor" }));
+    const opportunity = await ctx.db.opportunity.findUniqueOrThrow({ where: { id: opportunityId } });
+    assert.equal(opportunity.decisionMakerId, person.id, "el decisor vive en la oportunidad");
+    assert.equal(await ctx.db.commercialActorLink.count({ where: { opportunityId } }), 0);
+    const actors = await m.actors.listRecordActors(ctx.db, { type: "opportunity", id: opportunityId });
+    assert.equal(actors[0]?.role, "decision_maker");
+    assert.equal(actors[0]?.field, "decisionMakerId");
+  });
+
+  it("detecta por fecha real de etapa, no duplica y se resuelve sola", async () => {
+    const ctx = ctxFor(orgA);
+    const stage = await ctx.db.pipelineStage.findFirstOrThrow({ where: { key: "reunion_discovery" } });
+    await ctx.db.commercialAlertRule.createMany({
+      data: [{
+        organizationId: orgA.id,
+        pipeline: "opportunity",
+        stageKey: stage.key,
+        condition: "stage_stale",
+        thresholdDays: 10,
+      }],
+      skipDuplicates: true,
+    });
+    const company = await ctx.db.company.create({ data: { organizationId: orgA.id, name: `Alerta ${suffix}` } });
+    const entered = new Date(Date.now() - 20 * 86_400_000);
+    const opportunity = await ctx.db.opportunity.create({
+      data: { organizationId: orgA.id, companyId: company.id, name: "Detenida", stageId: stage.id, ownerId: orgA.userId, stageEnteredAt: entered },
+    });
+    await ctx.db.opportunityStageHistory.create({
+      data: { organizationId: orgA.id, opportunityId: opportunity.id, stageId: stage.id, stageKey: stage.key, stageLabel: stage.label, enteredAt: entered, source: "manual" },
+    });
+    const scope = { entity: "opportunity" as const, id: opportunity.id };
+
+    const first = await m.alerts.syncCommercialAlerts(ctx.db, orgA.id, { scope });
+    assert.equal(first.created.length, 1);
+    assert.equal(first.created[0]?.recipientUserId, orgA.userId);
+    const second = await m.alerts.syncCommercialAlerts(ctx.db, orgA.id, { scope });
+    assert.equal(second.created.length, 0, "no repite la alerta");
+
+    // Resuelta a mano no reaparece mientras dure el mismo período.
+    await ctx.db.commercialAlert.updateMany({
+      where: { opportunityId: opportunity.id },
+      data: { status: "resolved", resolution: "manual" },
+    });
+    const third = await m.alerts.syncCommercialAlerts(ctx.db, orgA.id, { scope });
+    assert.equal(third.created.length, 0, "no reaparece tras resolverla");
+
+    await ctx.db.commercialAlert.updateMany({
+      where: { opportunityId: opportunity.id },
+      data: { status: "open", resolution: null },
+    });
+    await ctx.db.opportunity.update({ where: { id: opportunity.id }, data: { status: "won" } });
+    const closed = await m.alerts.syncCommercialAlerts(ctx.db, orgA.id, { scope });
+    assert.equal(closed.resolved, 1, "una ganada no conserva alertas");
+    const alert = await ctx.db.commercialAlert.findFirstOrThrow({ where: { opportunityId: opportunity.id } });
+    assert.equal(alert.resolution, "auto");
   });
 });

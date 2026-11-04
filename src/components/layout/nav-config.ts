@@ -1,4 +1,5 @@
 import {
+  BellRingIcon,
   Building2Icon,
   CalendarDaysIcon,
   CableIcon,
@@ -20,7 +21,6 @@ import {
   UserCogIcon,
   UsersIcon,
   UsersRoundIcon,
-  VideoIcon,
   WorkflowIcon,
   type LucideIcon,
 } from "lucide-react";
@@ -34,6 +34,8 @@ export type NavItem = {
 export type NavSection = {
   label: string;
   items: NavItem[];
+  // Cerrada al cargar el sidebar; se abre solo si el usuario pulsa el título.
+  startCollapsed?: boolean;
 };
 
 export const HOME_ITEM: NavItem = {
@@ -47,13 +49,12 @@ export const CRM_SECTION: NavSection = {
   items: [
     { href: "/prospecting", label: "Prospección", icon: CompassIcon },
     { href: "/opportunities", label: "Oportunidades", icon: KanbanSquareIcon },
-    { href: "/partners", label: "Alianzas", icon: HandshakeIcon },
+    { href: "/partners", label: "Partners", icon: HandshakeIcon },
     { href: "/activities", label: "Actividades", icon: CheckSquareIcon },
     { href: "/leads", label: "Leads entrantes", icon: InboxIcon },
     { href: "/analytics", label: "Analítica comercial", icon: ChartColumnIcon },
     { href: "/companies", label: "Empresas", icon: Building2Icon },
     { href: "/people", label: "Personas", icon: UsersIcon },
-    { href: "/meetings", label: "Meeting Intelligence", icon: VideoIcon },
     {
       href: "/agent/proposals",
       label: "Actividad de IA",
@@ -69,6 +70,7 @@ export const CRM_SECTION: NavSection = {
 
 export const ADMIN_SECTION: NavSection = {
   label: "Configuración",
+  startCollapsed: true,
   items: [
     { href: "/admin/users", label: "Usuarios", icon: UserCogIcon },
     { href: "/admin/team", label: "Equipo", icon: UsersRoundIcon },
@@ -82,6 +84,11 @@ export const ADMIN_SECTION: NavSection = {
       href: "/admin/settings/stages",
       label: "Etapas del pipeline",
       icon: ListOrderedIcon,
+    },
+    {
+      href: "/admin/settings/alerts",
+      label: "Alertas por etapa",
+      icon: BellRingIcon,
     },
     {
       href: "/admin/settings/campaigns",
@@ -110,6 +117,7 @@ export const ADMIN_SECTION: NavSection = {
 // Panel de plataforma (crear/administrar organizaciones) — solo super-admins.
 export const SUPERADMIN_SECTION: NavSection = {
   label: "Plataforma",
+  startCollapsed: true,
   items: [{ href: "/superadmin", label: "Organizaciones", icon: ShieldIcon }],
 };
 

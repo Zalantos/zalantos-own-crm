@@ -3,30 +3,36 @@
 ## Qué hace
 
 CRM B2B multi-tenant que permite a cada organización gestionar empresas,
-personas, oportunidades, actividades, notas y reuniones. Incluye:
+personas, oportunidades, actividades, notas y reuniones comerciales. Incluye:
 
 - **Landing pública** en `/` para explicar el producto; el CRM sigue cerrado y
   requiere login en `/login`.
-- **Proceso comercial en tres flujos** (ver `docs/context/commercial-process.md`):
-  Prospección (`/prospecting`: prospecto → contactado → lead), Oportunidades
-  (4 etapas operativas configurables con compuertas de avance + estados
-  pausada/ganada/perdida) y Alianzas (`/partners`), con atribución comercial,
+- **Proceso comercial** (ver `docs/context/commercial-process.md`): Prospección
+  (`/prospecting`: prospecto → contactado → lead) y Oportunidades (4 etapas
+  operativas configurables con compuertas de avance + estados
+  pausada/ganada/perdida), con un único pipeline para todos los negocios,
+  actores comerciales, alertas configurables por etapa, atribución comercial,
   próxima mejor acción, interacciones omnicanal, analítica por cohortes
   (`/analytics`) y traspaso a Rumbo de oportunidades ganadas.
+- **Directorio de partners** (`/partners`): acuerdos, contactos y comisiones. Los
+  partners participan en los negocios como actores, sin pipeline propio.
 - **Pipeline configurable** por etapas (`PipelineStage`).
-- **Meeting Intelligence**: subir evidencia (audio, video, PDF, etc.), transcribir,
-  analizar con IA y ejecutar cambios no destructivos con trazabilidad reversible.
-- **Enriquecimiento de contexto**: documentos en fichas de empresa/persona/
+- **Reuniones comerciales**: se registran como actividades (`type=meeting`).
+  Meeting Intelligence se retiró; sus datos históricos se conservan.
+- **Enriquecimiento de contexto**: texto pegado en fichas de empresa/persona/
   oportunidad → perfil IA (resumen + hechos) automático + cambios de campos,
   incluyendo perfil comercial estándar de empresas.
 - **Agente IA copiloto**: chat contextual con herramientas de lectura/escritura
   directa y reversible del CRM. Incluye consultas agregadas de pipeline,
-  timeline de registros, agenda del usuario y acceso a reuniones y sus
+  timeline de registros, agenda del usuario, reuniones, actores y alertas,
   actividad de IA y acciones destructivas pendientes.
 - **Telegram ↔ copiloto**: canal entrante vía n8n (`/api/telegram/*`) con
   vinculación `telegram_chat_id` ↔ usuario y thread persistente.
 - **MCP ↔ copiloto**: servidor de tools en `/api/mcp` para clientes externos,
   autenticado con tokens personales y sin un modelo de IA adicional.
+- **Wiki corporativa**: el copiloto consulta contratos, minutas, transcripciones y
+  procedimientos en la Wiki vía MCP, de solo lectura y con citas. Solo para
+  organizaciones autorizadas (`docs/integrations/wiki-mcp.md`).
 - **Workflows**: automatización por eventos de entidades.
 - **Gateway de integraciones**: despacho de eventos a un webhook externo (email,
   Slack, etc. vía n8n u otro).
@@ -45,8 +51,7 @@ personas, oportunidades, actividades, notas y reuniones. Incluye:
 
 ## Problema de negocio
 
-Unificar pipeline comercial, inteligencia de reuniones y automatización en una
-sola aplicación con aislamiento multi-tenant y trazabilidad de cambios
+Unificar pipeline comercial, seguimiento y automatización en una sola aplicación con aislamiento multi-tenant y trazabilidad de cambios
 ejecutados por IA.
 
 ## Usuarios principales
@@ -63,8 +68,8 @@ ejecutados por IA.
    registrado → lead (interés) → oportunidad en Discovery / Sprint 0 →
    Calificada → Propuesta enviada → Negociación → ganada (evidencia) →
    traspaso a Rumbo. Pausada/perdida en cualquier punto.
-2. **Reunión con IA**: crear meeting → subir evidencia → pipeline automático →
-   aplicar cambios no destructivos → revisar o deshacer desde Actividad de IA.
+2. **Reunión comercial**: registrar la reunión como interacción en la ficha
+   (participantes, resumen, acuerdos) → definir la próxima acción.
 3. **Agente**: abrir chat en contexto de entidad → consultar/actualizar CRM →
    revisar trazabilidad o deshacer cambios en `/agent/proposals`.
 4. **Telegram**: vincular chat con código en Configuración → conversar con el
@@ -83,7 +88,8 @@ ejecutados por IA.
 ## Stack
 
 Next.js 16, React 19, Prisma 7, PostgreSQL, Auth.js v5, Vercel AI SDK, Groq,
-Cloudflare R2, Tailwind y componentes Base UI/shadcn.
+Tailwind y componentes Base UI/shadcn. Cloudflare R2 solo en lectura para
+fuentes históricas (ver `docs/architecture/knowledge-sources.md`).
 
 ## Estado actual
 

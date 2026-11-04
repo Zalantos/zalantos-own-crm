@@ -189,3 +189,17 @@ describe("MCP: herramientas nuevas", () => {
     }
   });
 });
+
+describe("MCP: Wiki corporativa", () => {
+  it("no expone las tools de Wiki ni a una organización autorizada", async () => {
+    const previous = process.env.WIKI_MCP_ALLOWED_ORG_IDS;
+    process.env.WIKI_MCP_ALLOWED_ORG_IDS = principal.organizationId;
+    try {
+      const names = (await listTools()).map((tool) => tool.name);
+      assert.equal(names.some((name) => name.startsWith("wiki_")), false);
+    } finally {
+      if (previous === undefined) delete process.env.WIKI_MCP_ALLOWED_ORG_IDS;
+      else process.env.WIKI_MCP_ALLOWED_ORG_IDS = previous;
+    }
+  });
+});

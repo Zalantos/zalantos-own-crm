@@ -11,7 +11,7 @@
 | `(dashboard)/admin/`                | Configuración por organización                                                   |
 | `(superadmin)/`                     | Gestión de tenants                                                               |
 | `login`, `invite`, `reset-password` | Auth y provisioning                                                              |
-| `api/`                              | Route handlers (agent, telegram, crons, auth, evidence)                          |
+| `api/`                              | Route handlers (agent, telegram, crons, auth)                          |
 | `admin/settings/telegram`           | Vinculación de chats Telegram                                                    |
 
 Lista y tablero de oportunidades comparten las etapas ocultas en la cookie
@@ -25,7 +25,8 @@ Lista y tablero de oportunidades comparten las etapas ocultas en la cookie
 | `prisma.ts`                  | Clientes system y tenant base                             |
 | `auth.ts` / `auth.config.ts` | Auth.js credentials + middleware                          |
 | `session.ts`                 | Helpers de sesión                                         |
-| `meeting-intelligence/`      | Pipeline, extracción, transcripción, IA, R2               |
+| `ai-changes/`                | Motor de bitácora IA: aplicar y deshacer cambios          |
+| `documents/`, `storage/`     | Extracción de texto; lectura R2 histórica                 |
 | `entity-context/`            | Enriquecimiento de fichas: sources, perfil IA, propuestas |
 | `agent/`                     | Copiloto: tools, executor y bitácora de cambios           |
 | `telegram/`                  | Auth Bearer del canal n8n → CRM                           |
@@ -47,17 +48,10 @@ Browser → Next.js (RSC + Server Actions)
          prismaSystem (auth, superadmin, crons cross-tenant)
 ```
 
-### Meeting Intelligence
+### Reuniones comerciales
 
-```txt
-Upload evidence → R2 presign
-       ↓
-POST /api/meetings/process (o cron catch-up)
-       ↓
-runPipeline: extract → transcribe → analyze → CRMChangeProposal/CRMChangeItem
-       ↓
-Aplicación inmediata por ítem → Actividad de IA → deshacer opcional
-```
+Una reunión es una actividad registrada (`type=meeting`) desde la ficha o con
+`create_meeting`. Meeting Intelligence se retiró (DEC-011).
 
 ### Agente IA
 
@@ -97,16 +91,11 @@ un `TeamMember` activo por id, usuario vinculado, email o nombre inequívoco;
 
 ```txt
 Upload en ficha (company/person/opportunity)
-   · archivos sueltos (PDF/DOCX/DOC/TXT/MD), o
-   · un ZIP → se descomprime en el navegador (fflate), recorre subcarpetas
-     y filtra por tipo soportado, o
    · texto manual pegado por el usuario (`sourceType=manual`)
        ↓
-Archivos: R2 presign + registerContextSource por archivo (deferProcessing)
+registerManualContextSource con `extractedText` directo
        ↓
-Texto manual: registerManualContextSource con `extractedText` directo
-       ↓
-processContextSources (archivos) o schedulePipeline (texto manual)
+schedulePipeline
        ↓
 after(runEntityContextPipeline)
        ↓
@@ -134,11 +123,10 @@ Endpoints POST protegidos con `Authorization: Bearer <CRON_SECRET>`:
 
 | Endpoint                           | Función                                                                          |
 | ---------------------------------- | -------------------------------------------------------------------------------- |
-| `/api/cron/process-evidence`       | Reprocesa meetings atascados en pipeline                                         |
 | `/api/cron/process-entity-context` | Reprocesa fuentes de contexto atascadas                                          |
 | `/api/cron/check-overdue`          | Oportunidades/actividades vencidas                                               |
 | `/api/cron/send-task-reminders`    | Resumen de tareas abiertas del día (y vencidas) a las 18:00, por mail y Telegram |
-| `/api/cron/commercial-follow-ups`  | Alerta/tarea idempotente para oportunidades pausadas cuya reactivación llegó     |
+| `/api/cron/commercial-follow-ups`  | Tarea por reactivación de pausadas y reconciliación de alertas por etapa         |
 
 GAP: configuración de schedule en Railway no versionada en el repo. Ese cron
 conviene invocarlo al menos una vez por hora: cada org envía solo si su hora
@@ -166,7 +154,7 @@ local ya es ≥ 18:00, una vez por responsable y canal.
 
 - Pool de conexiones tenant bajo fan-out de `Promise.all` en RSC.
 - Rate limit no distribuido entre réplicas.
-- Dependencia de APIs externas (Groq, R2) en pipeline crítico.
+- Dependencia de APIs externas (Groq) en el análisis de contexto.
 
 ## Deuda técnica
 

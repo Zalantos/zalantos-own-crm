@@ -7,8 +7,15 @@ import { PageHeader } from "@/components/shared/page-header";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { KanbanBoard } from "@/components/shared/kanban/kanban-board";
+import { listActorFilterOptions } from "@/lib/commercial/actor-service";
+import {
+  actorChipLabels,
+  actorLinkSummarySelect,
+  actorOpportunityWhere,
+  parseActorKey,
+} from "@/lib/commercial/actors";
 
-type SearchParams = { ownerId?: string; q?: string };
+type SearchParams = { ownerId?: string; q?: string; actor?: string };
 
 // Tablero operativo: solo oportunidades abiertas en las etapas activas no
 // terminales. Pausadas, ganadas y perdidas se consultan en la lista.
@@ -17,9 +24,14 @@ export default async function OpportunitiesKanbanPage({
 }: {
   searchParams: Promise<SearchParams>;
 }) {
-  const { ownerId, q } = await searchParams;
+  const { ownerId, q, actor } = await searchParams;
   const { org, db, user } = await requireOrgContext();
-  const [stages, users] = await Promise.all([getOrgStages(db), getActiveOrgUsers(db)]);
+  const [stages, users, actorOptions] = await Promise.all([
+    getOrgStages(db),
+    getActiveOrgUsers(db),
+    listActorFilterOptions(db),
+  ]);
+  const actorRef = parseActorKey(actor);
   const columns = boardStages(stages);
   const search = q?.trim();
 
@@ -27,14 +39,19 @@ export default async function OpportunitiesKanbanPage({
     status: "open",
     stageId: { in: columns.map((stage) => stage.id) },
     ...(ownerId === "me" ? { ownerId: user.id } : ownerId ? { ownerId } : {}),
-    ...(search
-      ? {
-          OR: [
-            { name: { contains: search, mode: "insensitive" } },
-            { company: { name: { contains: search, mode: "insensitive" } } },
-          ],
-        }
-      : {}),
+    AND: [
+      ...(actorRef ? [actorOpportunityWhere(actorRef)] : []),
+      ...(search
+        ? [
+            {
+              OR: [
+                { name: { contains: search, mode: "insensitive" as const } },
+                { company: { name: { contains: search, mode: "insensitive" as const } } },
+              ],
+            },
+          ]
+        : []),
+    ],
   };
 
   const [rows, pausedCount, reviewCount] = await Promise.all([
@@ -50,6 +67,8 @@ export default async function OpportunitiesKanbanPage({
         nextStepDueDate: true,
         company: { select: { name: true } },
         owner: { select: { name: true, email: true } },
+        actorLinks: { select: actorLinkSummarySelect },
+        alerts: { where: { status: "open" }, select: { severity: true, title: true } },
       },
       orderBy: [{ nextStepDueDate: { sort: "asc", nulls: "first" } }, { createdAt: "desc" }],
     }),
@@ -60,9 +79,10 @@ export default async function OpportunitiesKanbanPage({
     }),
   ]);
 
-  const opportunities = rows.map((row) => ({
+  const opportunities = rows.map(({ actorLinks, ...row }) => ({
     ...row,
     estimatedValue: row.estimatedValue ? row.estimatedValue.toNumber() : null,
+    actorLabels: actorChipLabels(actorLinks),
   }));
 
   return (
@@ -100,6 +120,18 @@ export default async function OpportunitiesKanbanPage({
             </option>
           ))}
         </select>
+        <select
+          name="actor"
+          defaultValue={actor ?? ""}
+          className="bg-background h-9 rounded-md border px-2 text-sm"
+        >
+          <option value="">Todo actor o partner</option>
+          {actorOptions.map((option) => (
+            <option key={option.key} value={option.key}>
+              {option.label}
+            </option>
+          ))}
+        </select>
         <Button type="submit" variant="secondary">
           Filtrar
         </Button>
@@ -127,7 +159,7 @@ export default async function OpportunitiesKanbanPage({
       </form>
 
       <KanbanBoard
-        key={`${ownerId ?? ""}|${search ?? ""}`}
+        key={`${ownerId ?? ""}|${search ?? ""}|${actor ?? ""}`}
         opportunities={opportunities}
         stages={columns}
         currency={org.currency}

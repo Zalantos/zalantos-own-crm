@@ -2,12 +2,12 @@
 
 CRM multi-tenant para equipos comerciales de Zalantos y sus clientes. Combina
 gestión de pipeline (empresas, personas, oportunidades, actividades), workflows
-configurables, Meeting Intelligence (transcripción y propuestas de cambio al CRM
-desde reuniones) y un agente IA copiloto integrado en la interfaz.
+configurables, actores comerciales, alertas por etapa y un agente IA copiloto
+integrado en la interfaz.
 
 ## Problema de negocio
 
-Centralizar el seguimiento comercial B2B con trazabilidad de reuniones,
+Centralizar el seguimiento comercial B2B con trazabilidad de interacciones,
 automatización de tareas y propuestas de actualización del CRM asistidas por IA,
 sin depender de herramientas dispersas.
 
@@ -27,7 +27,7 @@ sin depender de herramientas dispersas.
 | Base de datos | PostgreSQL + Prisma 7 |
 | Auth | Auth.js v5 (NextAuth) con credenciales y JWT |
 | IA | Vercel AI SDK (Groq, Anthropic, OpenAI) |
-| Almacenamiento | Cloudflare R2 (evidencia de reuniones y adjuntos del agente) |
+| Almacenamiento | PostgreSQL; Cloudflare R2 solo en lectura para fuentes históricas |
 | Integraciones | Gateway webhook externo (n8n u otro) + Telegram copiloto |
 | Observabilidad IA | Zalantos Observability (`service_name: backend`) |
 
@@ -125,7 +125,7 @@ templates/          # Plantillas de trabajo
 ## Estado del proyecto
 
 - **Versión**: 0.1.0 (desarrollo activo)
-- **Funcional**: CRM core, multi-tenancy, Meeting Intelligence, agente IA,
+- **Funcional**: CRM core, multi-tenancy, actores y alertas comerciales, agente IA,
   canal Telegram (vía n8n), workflows, gateway de integraciones, RLS opcional.
 - **Tests**: cobertura mínima (`npm run test:observability`); sin suite amplia
   (GAP documentado).

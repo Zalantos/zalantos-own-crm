@@ -2,24 +2,11 @@ import { getOrgContext } from "@/lib/tenant";
 import {
   classifyEvidence,
   extractText,
-} from "@/lib/meeting-intelligence/extraction";
-import {
-  buildAgentAttachmentKey,
-  putObject,
-} from "@/lib/meeting-intelligence/storage/r2";
+} from "@/lib/documents/extraction";
 
-// Documents are small (unlike meeting audio), so they go through the request
-// body directly instead of a presigned browser upload.
+// El agente solo usa el texto extraído, que se guarda en la base; el archivo
+// original no se almacena.
 const MAX_BYTES = 15 * 1024 * 1024;
-
-function r2Available(): boolean {
-  return Boolean(
-    process.env.R2_ACCOUNT_ID &&
-    process.env.R2_ACCESS_KEY_ID &&
-    process.env.R2_SECRET_ACCESS_KEY &&
-    process.env.R2_BUCKET,
-  );
-}
 
 export async function POST(req: Request) {
   const ctx = await getOrgContext();
@@ -105,7 +92,7 @@ export async function POST(req: Request) {
     return Response.json(
       {
         error:
-          "Solo se aceptan documentos (PDF, DOCX, TXT, MD). Para audio o video de reuniones, subilo desde la reunión.",
+          "Solo se aceptan documentos (PDF, DOCX, TXT, MD).",
       },
       { status: 415 },
     );
@@ -130,33 +117,13 @@ export async function POST(req: Request) {
     );
   }
 
-  // R2 keeps the original for audit, but the feature degrades to text-only
-  // when it isn't configured instead of failing the upload.
-  let storagePath = "";
-  if (r2Available()) {
-    try {
-      storagePath = buildAgentAttachmentKey(threadId, file.name);
-      await putObject({
-        key: storagePath,
-        contentType: file.type || "application/octet-stream",
-        body: buffer,
-      });
-    } catch (error) {
-      console.error(
-        "[agent] subida a R2 falló, se guarda solo el texto",
-        error,
-      );
-      storagePath = "";
-    }
-  }
-
   const attachment = await db.agentAttachment.create({
     data: {
       organizationId: org.id,
       threadId,
       filename: file.name,
       mimeType: file.type || "application/octet-stream",
-      storagePath,
+      storagePath: "",
       sizeBytes: file.size,
       extractedText,
       status: "extracted",

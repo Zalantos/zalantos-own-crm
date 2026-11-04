@@ -3,7 +3,7 @@
 import { revalidatePath } from "next/cache";
 import type { Prisma } from "@prisma/client";
 import { requireOrgContext } from "@/lib/tenant";
-import { applyProposal, revertItem } from "@/lib/meeting-intelligence/apply";
+import { applyProposal, revertItem } from "@/lib/ai-changes/apply";
 import { appendTimelineEvent } from "@/lib/timeline";
 import { ITEM_AFTER_VALUE_SCHEMAS } from "@/lib/zod/proposal-item";
 import { resolveContextEntity } from "@/lib/entity-context/resolve-entity";

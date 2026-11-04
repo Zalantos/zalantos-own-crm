@@ -25,6 +25,15 @@ import {
 } from "@/components/shared/opportunities/opportunity-lifecycle";
 import { NextActionCard } from "@/components/shared/commercial/next-action-card";
 import { FollowUpPanel } from "@/components/shared/commercial/follow-up-panel";
+import { ActorsPanel } from "@/components/shared/commercial/actors-panel";
+import { AlertsPanel } from "@/components/shared/commercial/alerts-panel";
+import { InteractionLogForm } from "@/components/shared/activities/interaction-log-form";
+import { listRecordActors, loadActorPickerOptions } from "@/lib/commercial/actor-service";
+import {
+  loadRecordAlerts,
+  mergeAlertSuggestions,
+  refreshRecordAlerts,
+} from "@/lib/commercial/alert-service";
 import { AttributionDetails } from "@/components/shared/commercial/attribution-details";
 import { createFormatters, formatCurrencyValue } from "@/lib/format";
 import { actorLabel, createdViaLabel } from "@/lib/traceability";
@@ -97,7 +106,8 @@ export default async function OpportunityDetailPage({
   if (!opportunity) notFound();
 
   const columns = boardStages(stages);
-  const [partnerCatalog, contextData, records, teamMembers, users, meetings, companyPeople, gateFacts] =
+  await refreshRecordAlerts(db, org.id, { entity: "opportunity", id: opportunity.id });
+  const [partnerCatalog, contextData, records, teamMembers, users, companyPeople, gateFacts, actors, actorOptions, alerts] =
     await Promise.all([
       db.commercialPartner.findMany({
         where: { isActive: true },
@@ -108,19 +118,19 @@ export default async function OpportunityDetailPage({
       loadFollowUpRecords(db, "opportunity", opportunity.id),
       getActiveTeamMembers(db),
       getActiveOrgUsers(db),
-      db.meeting.findMany({
-        where: { opportunityId: opportunity.id },
-        orderBy: { meetingDate: "desc" },
-        select: { id: true, title: true, meetingDate: true, processingStatus: true },
-      }),
       db.person.findMany({
         where: { companyRelationships: { some: { companyId: opportunity.companyId, endedAt: null } } },
         select: { id: true, firstName: true, lastName: true },
         orderBy: { firstName: "asc" },
       }),
       withOrgTransaction(org.id, (tx) => loadStageGateFacts(tx, org.id, opportunity)),
+      listRecordActors(db, { type: "opportunity", id: opportunity.id }),
+      loadActorPickerOptions(db),
+      loadRecordAlerts(db, { entity: "opportunity", id: opportunity.id }),
     ]);
-  const suggestions = await opportunityFollowUpSuggestions(db, opportunity, records);
+  const suggestions = mergeAlertSuggestions(opportunityFollowUpSuggestions(opportunity, records), alerts);
+  const meetings = records.interactions.filter((activity) => activity.type === "meeting");
+  const peopleOptions = companyPeople.map((person) => ({ id: person.id, label: `${person.firstName} ${person.lastName}` }));
 
   const formatters = createFormatters(org);
   const ownerLabel = opportunity.owner ? actorLabel(opportunity.owner) : "Sin responsable";
@@ -226,6 +236,8 @@ export default async function OpportunityDetailPage({
           </CardContent>
         </Card>
       )}
+
+      <AlertsPanel alerts={alerts} />
 
       <div className="mb-4 grid grid-cols-1 gap-4 lg:grid-cols-3">
         <div className="lg:col-span-2">
@@ -422,6 +434,7 @@ export default async function OpportunityDetailPage({
         <div className="overflow-x-auto">
           <TabsList>
             <TabsTrigger value="follow-up">Seguimiento</TabsTrigger>
+            <TabsTrigger value="actors">Actores ({actors.length})</TabsTrigger>
             <TabsTrigger value="meetings">Reuniones y notas</TabsTrigger>
             <TabsTrigger value="qualification">Calificación</TabsTrigger>
             <TabsTrigger value="offers">Ofertas ({opportunity.commercialOffers.length})</TabsTrigger>
@@ -435,30 +448,39 @@ export default async function OpportunityDetailPage({
             records={records}
             teamMembers={teamMembers}
             links={{ opportunityId: opportunity.id, companyId: opportunity.companyId }}
-            people={companyPeople.map((person) => ({ id: person.id, label: `${person.firstName} ${person.lastName}` }))}
+            people={peopleOptions}
           />
+        </TabsContent>
+        <TabsContent value="actors" className="pt-4">
+          <ActorsPanel target={{ type: "opportunity", id: opportunity.id }} actors={actors} options={actorOptions} />
         </TabsContent>
         <TabsContent value="meetings" className="space-y-4 pt-4">
           <Card size="sm">
             <CardHeader className="flex flex-row flex-wrap items-center justify-between gap-2">
               <CardTitle>Reuniones ({meetings.length})</CardTitle>
-              <Button
-                size="sm"
-                variant="secondary"
-                render={<Link href={`/meetings/new?companyId=${opportunity.companyId}&opportunityId=${opportunity.id}`} />}
-              >
-                Nueva reunión
-              </Button>
+              <InteractionLogForm
+                companyId={opportunity.companyId}
+                opportunityId={opportunity.id}
+                people={peopleOptions}
+                defaultType="meeting"
+                triggerLabel="Registrar reunión"
+              />
             </CardHeader>
-            <CardContent className="space-y-1 text-sm">
+            <CardContent className="space-y-3 text-sm">
               {meetings.length === 0 ? (
                 <p className="text-muted-foreground">Sin reuniones vinculadas.</p>
               ) : (
                 meetings.map((meeting) => (
-                  <Link key={meeting.id} href={`/meetings/${meeting.id}`} className="flex justify-between gap-2 rounded-md px-1 py-1 hover:bg-muted">
-                    <span className="truncate">{meeting.title}</span>
-                    <span className="text-muted-foreground shrink-0 text-xs">{isoDate(meeting.meetingDate)}</span>
-                  </Link>
+                  <div key={meeting.id} className="space-y-0.5 border-b pb-2 last:border-0 last:pb-0">
+                    <p className="flex justify-between gap-2">
+                      <span className="truncate font-medium">{meeting.title}</span>
+                      <span className="text-muted-foreground shrink-0 text-xs">{isoDate(meeting.occurredAt)}</span>
+                    </p>
+                    {meeting.description && (
+                      <p className="text-muted-foreground text-xs whitespace-pre-wrap">{meeting.description}</p>
+                    )}
+                    {meeting.outcomes && <p className="text-xs whitespace-pre-wrap">{meeting.outcomes}</p>}
+                  </div>
                 ))
               )}
             </CardContent>

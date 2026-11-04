@@ -14,7 +14,7 @@ Handlers. No hay backend NestJS separado; la lógica vive en `src/lib/`.
               ┌──────────────┼──────────────┐
               ▼              ▼              ▼
          Cloudflare R2    Groq / etc.   Webhook gateway
-         (evidencia)      (IA)          (n8n u otro)
+         (solo lectura)   (IA)          (n8n u otro)
 ```
 
 ## Frontend
@@ -31,7 +31,7 @@ Handlers. No hay backend NestJS separado; la lógica vive en `src/lib/`.
 ## Backend (dentro de Next.js)
 
 - **Server Actions** en `actions.ts` por módulo de ruta.
-- **API routes** para streaming (agent chat), crons, presign R2, auth.
+- **API routes** para streaming (agent chat), crons, auth.
 - **Middleware** Auth.js para protección de rutas.
 
 ## Base de datos
@@ -44,18 +44,17 @@ Handlers. No hay backend NestJS separado; la lógica vive en `src/lib/`.
 
 ## Almacenamiento
 
-- **Cloudflare R2** (S3-compatible) para evidencia de meetings, adjuntos del
-  agente y documentos de contexto de entidad
-  (`src/lib/meeting-intelligence/storage/r2.ts`).
-- Presign vía `/api/evidence/presign` y `/api/entity-context/presign`.
-- Keys: `meetings/…`, `agent/…`, `context/{entityType}/{entityId}/…`.
+- El CRM no sube archivos: el texto de contexto y de adjuntos vive en PostgreSQL.
+- **Cloudflare R2** queda en solo lectura para fuentes de contexto históricas
+  (`src/lib/storage/r2.ts`). Auditoría y plan de retiro en
+  `docs/architecture/knowledge-sources.md`.
 
 ## Workers / jobs
 
 No hay worker separado. Procesamiento asíncrono vía:
 
-1. `after()` post-upload para meetings y entity-context.
-2. Callback interno POST `/api/meetings/process` / `/api/entity-context/process`.
+1. `after()` para el análisis de contexto y el refresco de alertas.
+2. Callback interno POST `/api/entity-context/process`.
 3. Crons HTTP (`/api/cron/*`) invocados externamente (Railway cron u otro).
 
 ## Integraciones
@@ -88,11 +87,11 @@ GAP: archivos de configuración Railway/Vercel no presentes en el repo.
 2. Páginas dashboard llaman `requireOrgContext()` → `forOrg(orgId)`.
 3. Mutaciones validadas con Zod (`src/lib/zod/`).
 4. Eventos de negocio pueden disparar workflows e integraciones.
-5. Meeting/agent/enrichment/MCP persisten una bitácora y aplican cada mutación
+5. Agent/enrichment/MCP persisten una bitácora y aplican cada mutación
    no destructiva en una transacción tenant independiente.
 6. `/agent/proposals` muestra Actividad de IA org-wide y permite deshacer de
    forma segura durante 90 días; eliminaciones/fusiones requieren aprobación.
-7. Tab Contexto en fichas: upload → perfil IA + cambios de campos inmediatos.
+7. Tab Contexto en fichas: texto pegado → perfil IA + cambios de campos inmediatos.
 8. Oferta comercial: Server Actions validadas → cálculo compartido de vigencia
    y economía → transacción tenant que persiste versión, partidas, documentos y
    reparto. Los montos económicos no usan el `update_field` genérico del agente.
@@ -117,9 +116,9 @@ presentador; un partner requiere evidencia explícita y confirmación manual.
 
 Servicios puros en `src/lib/commercial/` (reciben `TenantClient` o
 `TransactionClient` con `organizationId` explícito); las server actions, las
-tools del agente/MCP y `apply.ts` los reutilizan, así las reglas (compuertas,
-estados, dedupe, atribución) son únicas para UI, agente y Meeting
-Intelligence. Las escrituras del agente siguen la bitácora reversible
+tools del agente/MCP y `src/lib/ai-changes/apply.ts` los reutilizan, así las
+reglas (compuertas, estados, dedupe, atribución, actores) son únicas para UI y
+agente. Las escrituras del agente siguen la bitácora reversible
 (`CRMChangeProposal`/`CRMChangeItem`). Ver `docs/context/commercial-process.md`.
 
 ## Riesgos arquitectónicos
@@ -130,6 +129,6 @@ Intelligence. Las escrituras del agente siguen la bitácora reversible
 
 ## Decisiones pendientes
 
-- GAP: cola de mensajes (BullMQ, etc.) para pipeline de meetings.
+- GAP: cola de mensajes (BullMQ, etc.) para el análisis de contexto.
 - GAP: estrategia de observabilidad en producción.
 - GAP: CDN/cache para assets estáticos en producción.

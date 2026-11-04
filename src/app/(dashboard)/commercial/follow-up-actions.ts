@@ -1,8 +1,10 @@
 "use server";
 
+import { after } from "next/server";
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
-import { requireOrgContext, withOrgTransaction } from "@/lib/tenant";
+import { loadRecordAlerts, refreshRecordAlerts } from "@/lib/commercial/alert-service";
+import { requireOrgContext, withOrgTransaction, type TenantClient } from "@/lib/tenant";
 import {
   updateNextAction,
   type NextActionEntity,
@@ -50,6 +52,15 @@ function pathFor(entity: NextActionEntity, id: string) {
   );
 }
 
+async function refreshNextActionAlerts(
+  db: TenantClient,
+  organizationId: string,
+  entity: NextActionEntity,
+  id: string,
+) {
+  if (entity !== "commercial_partner") await refreshRecordAlerts(db, organizationId, { entity, id });
+}
+
 export async function saveNextAction(
   entity: NextActionEntity,
   id: string,
@@ -76,6 +87,7 @@ export async function saveNextAction(
     },
   );
   if (!result.ok) return { error: result.error };
+  after(() => refreshNextActionAlerts(db, org.id, entity, id));
   revalidatePath(pathFor(entity, id));
   return { success: true, message: "Próxima acción guardada." };
 }
@@ -187,6 +199,7 @@ export async function completeNextAction(
     },
   );
   if (!result.ok) return { error: result.error };
+  after(() => refreshNextActionAlerts(db, org.id, entity, id));
   revalidatePath(pathFor(entity, id));
   revalidatePath("/activities");
   return {
@@ -217,7 +230,7 @@ export async function suggestNextActionAI(
       : entity === "commercial_lead"
         ? { commercialLeadId: id }
         : { commercialPartnerId: id };
-  const [record, notes, meetings] = await Promise.all([
+  const [record, notes, alerts] = await Promise.all([
     entity === "opportunity"
       ? db.opportunity.findUnique({
           where: { id },
@@ -253,8 +266,6 @@ export async function suggestNextActionAI(
             where: { id },
             select: {
               displayName: true,
-              allianceStage: true,
-              allianceStatus: true,
               commercialPotential: true,
               agreementTerms: true,
               nextStep: true,
@@ -267,14 +278,9 @@ export async function suggestNextActionAI(
       take: 5,
       select: { title: true, body: true, createdAt: true },
     }),
-    entity === "opportunity"
-      ? db.meeting.findMany({
-          where: { opportunityId: id },
-          orderBy: { meetingDate: "desc" },
-          take: 3,
-          select: { title: true, meetingDate: true, aiSummary: true },
-        })
-      : Promise.resolve([]),
+    entity === "commercial_partner"
+      ? Promise.resolve([])
+      : loadRecordAlerts(db, { entity, id }),
   ]);
   if (!record) return { error: "Registro no encontrado." };
   try {
@@ -290,7 +296,16 @@ export async function suggestNextActionAI(
         outcomes: activity.outcomes,
       })),
       notes: notes.map((note) => ({ ...note, body: note.body.slice(0, 800) })),
-      meetings,
+      alerts: alerts.map((alert) => ({ title: alert.title, reason: alert.reason, severity: alert.severity })),
+      meetings: records.interactions
+        .filter((activity) => activity.type === "meeting")
+        .slice(0, 3)
+        .map((activity) => ({
+          title: activity.title,
+          occurredAt: activity.occurredAt,
+          summary: activity.description?.slice(0, 800) ?? null,
+          outcomes: activity.outcomes,
+        })),
     });
     return { suggestion };
   } catch (error) {

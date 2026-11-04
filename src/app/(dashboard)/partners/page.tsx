@@ -3,75 +3,45 @@ import type { Prisma } from "@prisma/client";
 import { requireOrgContext } from "@/lib/tenant";
 import { getActiveOrgUsers } from "@/lib/team";
 import { PageHeader } from "@/components/shared/page-header";
+import { DataTable } from "@/components/shared/data-table";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { NewPartnerButton } from "@/components/shared/partners/partner-forms";
-import {
-  ALLIANCE_STAGES,
-  ALLIANCE_STAGE_LABELS,
-  ALLIANCE_STATUS_LABELS,
-  ALLIANCE_TYPE_LABELS,
-  isAllianceStatus,
-} from "@/lib/commercial/partners";
-import { nextActionState } from "@/lib/commercial/next-action";
+import { partnerTypeLabel } from "@/lib/commercial/partners";
+import { actorLabel } from "@/lib/traceability";
 
 const partnerSelect = {
   id: true,
   displayName: true,
-  kind: true,
-  allianceStage: true,
-  allianceStatus: true,
-  allianceStatusReason: true,
+  isActive: true,
   allianceType: true,
-  nextStep: true,
-  nextStepDueDate: true,
+  agreementTerms: true,
   owner: { select: { name: true, email: true } },
-  _count: { select: { opportunityAssignments: true, referredAttributions: true } },
+  linkedCompany: { select: { name: true } },
+  linkedPerson: { select: { firstName: true, lastName: true } },
+  actorLinks: { select: { opportunityId: true, commercialLeadId: true } },
 } satisfies Prisma.CommercialPartnerSelect;
 
 type PartnerRow = Prisma.CommercialPartnerGetPayload<{ select: typeof partnerSelect }>;
 
-function PartnerCard({ partner }: { partner: PartnerRow }) {
-  const state = nextActionState(partner.nextStep, partner.nextStepDueDate);
-  return (
-    <Link
-      href={`/partners/${partner.id}`}
-      className="ring-foreground/10 bg-card block space-y-1 rounded-lg p-2.5 text-sm shadow-sm ring-1 hover:shadow-md"
-    >
-      <p className="font-medium">{partner.displayName}</p>
-      <p className="text-muted-foreground text-xs">
-        {partner.allianceType
-          ? ALLIANCE_TYPE_LABELS[partner.allianceType as keyof typeof ALLIANCE_TYPE_LABELS] ?? partner.allianceType
-          : "Tipo sin definir"}
-        {partner.owner ? ` · ${partner.owner.name ?? partner.owner.email}` : ""}
-      </p>
-      <p className="text-muted-foreground text-xs">
-        {partner._count.referredAttributions} referidos · {partner._count.opportunityAssignments} oportunidades
-      </p>
-      <p className={`line-clamp-2 text-xs ${state === "overdue" ? "text-destructive" : "text-muted-foreground"}`}>
-        {partner.nextStep
-          ? `${partner.nextStepDueDate ? `${partner.nextStepDueDate.toISOString().slice(0, 10)} · ` : ""}${partner.nextStep}`
-          : "Sin próxima acción"}
-      </p>
-    </Link>
-  );
-}
-
+// Directorio de relaciones comerciales. Los negocios de un partner corren por
+// el pipeline normal de prospección y oportunidades.
 export default async function PartnersPage({
   searchParams,
 }: {
-  searchParams: Promise<{ status?: string }>;
+  searchParams: Promise<{ q?: string; status?: string }>;
 }) {
-  const { status } = await searchParams;
+  const { q, status } = await searchParams;
   const { db } = await requireOrgContext();
-  const statusFilter = status && isAllianceStatus(status) ? status : "open";
-  const [partners, outside, companies, people, users] = await Promise.all([
+  const search = q?.trim();
+  const showInactive = status === "inactive";
+  const [partners, companies, people, users] = await Promise.all([
     db.commercialPartner.findMany({
-      where: { allianceStage: { not: null }, allianceStatus: statusFilter },
-      select: partnerSelect,
-      orderBy: [{ nextStepDueDate: { sort: "asc", nulls: "last" } }, { displayName: "asc" }],
-    }),
-    db.commercialPartner.findMany({
-      where: { allianceStage: null, isActive: true },
+      where: {
+        isActive: !showInactive,
+        ...(search ? { displayName: { contains: search, mode: "insensitive" } } : {}),
+      },
       select: partnerSelect,
       orderBy: { displayName: "asc" },
     }),
@@ -83,8 +53,8 @@ export default async function PartnersPage({
   return (
     <div className="min-w-0">
       <PageHeader
-        title="Alianzas"
-        description="Desarrollo de relaciones con partners que generan prospectos y oportunidades."
+        title="Partners"
+        description="Directorio de relaciones comerciales: acuerdos, contactos y negocios en los que participan."
         actions={
           <NewPartnerButton
             companies={companies.map((company) => ({ id: company.id, label: company.name }))}
@@ -94,68 +64,42 @@ export default async function PartnersPage({
         }
       />
 
-      <div className="mb-3 flex flex-wrap gap-3 text-sm">
-        {(["open", "paused", "discarded"] as const).map((value) => (
-          <Link
-            key={value}
-            href={value === "open" ? "/partners" : `/partners?status=${value}`}
-            className={value === statusFilter ? "font-semibold" : "text-muted-foreground hover:underline"}
-          >
-            {ALLIANCE_STATUS_LABELS[value]}
-          </Link>
-        ))}
-      </div>
+      <form className="mb-4 flex flex-wrap items-center gap-2">
+        <Input name="q" defaultValue={search ?? ""} placeholder="Buscar partner" className="w-full sm:w-64" />
+        {showInactive && <input type="hidden" name="status" value="inactive" />}
+        <Button type="submit" variant="secondary">
+          Buscar
+        </Button>
+        <Link
+          href={showInactive ? "/partners" : "/partners?status=inactive"}
+          className="text-muted-foreground text-sm hover:underline"
+        >
+          {showInactive ? "Ver activos" : "Ver inactivos"}
+        </Link>
+      </form>
 
-      {statusFilter === "open" ? (
-        <div className="-mx-4 overflow-x-auto px-4 pb-3 sm:mx-0 sm:px-0">
-          <div className="flex w-max gap-3">
-            {ALLIANCE_STAGES.map((stage) => {
-              const column = partners.filter((partner) => partner.allianceStage === stage);
-              return (
-                <div key={stage} className="bg-muted/15 flex min-h-40 w-64 shrink-0 flex-col gap-2 rounded-md border p-2.5">
-                  <p className="text-sm font-semibold">
-                    {ALLIANCE_STAGE_LABELS[stage]} <span className="text-muted-foreground font-normal">({column.length})</span>
-                  </p>
-                  {column.map((partner) => (
-                    <PartnerCard key={partner.id} partner={partner} />
-                  ))}
-                </div>
-              );
-            })}
-          </div>
-        </div>
-      ) : (
-        <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
-          {partners.length === 0 ? (
-            <p className="text-muted-foreground text-sm">Sin alianzas en este estado.</p>
-          ) : (
-            partners.map((partner) => (
-              <div key={partner.id} className="space-y-1">
-                <PartnerCard partner={partner} />
-                {partner.allianceStatusReason && (
-                  <p className="text-muted-foreground px-1 text-xs">Motivo: {partner.allianceStatusReason}</p>
-                )}
-              </div>
-            ))
-          )}
-        </div>
-      )}
-
-      {outside.length > 0 && (
-        <section className="mt-6">
-          <h2 className="mb-2 text-sm font-semibold">Partners del catálogo fuera del pipeline ({outside.length})</h2>
-          <p className="text-muted-foreground mb-2 text-xs">
-            Partners existentes (p. ej. usados en ofertas) cuya etapa de alianza no se registró. Ábrelos para ubicarlos en una etapa.
-          </p>
-          <div className="flex flex-wrap gap-2">
-            {outside.map((partner) => (
-              <Link key={partner.id} href={`/partners/${partner.id}`}>
-                <Badge variant="outline">{partner.displayName}</Badge>
-              </Link>
-            ))}
-          </div>
-        </section>
-      )}
+      <DataTable<PartnerRow>
+        rows={partners}
+        rowHref={(row) => `/partners/${row.id}`}
+        emptyMessage="No hay partners con estos filtros."
+        columns={[
+          { header: "Partner", cell: (row) => <span className="font-medium">{row.displayName}</span> },
+          { header: "Tipo", cell: (row) => partnerTypeLabel(row.allianceType) },
+          {
+            header: "Vinculado a",
+            cell: (row) =>
+              row.linkedCompany?.name ??
+              (row.linkedPerson ? `${row.linkedPerson.firstName} ${row.linkedPerson.lastName}` : "—"),
+          },
+          { header: "Responsable", cell: (row) => (row.owner ? actorLabel(row.owner) : "—") },
+          { header: "Prospectos", cell: (row) => row.actorLinks.filter((link) => link.commercialLeadId).length },
+          { header: "Oportunidades", cell: (row) => row.actorLinks.filter((link) => link.opportunityId).length },
+          {
+            header: "Acuerdo",
+            cell: (row) => (row.agreementTerms ? <Badge variant="outline">Registrado</Badge> : "—"),
+          },
+        ]}
+      />
     </div>
   );
 }

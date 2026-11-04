@@ -19,6 +19,14 @@ import {
 } from "@/lib/opportunities/loss-reason";
 import { OPPORTUNITY_STATUSES, OPPORTUNITY_STATUS_LABELS, isOpportunityStatus } from "@/lib/opportunities/status";
 import { nextActionState } from "@/lib/commercial/next-action";
+import { ActorIndicator, AlertIndicator } from "@/components/shared/commercial/record-indicators";
+import { listActorFilterOptions } from "@/lib/commercial/actor-service";
+import {
+  actorChipLabels,
+  actorLinkSummarySelect,
+  actorOpportunityWhere,
+  parseActorKey,
+} from "@/lib/commercial/actors";
 
 type SearchParams = {
   q?: string;
@@ -29,6 +37,8 @@ type SearchParams = {
   noNext?: string;
   review?: string;
   partnerId?: string;
+  actor?: string;
+  alerts?: string;
   offerStatus?: string;
   offerExpiry?: string;
   ownerId?: string;
@@ -59,17 +69,16 @@ export default async function OpportunitiesListPage({
   searchParams: Promise<SearchParams>;
 }) {
   const params = await searchParams;
-  const { q, stage, urgency, status, overdue, noNext, review, partnerId, offerStatus, offerExpiry, ownerId, lossReason } = params;
+  const { q, stage, urgency, status, overdue, noNext, review, partnerId, offerStatus, offerExpiry, ownerId, lossReason, alerts } = params;
+  // partnerId se mantiene por las vistas guardadas anteriores al filtro de actor.
+  const actor = params.actor ?? (partnerId ? `partner:${partnerId}` : undefined);
+  const actorRef = parseActorKey(actor);
   const sort = params.sort && SORTS[params.sort] ? params.sort : "next";
   const { org, db, user } = await requireOrgContext();
-  const [savedViews, stages, partners, users] = await Promise.all([
+  const [savedViews, stages, actorOptions, users] = await Promise.all([
     db.savedView.findMany({ where: { entityType: "opportunity" }, orderBy: { name: "asc" } }),
     getAllOrgStages(db),
-    db.commercialPartner.findMany({
-      where: { isActive: true },
-      orderBy: { displayName: "asc" },
-      select: { id: true, displayName: true },
-    }),
+    listActorFilterOptions(db),
     getActiveOrgUsers(db),
   ]);
   const now = new Date();
@@ -85,20 +94,21 @@ export default async function OpportunitiesListPage({
     ...(overdue === "1" ? { nextStepDueDate: { lt: now }, status: "open" } : {}),
     ...(noNext === "1" ? { status: "open", OR: [{ nextStep: null }, { nextStepDueDate: null }] } : {}),
     ...(review === "1" ? { migrationReview: { not: null } } : {}),
-    ...(partnerId ? { commercialPartners: { some: { commercialPartnerId: partnerId } } } : {}),
-    ...(search
-      ? {
-          AND: [
+    ...(alerts === "1" ? { alerts: { some: { status: "open" } } } : {}),
+    AND: [
+      ...(actorRef ? [actorOpportunityWhere(actorRef)] : []),
+      ...(search
+        ? [
             {
               OR: [
-                { name: { contains: search, mode: "insensitive" } },
-                { company: { name: { contains: search, mode: "insensitive" } } },
-                { nextStep: { contains: search, mode: "insensitive" } },
+                { name: { contains: search, mode: "insensitive" as const } },
+                { company: { name: { contains: search, mode: "insensitive" as const } } },
+                { nextStep: { contains: search, mode: "insensitive" as const } },
               ],
             },
-          ],
-        }
-      : {}),
+          ]
+        : []),
+    ],
   };
 
   const allOpportunities = await db.opportunity.findMany({
@@ -107,6 +117,8 @@ export default async function OpportunitiesListPage({
       company: { select: { id: true, name: true } },
       owner: { select: { name: true, email: true } },
       stage: { select: { label: true, isActive: true } },
+      actorLinks: { select: actorLinkSummarySelect },
+      alerts: { where: { status: "open" }, select: { severity: true, title: true } },
       commercialOffers: {
         orderBy: { versionNumber: "desc" },
         take: 1,
@@ -175,6 +187,14 @@ export default async function OpportunitiesListPage({
             </option>
           ))}
         </select>
+        <select name="actor" defaultValue={actor ?? ""} className={selectClass}>
+          <option value="">Todo actor o partner</option>
+          {actorOptions.map((option) => (
+            <option key={option.key} value={option.key}>
+              {option.label}
+            </option>
+          ))}
+        </select>
         <details className="w-full sm:w-auto">
           <summary className="text-muted-foreground cursor-pointer text-sm">Más filtros</summary>
           <div className="mt-2 flex flex-wrap items-center gap-2">
@@ -189,14 +209,6 @@ export default async function OpportunitiesListPage({
               {LOSS_REASONS.map((reason) => (
                 <option key={reason} value={reason}>
                   {LOSS_REASON_LABELS[reason]}
-                </option>
-              ))}
-            </select>
-            <select name="partnerId" defaultValue={partnerId ?? ""} className={selectClass}>
-              <option value="">Todo partner</option>
-              {partners.map((partner) => (
-                <option key={partner.id} value={partner.id}>
-                  {partner.displayName}
                 </option>
               ))}
             </select>
@@ -228,6 +240,10 @@ export default async function OpportunitiesListPage({
           <input type="checkbox" name="review" value="1" defaultChecked={review === "1"} />
           Requieren revisión
         </label>
+        <label className="flex items-center gap-1.5 text-sm">
+          <input type="checkbox" name="alerts" value="1" defaultChecked={alerts === "1"} />
+          Con alertas
+        </label>
         <Button type="submit" variant="secondary">
           Filtrar
         </Button>
@@ -246,7 +262,11 @@ export default async function OpportunitiesListPage({
             header: "Negocio",
             cell: (row) => (
               <span className="space-y-0.5">
-                <span className="block font-medium">{row.name}</span>
+                <span className="flex items-center gap-1.5 font-medium">
+                  {row.name}
+                  <ActorIndicator labels={actorChipLabels(row.actorLinks)} />
+                  <AlertIndicator alerts={row.alerts} />
+                </span>
                 {row.migrationReview && (
                   <Badge variant="outline" className="text-amber-600">
                     Revisar migración

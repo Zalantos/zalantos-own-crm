@@ -1,11 +1,11 @@
 import type { EntityContextSource, Prisma } from "@prisma/client";
 import { withOrgTransaction, type TenantClient } from "@/lib/tenant";
-import { getObjectBuffer } from "@/lib/meeting-intelligence/storage/r2";
+import { getObjectBuffer } from "@/lib/storage/r2";
 import {
   classifyEvidence,
   extractText,
-} from "@/lib/meeting-intelligence/extraction";
-import { dedupeContactItems } from "@/lib/meeting-intelligence/dedup-items";
+} from "@/lib/documents/extraction";
+import { dedupeContactItems } from "@/lib/ai-changes/dedup-items";
 import { appendTimelineEvent } from "@/lib/timeline";
 import { analyzeEntityContext } from "@/lib/entity-context/analyze";
 import {
@@ -14,7 +14,7 @@ import {
 } from "@/lib/entity-context/mapping";
 import { buildEntityContextSnapshot } from "@/lib/entity-context/snapshot";
 import { resolveContextEntity } from "@/lib/entity-context/resolve-entity";
-import { applyProposal } from "@/lib/meeting-intelligence/apply";
+import { applyProposal } from "@/lib/ai-changes/apply";
 import {
   isContextEntityType,
   type ContextEntityType,

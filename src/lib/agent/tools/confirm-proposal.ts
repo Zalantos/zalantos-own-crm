@@ -4,7 +4,7 @@ import type { AgentToolContext } from "@/lib/agent/executor";
 import {
   applyProposal,
   getProposalContext,
-} from "@/lib/meeting-intelligence/apply";
+} from "@/lib/ai-changes/apply";
 import { readMutationResult } from "@/lib/agent/proposals";
 import { appendTimelineEvent } from "@/lib/timeline";
 

@@ -28,7 +28,7 @@ type SearchParams = {
 const SCOPES: Record<string, { label: string; where: Prisma.ActivityWhereInput }> = {
   opportunity: { label: "Oportunidades", where: { opportunityId: { not: null } } },
   lead: { label: "Prospección", where: { commercialLeadId: { not: null } } },
-  partner: { label: "Alianzas", where: { commercialPartnerId: { not: null } } },
+  partner: { label: "Partners", where: { commercialPartnerId: { not: null } } },
 };
 
 function buildQuery(params: SearchParams, overrides: Partial<SearchParams>) {
@@ -135,7 +135,7 @@ export default async function ActivitiesPage({
     <div>
       <PageHeader
         title="Actividades"
-        description="Tareas comerciales: oportunidades, prospección y alianzas. Las tareas de ejecución de proyectos viven en Rumbo."
+        description="Tareas comerciales: oportunidades, prospección y partners. Las tareas de ejecución de proyectos viven en Rumbo."
       />
 
       <div className="mb-4 flex flex-wrap items-center gap-2">
@@ -288,7 +288,7 @@ export default async function ActivitiesPage({
                         href={`/partners/${activity.commercialPartner.id}`}
                         className="hover:underline"
                       >
-                        Alianza: {activity.commercialPartner.displayName}
+                        Partner: {activity.commercialPartner.displayName}
                       </Link>
                     )}
                   </p>

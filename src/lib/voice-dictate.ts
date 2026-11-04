@@ -34,8 +34,7 @@ function textFromResponse(body: unknown): string | null {
   return typeof text === "string" ? text.trim() : null;
 }
 
-// This is deliberately separate from Meeting Intelligence: browser dictation
-// is ephemeral, has its own product model default, and never persists audio.
+// Browser dictation is ephemeral, has its own product model default, and never persists audio.
 export async function transcribeVoiceDictation(
   audio: File,
   signal: AbortSignal,

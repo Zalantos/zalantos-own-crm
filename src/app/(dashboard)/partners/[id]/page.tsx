@@ -10,19 +10,15 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { NotesPanel } from "@/components/shared/notes/notes-panel";
 import { NextActionCard } from "@/components/shared/commercial/next-action-card";
 import { FollowUpPanel } from "@/components/shared/commercial/follow-up-panel";
-import { OpportunityStatusBadge } from "@/components/shared/opportunities/status-badge";
+import { ActorParticipationCards } from "@/components/shared/commercial/actor-participation-card";
 import {
   AddPartnerContactForm,
-  AllianceFieldsForm,
-  AllianceStageControls,
+  PartnerFieldsForm,
 } from "@/components/shared/partners/partner-forms";
+import { setPartnerActive } from "@/app/(dashboard)/partners/actions";
+import { loadActorParticipation } from "@/lib/commercial/actor-service";
 import { loadFollowUpRecords, partnerSuggestions } from "@/lib/commercial/follow-up";
-import {
-  ALLIANCE_STATUS_LABELS,
-  allianceStageLabel,
-  isAllianceStatus,
-} from "@/lib/commercial/partners";
-import { leadStatusLabel } from "@/lib/commercial/leads";
+import { legacyAllianceLabel, partnerTypeLabel } from "@/lib/commercial/partners";
 import { formatCurrencyValue } from "@/lib/format";
 import { actorLabel } from "@/lib/traceability";
 
@@ -48,44 +44,20 @@ export default async function PartnerDetailPage({
   });
   if (!partner) notFound();
 
-  const [records, teamMembers, users, people, referredLeads, opportunities, history] = await Promise.all([
+  const actor = { type: "partner" as const, id: partner.id };
+  const [records, teamMembers, users, people, participation, history] = await Promise.all([
     loadFollowUpRecords(db, "commercial_partner", partner.id),
     getActiveTeamMembers(db),
     getActiveOrgUsers(db),
     db.person.findMany({ orderBy: { firstName: "asc" }, select: { id: true, firstName: true, lastName: true } }),
-    db.commercialLead.findMany({
-      where: { firstTouchAttribution: { referrerPartnerId: partner.id } },
-      select: { id: true, title: true, status: true, identifiedAt: true },
-      orderBy: { identifiedAt: "desc" },
-    }),
-    // Oportunidades donde participa (snapshot económico en ofertas) o que refirió.
-    db.opportunity.findMany({
-      where: {
-        OR: [
-          { commercialPartners: { some: { commercialPartnerId: partner.id } } },
-          { firstTouchAttribution: { referrerPartnerId: partner.id } },
-        ],
-      },
-      select: {
-        id: true,
-        name: true,
-        status: true,
-        estimatedValue: true,
-        wonAt: true,
-        company: { select: { name: true } },
-        commercialPartners: {
-          where: { commercialPartnerId: partner.id },
-          select: { role: true, profitSharePercentage: true },
-        },
-      },
-      orderBy: { createdAt: "desc" },
-    }),
+    loadActorParticipation(db, actor),
     db.commercialStatusChange.findMany({
       where: { entityType: "commercial_partner", entityId: partner.id },
       orderBy: { changedAt: "desc" },
     }),
   ]);
-  const actors = new Map(users.map((user) => [user.id, user.name ?? user.email]));
+  const actorNames = new Map(users.map((user) => [user.id, user.name ?? user.email]));
+  const { leads, opportunities } = participation;
   const won = opportunities.filter((opportunity) => opportunity.status === "won");
   const wonValue = won.reduce((sum, opportunity) => sum + (opportunity.estimatedValue?.toNumber() ?? 0), 0);
   const ownerLabel = partner.owner ? actorLabel(partner.owner) : "Sin responsable";
@@ -101,12 +73,8 @@ export default async function PartnerDetailPage({
         title={partner.displayName}
         description={
           <span className="flex flex-wrap items-center gap-2">
-            <Badge variant="outline">{allianceStageLabel(partner.allianceStage)}</Badge>
-            {partner.allianceStatus !== "open" && (
-              <Badge variant="destructive">
-                {isAllianceStatus(partner.allianceStatus) ? ALLIANCE_STATUS_LABELS[partner.allianceStatus] : partner.allianceStatus}
-              </Badge>
-            )}
+            <Badge variant="outline">{partnerTypeLabel(partner.allianceType)}</Badge>
+            {!partner.isActive && <Badge variant="destructive">Inactivo</Badge>}
             {partner.linkedCompany && (
               <Link href={`/companies/${partner.linkedCompany.id}`} className="hover:underline">
                 {partner.linkedCompany.name}
@@ -121,17 +89,17 @@ export default async function PartnerDetailPage({
         }
         actions={
           <>
-            <AllianceStageControls partnerId={partner.id} stage={partner.allianceStage} status={partner.allianceStatus} />
+            <form action={setPartnerActive.bind(null, partner.id, !partner.isActive)}>
+              <Button type="submit" variant="ghost">
+                {partner.isActive ? "Marcar inactivo" : "Reactivar"}
+              </Button>
+            </form>
             <Button variant="secondary" render={<Link href={`/prospecting/new?referrerPartnerId=${partner.id}`} />}>
               Registrar referido
             </Button>
           </>
         }
       />
-
-      {partner.allianceStatusReason && partner.allianceStatus !== "open" && (
-        <p className="text-muted-foreground mb-4 text-sm">Motivo: {partner.allianceStatusReason}</p>
-      )}
 
       <div className="mb-4 grid grid-cols-1 gap-4 lg:grid-cols-3">
         <div className="lg:col-span-2">
@@ -148,7 +116,7 @@ export default async function PartnerDetailPage({
             ownerLabel={ownerLabel}
             suggestions={suggestions}
             openTasks={records.openTasks.map((task) => ({ id: task.id, title: task.title }))}
-            closed={partner.allianceStatus === "discarded"}
+            closed={!partner.isActive}
           />
         </div>
         <Card size="sm">
@@ -156,8 +124,8 @@ export default async function PartnerDetailPage({
             <CardTitle>Resultados</CardTitle>
           </CardHeader>
           <CardContent className="space-y-1 text-sm">
-            <p>Prospectos referidos: {referredLeads.length}</p>
-            <p>Leads generados: {referredLeads.filter((lead) => ["lead", "converted"].includes(lead.status)).length}</p>
+            <p>Prospectos vinculados: {leads.length}</p>
+            <p>Leads generados: {leads.filter((lead) => ["lead", "converted"].includes(lead.status)).length}</p>
             <p>Oportunidades asociadas: {opportunities.length}</p>
             <p>
               Negocios ganados: {won.length} · {formatCurrencyValue(wonValue, org.currency, org.locale)}
@@ -171,8 +139,8 @@ export default async function PartnerDetailPage({
         <div className="overflow-x-auto">
           <TabsList>
             <TabsTrigger value="follow-up">Seguimiento</TabsTrigger>
-            <TabsTrigger value="alliance">Alianza</TabsTrigger>
-            <TabsTrigger value="referrals">Referidos y negocios</TabsTrigger>
+            <TabsTrigger value="agreement">Acuerdo</TabsTrigger>
+            <TabsTrigger value="business">Prospectos y oportunidades</TabsTrigger>
             <TabsTrigger value="contacts">Contactos ({partner.contacts.length})</TabsTrigger>
             <TabsTrigger value="notes">Notas</TabsTrigger>
             <TabsTrigger value="history">Historial</TabsTrigger>
@@ -186,10 +154,10 @@ export default async function PartnerDetailPage({
             people={contactPeople}
           />
         </TabsContent>
-        <TabsContent value="alliance" className="pt-4">
+        <TabsContent value="agreement" className="pt-4">
           <Card size="sm">
             <CardContent>
-              <AllianceFieldsForm
+              <PartnerFieldsForm
                 partnerId={partner.id}
                 values={{
                   allianceType: partner.allianceType,
@@ -212,46 +180,8 @@ export default async function PartnerDetailPage({
             </p>
           )}
         </TabsContent>
-        <TabsContent value="referrals" className="grid gap-4 pt-4 md:grid-cols-2">
-          <Card size="sm">
-            <CardHeader>
-              <CardTitle>Prospectos y leads referidos</CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-1 text-sm">
-              {referredLeads.length === 0 ? (
-                <p className="text-muted-foreground">Sin referidos registrados.</p>
-              ) : (
-                referredLeads.map((lead) => (
-                  <Link key={lead.id} href={`/prospecting/${lead.id}`} className="flex justify-between gap-2 hover:underline">
-                    <span className="truncate">{lead.title}</span>
-                    <span className="text-muted-foreground shrink-0 text-xs">{leadStatusLabel(lead.status)}</span>
-                  </Link>
-                ))
-              )}
-            </CardContent>
-          </Card>
-          <Card size="sm">
-            <CardHeader>
-              <CardTitle>Oportunidades asociadas</CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-1 text-sm">
-              {opportunities.length === 0 ? (
-                <p className="text-muted-foreground">Sin oportunidades.</p>
-              ) : (
-                opportunities.map((opportunity) => (
-                  <Link key={opportunity.id} href={`/opportunities/${opportunity.id}`} className="flex items-center justify-between gap-2 hover:underline">
-                    <span className="truncate">
-                      {opportunity.name} · {opportunity.company.name}
-                      {opportunity.commercialPartners[0]?.profitSharePercentage
-                        ? ` · ${opportunity.commercialPartners[0].profitSharePercentage.toString()}%`
-                        : ""}
-                    </span>
-                    <OpportunityStatusBadge status={opportunity.status} />
-                  </Link>
-                ))
-              )}
-            </CardContent>
-          </Card>
+        <TabsContent value="business" className="pt-4">
+          <ActorParticipationCards actor={actor} participation={participation} />
         </TabsContent>
         <TabsContent value="contacts" className="space-y-3 pt-4">
           <AddPartnerContactForm
@@ -275,16 +205,17 @@ export default async function PartnerDetailPage({
         </TabsContent>
         <TabsContent value="history" className="space-y-1 pt-4 text-sm">
           {history.length === 0 && <p className="text-muted-foreground">Sin cambios registrados.</p>}
+          {history.length > 0 && (
+            <p className="text-muted-foreground text-xs">Historial del pipeline de alianzas retirado.</p>
+          )}
           {history.map((change) => (
             <p key={change.id}>
               <span className="font-medium">
-                {change.field === "alliance_stage"
-                  ? `${allianceStageLabel(change.fromValue)} → ${allianceStageLabel(change.toValue)}`
-                  : `Estado: ${change.fromValue ?? "—"} → ${change.toValue}`}
+                {legacyAllianceLabel(change.fromValue)} → {legacyAllianceLabel(change.toValue)}
               </span>{" "}
               <span className="text-muted-foreground">
                 {change.changedAt.toISOString().slice(0, 10)} ·{" "}
-                {change.actorId ? (actors.get(change.actorId) ?? "Usuario") : "Sistema"}
+                {change.actorId ? (actorNames.get(change.actorId) ?? "Usuario") : "Sistema"}
                 {change.reason ? ` · ${change.reason}` : ""}
               </span>
             </p>

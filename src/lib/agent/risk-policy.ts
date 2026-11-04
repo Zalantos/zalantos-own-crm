@@ -15,7 +15,6 @@ export const TOOL_RISK: Record<string, ToolRisk> = {
   get_my_agenda: "auto",
   list_meetings: "auto",
   get_meeting: "auto",
-  read_meeting_transcript: "auto",
   list_pending_proposals: "auto",
   read_attachment: "auto",
   read_context_source: "auto",
@@ -43,4 +42,9 @@ export const TOOL_RISK: Record<string, ToolRisk> = {
   set_opportunity_status: "auto",
   set_next_action: "auto",
   log_interaction: "auto",
+  list_actors: "auto",
+  list_commercial_alerts: "auto",
+  link_actor: "auto",
+  update_actor: "auto",
+  unlink_actor: "auto",
 };

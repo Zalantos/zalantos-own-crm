@@ -2,6 +2,25 @@
 
 ## Unreleased
 
+- Wiki corporativa vía MCP: el copiloto consulta conocimiento documental con
+  `wiki_search_knowledge` y `wiki_read_document`, de solo lectura y con citas. Cliente
+  en `src/lib/wiki-mcp/` con `WIKI_MCP_TOKEN` (o Entra) y lista blanca. Solo para
+  `WIKI_MCP_ALLOWED_ORG_IDS`. Campo `Company.wikiClientId` (migración
+  `company_wiki_client_id`). El copiloto recibe ahora contexto de prospectos y leads.
+  Tras leer la Wiki, las acciones comerciales críticas exigen confirmación.
+
+- Simplificación comercial: un único pipeline; se elimina el Kanban de alianzas y
+  `/partners` pasa a ser directorio. Actores comerciales (persona, empresa o
+  partner) en prospectos, leads y oportunidades, con filtro por actor. Alertas
+  configurables por etapa (`/admin/settings/alerts`) integradas con la próxima
+  mejor acción, el dashboard y el cron comercial. Retiro de Meeting Intelligence:
+  las reuniones son actividades `type=meeting` y `meetings`/`evidence` quedan como
+  histórico. Se retira la subida de archivos a R2; el motor IA pasa a
+  `src/lib/ai-changes/`. Herramientas nuevas: `list_actors`, `link_actor`,
+  `update_actor`, `unlink_actor`, `list_commercial_alerts`; se retira
+  `read_meeting_transcript`. Migraciones `commercial_actors_and_alerts` y
+  `commercial_actors_alerts_backfill`.
+
 - Preparación de despliegue del rediseño comercial: `npm run start` ya no
   aplica migraciones (paso explícito `npm run prisma:migrate:deploy`);
   migración `commercial_workflow_compat` (workflows "etapa = Ganado/Perdido/

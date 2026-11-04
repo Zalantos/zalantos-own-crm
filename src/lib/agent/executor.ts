@@ -18,6 +18,12 @@ import { buildContextSourceTools } from "./tools/context-sources";
 import { buildWebSearchTools } from "./tools/web-search";
 import { buildTeamMemberTools } from "./tools/team-members";
 import { buildCommercialTools } from "./tools/commercial";
+import {
+  buildWikiTools,
+  createWikiTurnState,
+  guardCriticalWikiActions,
+} from "./tools/wiki";
+import { isWikiEnabledForOrg } from "@/lib/wiki-mcp/authorization";
 
 // Estado mutable compartido por todas las tools de UN turno (mismo
 // buildAgentTools). No sobrevive entre turnos: se recrea en cada request.
@@ -115,11 +121,22 @@ export function buildAgentTools(
     ...input,
     turnState: { changeCount: 0, pendingInstant: null, proposalId: null },
   };
-  const tools: ToolSet = buildAgentToolDefinitions(ctx);
+  const wikiTurn = createWikiTurnState();
+  // Las tools de Wiki quedan fuera de buildAgentToolDefinitions a propósito: esa
+  // función alimenta también el MCP público del CRM, que no debe exponerlas.
+  const tools: ToolSet = {
+    ...buildAgentToolDefinitions(ctx),
+    ...(isWikiEnabledForOrg(ctx.organizationId)
+      ? buildWikiTools(ctx, wikiTurn)
+      : {}),
+  };
   return Object.fromEntries(
     Object.entries(tools).map(([name, toolDefinition]) => [
       name,
-      withErrorCapture(name, toolDefinition),
+      withErrorCapture(
+        name,
+        guardCriticalWikiActions(name, toolDefinition, wikiTurn),
+      ),
     ]),
   );
 }

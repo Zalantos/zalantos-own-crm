@@ -1,5 +1,5 @@
 import type { EntityContextAnalysis } from "@/lib/entity-context/schema";
-import type { MappedChangeItem } from "@/lib/meeting-intelligence/ai/mapping";
+import type { MappedChangeItem } from "@/lib/ai-changes/types";
 import type { ContextEntityType } from "@/lib/entity-context/types";
 
 // Enrichment only maps field updates + contacts. Notes/summary go auto;

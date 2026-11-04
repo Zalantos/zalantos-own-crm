@@ -13,6 +13,7 @@ const TRIGGER_EVENTS = [
   "status_changed",
   "field_overdue",
   "reactivation_due",
+  "alert_raised",
 ];
 
 export function WorkflowForm() {

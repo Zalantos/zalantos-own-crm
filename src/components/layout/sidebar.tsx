@@ -1,8 +1,9 @@
 "use client";
 
+import { useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { type LucideIcon } from "lucide-react";
+import { ChevronRightIcon, type LucideIcon } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { Role } from "@prisma/client";
 import {
@@ -10,6 +11,7 @@ import {
   CRM_SECTION,
   HOME_ITEM,
   SUPERADMIN_SECTION,
+  type NavSection,
 } from "@/components/layout/nav-config";
 
 function NavLink({
@@ -39,6 +41,65 @@ function NavLink({
   );
 }
 
+function NavSectionBlock({
+  section,
+  pathname,
+  open,
+  onToggle,
+}: {
+  section: NavSection;
+  pathname: string;
+  open: boolean;
+  onToggle: () => void;
+}) {
+  const hasActiveItem = section.items.some((item) =>
+    pathname.startsWith(item.href),
+  );
+  const itemsId = `nav-section-${section.label}`;
+
+  return (
+    <div className="space-y-1">
+      {section.startCollapsed ? (
+        <button
+          type="button"
+          onClick={onToggle}
+          aria-expanded={open}
+          aria-controls={itemsId}
+          className={cn(
+            "flex w-full items-center justify-between rounded-md px-2 py-1 text-xs font-medium tracking-wide uppercase transition-colors",
+            hasActiveItem
+              ? "text-sidebar-foreground"
+              : "text-sidebar-foreground/60 hover:text-sidebar-foreground",
+          )}
+        >
+          {section.label}
+          <ChevronRightIcon
+            className={cn(
+              "size-3.5 shrink-0 transition-transform",
+              open && "rotate-90",
+            )}
+          />
+        </button>
+      ) : (
+        <p className="text-sidebar-foreground/60 px-2 text-xs font-medium tracking-wide uppercase">
+          {section.label}
+        </p>
+      )}
+      {open ? (
+        <div id={itemsId} className="space-y-1">
+          {section.items.map((item) => (
+            <NavLink
+              key={item.href}
+              {...item}
+              isActive={pathname.startsWith(item.href)}
+            />
+          ))}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
 export function Sidebar({
   role,
   isSuperAdmin,
@@ -49,6 +110,15 @@ export function Sidebar({
   brandName: string;
 }) {
   const pathname = usePathname();
+  const [openLabels, setOpenLabels] = useState<Record<string, boolean>>({});
+  const [openOnPath, setOpenOnPath] = useState(pathname);
+
+  // Vuelven a cerrarse al cambiar de página para que no queden abiertas como ruido.
+  if (openOnPath !== pathname) {
+    setOpenOnPath(pathname);
+    setOpenLabels({});
+  }
+
   const sections = [
     CRM_SECTION,
     ...(role === "ADMIN" ? [ADMIN_SECTION] : []),
@@ -65,18 +135,18 @@ export function Sidebar({
           <NavLink {...HOME_ITEM} isActive={pathname === HOME_ITEM.href} />
         </div>
         {sections.map((section) => (
-          <div key={section.label} className="space-y-1">
-            <p className="text-sidebar-foreground/60 px-2 text-xs font-medium tracking-wide uppercase">
-              {section.label}
-            </p>
-            {section.items.map((item) => (
-              <NavLink
-                key={item.href}
-                {...item}
-                isActive={pathname.startsWith(item.href)}
-              />
-            ))}
-          </div>
+          <NavSectionBlock
+            key={section.label}
+            section={section}
+            pathname={pathname}
+            open={!section.startCollapsed || openLabels[section.label] === true}
+            onToggle={() =>
+              setOpenLabels((current) => ({
+                ...current,
+                [section.label]: !current[section.label],
+              }))
+            }
+          />
         ))}
       </nav>
     </aside>

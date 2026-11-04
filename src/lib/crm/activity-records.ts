@@ -15,7 +15,7 @@ import {
   type ActivityPriority,
 } from "@/lib/activity-priority";
 
-// Escrituras de actividades registradas, reuniones manuales y edición de
+// Escrituras de actividades registradas, reuniones comerciales y edición de
 // tareas compartidas por las tools del agente/MCP (escritura al instante) y
 // por apply.ts (al aplicar una propuesta). Reciben un TransactionClient crudo,
 // así que organizationId va explícito en cada where/data (ver
@@ -23,6 +23,9 @@ import {
 // necesario para deshacerlo.
 
 const SUMMARY_MAX_CHARS = 200;
+
+// Activity.externalSource de las reuniones copiadas desde la tabla meetings.
+export const LEGACY_MEETING_SOURCE = "legacy_meeting";
 
 function truncate(text: string, max: number): string {
   return text.length > max ? `${text.slice(0, max)}…` : text;
@@ -224,7 +227,7 @@ export async function revertLoggedActivity(
 }
 
 // ---------------------------------------------------------------------------
-// Reunión manual (sin grabación ni transcripción)
+// Reunión comercial: una actividad registrada con type=meeting
 // ---------------------------------------------------------------------------
 
 export type MeetingParticipantInput = {
@@ -238,6 +241,9 @@ export type MeetingParticipantInput = {
 export type ManualMeetingInput = {
   companyId: string;
   opportunityId: string | null;
+  commercialLeadId?: string | null;
+  // Personas del CRM entre los participantes.
+  personIds?: string[];
   title: string;
   meetingType: string;
   meetingDate: Date;
@@ -249,21 +255,70 @@ export type ManualMeetingInput = {
   nextSteps: string[];
 };
 
+// Solo para deshacer create_meeting aplicados antes de retirar Meeting
+// Intelligence: esas reuniones viven en la tabla histórica meetings.
 export type ManualMeetingRevert = {
   meetingId: string;
   timelineEventId: string | null;
 };
 
-// Mismo shape que buildAiSummary (pipeline) para que la ficha de la reunión
-// y get_meeting lo lean igual que el de una reunión transcrita.
-export function buildManualMeetingSummary(input: ManualMeetingInput) {
+function bulletSection(title: string, items: string[]) {
+  return items.length > 0
+    ? `${title}:\n${items.map((item) => `- ${item}`).join("\n")}`
+    : null;
+}
+
+function participantLine(participants: MeetingParticipantInput[]) {
+  const names = participants.map((participant) => participant.name).filter(Boolean);
+  return names.length > 0 ? `Participantes: ${names.join(", ")}` : null;
+}
+
+// Mismo formato que la migración de reuniones históricas.
+export function meetingDescription(input: {
+  summary: string | null;
+  keyPoints: string[];
+  risks: string[];
+  participants: MeetingParticipantInput[];
+}): string | null {
+  return (
+    [
+      input.summary,
+      bulletSection("Puntos clave", input.keyPoints),
+      bulletSection("Riesgos", input.risks),
+      participantLine(input.participants),
+    ]
+      .filter(Boolean)
+      .join("\n\n") || null
+  );
+}
+
+export function meetingOutcomes(input: {
+  decisions: string[];
+  nextSteps: string[];
+}): string | null {
+  return (
+    [
+      bulletSection("Acuerdos", input.decisions),
+      bulletSection("Próximas acciones", input.nextSteps),
+    ]
+      .filter(Boolean)
+      .join("\n\n") || null
+  );
+}
+
+export function meetingToLoggedActivity(input: ManualMeetingInput): LoggedActivityInput {
   return {
-    headline: input.summary ?? "",
-    keyPoints: input.keyPoints,
-    decisions: input.decisions,
-    risks: input.risks,
-    nextSteps: input.nextSteps,
-    source: "manual",
+    companyId: input.companyId,
+    opportunityId: input.opportunityId,
+    commercialLeadId: input.commercialLeadId ?? null,
+    personIds: input.personIds ?? [],
+    type: "meeting",
+    title: input.title,
+    occurredAt: input.meetingDate,
+    durationMinutes: null,
+    channel: input.meetingType,
+    summary: meetingDescription(input),
+    outcomes: meetingOutcomes(input),
   };
 }
 
@@ -281,52 +336,19 @@ export function normalizeMeetingParticipants(
   }));
 }
 
-export async function insertManualMeeting(
-  tx: Prisma.TransactionClient,
-  base: WriteBase,
-  input: ManualMeetingInput,
-): Promise<ManualMeetingRevert> {
-  const meeting = await tx.meeting.create({
-    data: {
-      organizationId: base.organizationId,
-      companyId: input.companyId,
-      opportunityId: input.opportunityId,
-      title: input.title,
-      meetingType: input.meetingType,
-      meetingDate: input.meetingDate,
-      participants: normalizeMeetingParticipants(
-        input.participants,
-      ) as Prisma.InputJsonValue,
-      sourceType: "manual",
-      // No hay nada que procesar: el resumen llega cargado a mano.
-      processingStatus: "ready",
-      aiSummary: buildManualMeetingSummary(input) as Prisma.InputJsonValue,
-      createdBy: base.actorId ?? "system",
-    },
-    select: { id: true },
-  });
-
-  const event = await appendTimelineEvent(tx, {
-    organizationId: base.organizationId,
-    companyId: input.companyId,
-    opportunityId: input.opportunityId,
-    type: "meeting_created",
-    title: `Reunión: ${input.title}`,
-    summary: input.summary ? truncate(input.summary, SUMMARY_MAX_CHARS) : null,
-    refType: "meeting",
-    refId: meeting.id,
-    actorId: base.actorId,
-    metadata: { ...base.metadata, sourceType: "manual" },
-  });
-
-  return { meetingId: meeting.id, timelineEventId: event?.id ?? null };
-}
-
 export async function revertManualMeeting(
   tx: Prisma.TransactionClient,
   organizationId: string,
   revert: ManualMeetingRevert,
 ) {
+  // La copia en activities nació de la migración de reuniones históricas.
+  await tx.activity.deleteMany({
+    where: {
+      organizationId,
+      externalSource: LEGACY_MEETING_SOURCE,
+      externalId: revert.meetingId,
+    },
+  });
   await tx.meeting.deleteMany({
     where: { id: revert.meetingId, organizationId },
   });
@@ -783,24 +805,6 @@ export function loggedActivityFromJson(
   };
 }
 
-export function manualMeetingToJson(
-  input: ManualMeetingInput,
-): Prisma.InputJsonObject {
-  return {
-    companyId: input.companyId,
-    opportunityId: input.opportunityId,
-    title: input.title,
-    meetingType: input.meetingType,
-    meetingDate: input.meetingDate.toISOString(),
-    participants: normalizeMeetingParticipants(input.participants),
-    summary: input.summary,
-    keyPoints: input.keyPoints,
-    decisions: input.decisions,
-    risks: input.risks,
-    nextSteps: input.nextSteps,
-  };
-}
-
 export function manualMeetingFromJson(
   after: Record<string, unknown>,
   fallbackCompanyId: string | null,
@@ -828,6 +832,8 @@ export function manualMeetingFromJson(
   return {
     companyId,
     opportunityId: str(after.opportunityId),
+    commercialLeadId: str(after.commercialLeadId),
+    personIds: strList(after.personIds),
     title: str(after.title) ?? "Reunión",
     meetingType: str(after.meetingType) ?? "discovery",
     meetingDate: requiredDate(after.meetingDate, "meetingDate"),

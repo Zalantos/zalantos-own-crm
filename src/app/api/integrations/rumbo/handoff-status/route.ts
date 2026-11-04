@@ -2,7 +2,7 @@ import { NextResponse, type NextRequest } from "next/server";
 import { z } from "zod";
 import { prismaSystem } from "@/lib/prisma";
 import { forOrg } from "@/lib/tenant";
-import { isCronSecretConfigured } from "@/lib/meeting-intelligence/internal-auth";
+import { isCronSecretConfigured } from "@/lib/internal-auth";
 import { configuredSecrets, matchesAnySecret } from "@/lib/integrations/inbound-auth";
 import { decryptSecret } from "@/lib/crypto";
 import { appendTimelineEvent } from "@/lib/timeline";

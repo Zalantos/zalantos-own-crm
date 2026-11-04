@@ -56,23 +56,17 @@ export async function loadStageGateFacts(
     where: {
       organizationId,
       opportunityId: opportunity.id,
-      occurredAt: { gte: since },
+      occurredAt: { gte: since, lte: new Date() },
     },
     select: { id: true },
   });
-  const meeting = interaction
-    ? null
-    : await tx.meeting.findFirst({
-        where: { organizationId, opportunityId: opportunity.id, meetingDate: { gte: since } },
-        select: { id: true },
-      });
   return {
     status: opportunity.status,
     mainPain: opportunity.mainPain,
     proposalDecisionAt: opportunity.proposalDecisionAt,
     proposalSentAt: opportunity.proposalSentAt,
     hasSentOffer: Boolean(sentOffer),
-    hasInteractionAfterProposal: Boolean(proposalAt && (interaction || meeting)),
+    hasInteractionAfterProposal: Boolean(proposalAt && interaction),
   };
 }
 

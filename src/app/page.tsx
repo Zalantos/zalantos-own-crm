@@ -27,9 +27,9 @@ const features = [
     visual: "evidence",
   },
   {
-    eyebrow: "Meeting Intelligence",
-    title: "Convierte reuniones y documentos en propuestas claras.",
-    body: "Audio, video y PDF pasan por análisis para extraer dolores, contactos, próximos pasos y cambios sugeridos antes de tocar los datos.",
+    eyebrow: "Seguimiento comercial",
+    title: "Alertas por etapa para que ningún negocio se detenga.",
+    body: "Reglas configurables detectan registros sin avance, sin contacto o sin próxima acción, y recomiendan el siguiente paso.",
     visual: "meeting",
   },
   {
@@ -124,7 +124,7 @@ export default function RootPage() {
             El problema
           </p>
           <h2 className="font-display max-w-4xl text-4xl leading-[1.04] font-semibold text-balance md:text-6xl">
-            Los equipos comerciales saltan entre notas, grabaciones y el CRM. El
+            Los equipos comerciales saltan entre notas, correos y el CRM. El
             siguiente paso del lead se improvisa.
           </h2>
         </div>

@@ -69,7 +69,7 @@ textual, confianza y capacidad de revertir items aplicados.
 **Consecuencias:**
 
 - UI de revisión en meetings y agente.
-- Lógica de apply/revert en `src/lib/meeting-intelligence/apply.ts`.
+- Lógica de apply/revert en `src/lib/ai-changes/apply.ts`.
 
 ---
 
@@ -146,7 +146,7 @@ proceso Next.js.
 
 - Crons dependen de scheduler externo y `CRON_SECRET`.
 - Reinicio del servidor puede dejar meetings atascados (mitigado por cron
-  `process-evidence`).
+  `process-entity-context`).
 
 ---
 
@@ -177,7 +177,7 @@ proceso Next.js.
 **Estado:** active
 
 **Contexto:** Se necesita más contexto en fichas de empresa/persona/oportunidad
-sin acoplarlo a Meeting Intelligence, y dejando abierta la puerta a LinkedIn u
+sin acoplarlo a otros flujos, y dejando abierta la puerta a LinkedIn u
 otras fuentes externas.
 
 **Decisión:**
@@ -238,8 +238,74 @@ Telegram sin sesión web. No se quiere acoplar el Bot API dentro del monolito.
 
 ---
 
+## DEC-010 — Un solo pipeline; partners como actores
+
+**Estado:** aceptada.
+
+**Decisión.** Se elimina el pipeline de alianzas. Toda oportunidad usa el mismo
+pipeline y los partners participan como actores (`CommercialActorLink`), junto a
+personas y empresas. `/partners` queda como directorio.
+
+**Consecuencias.** La participación económica sigue separada en
+`OpportunityCommercialPartner` y las ofertas: vincular no asigna comisión. El
+decisor y sponsor persona siguen en `Opportunity` para no duplicar el dato. Las
+columnas `alliance*` se conservan como histórico.
+
+## DEC-011 — Retiro de Meeting Intelligence
+
+**Estado:** aceptada.
+
+**Decisión.** Se retira la subida de evidencia, transcripción, análisis y cambios
+automáticos desde reuniones. Las reuniones comerciales pasan a ser
+`Activity(type=meeting)`. El motor de bitácora IA, usado también por agente y
+enriquecimiento, se mueve a `src/lib/ai-changes/`.
+
+**Consecuencias.** `meetings` y `evidence` quedan como histórico sin flujo activo:
+se conservan y sus filas se copiaron a `activities`. Las transcripciones ya no son
+accesibles desde UI ni agente. El dictado del copiloto
+(`/api/portal/voice/*`) no es parte de esta función y se mantiene.
+
+## DEC-012 — Alertas por reglas de etapa sin motor nuevo
+
+**Estado:** aceptada.
+
+**Decisión.** Reglas por etapa en base de datos, evaluadas de forma determinística
+en el cron comercial existente y al abrir fichas. Se reutilizan workflows, timeline
+y gateway; no se crea un motor de automatización.
+
+**Consecuencias.** La deduplicación por período evita recordatorios diarios. Los
+tableros muestran lo último sincronizado, así que la frecuencia del cron define su
+frescura. La detección funciona sin IA.
+
+## DEC-013 — Enriquecimiento sin subida de archivos
+
+**Estado:** aceptada; reversible.
+
+**Decisión.** Se retira la subida de documentos a R2 en fichas y se mantiene "Pegar
+texto". Los adjuntos del agente dejan de copiarse a R2. La documentación corporativa
+se consultará en su origen (`docs/architecture/knowledge-sources.md`).
+
+**Consecuencias.** El CRM deja de escribir en R2. Quien necesite analizar un PDF debe
+pegar su texto o adjuntarlo al chat del agente, que extrae el texto sin almacenarlo.
+
+## DEC-014 — Wiki corporativa por MCP con credencial compartida
+
+**Estado:** aceptada.
+
+**Decisión.** El agente consulta la Wiki por MCP con un token de la Wiki
+(`WIKI_MCP_TOKEN`), o con client credentials de Entra si no está definido, y una lista
+blanca de dos herramientas de lectura. El acceso se decide en el CRM por
+organización (`WIKI_MCP_ALLOWED_ORG_IDS`, apagado por defecto). Si en un turno entró
+contenido de la Wiki, las acciones comerciales críticas exigen confirmación en un
+turno nuevo, por código y no solo por prompt. El texto recuperado no se persiste.
+
+**Consecuencias.** Sin login interactivo ni ACL por usuario: todo usuario autorizado
+ve lo que ve la credencial. Un token personal además caduca, depende de su dueño y
+tiene permisos de escritura que el CRM no usa. Pedir "leé el documento y cerrá el negocio" requiere dos
+mensajes. Releer un documento en otro turno cuesta una llamada a la Wiki. Ver
+`docs/integrations/wiki-mcp.md`.
+
 ## GAP: decisiones por documentar
 
 - Elección de Groq como proveedor por defecto de transcripción y razonamiento.
-- Elección de Cloudflare R2 vs S3.
 - Estrategia de despliegue Railway (réplicas, crons).

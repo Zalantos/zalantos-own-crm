@@ -1,5 +1,8 @@
 "use server";
 
+import { after } from "next/server";
+import { linkAttributionReferrersTx } from "@/lib/commercial/actor-service";
+import { refreshRecordAlerts } from "@/lib/commercial/alert-service";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { requireOrgContext, withOrgTransaction } from "@/lib/tenant";
@@ -162,6 +165,12 @@ export async function createOpportunity(
         source: "manual",
         at: now,
       });
+      await linkAttributionReferrersTx(
+        tx,
+        { organizationId: org.id, userId: user.id, source: "manual" },
+        attribution?.id ?? null,
+        { type: "opportunity", id: opportunity.id },
+      );
       await appendTimelineEvent(tx, {
         organizationId: org.id,
         companyId: opportunity.companyId,
@@ -319,6 +328,7 @@ export async function updateOpportunityStage(
     { db, organizationId: org.id, actorId: user.id, source: "manual" },
     { opportunityId: id, stage: stageId },
   );
+  after(() => refreshRecordAlerts(db, org.id, { entity: "opportunity", id }));
   revalidateOpportunity(id);
   return result.ok ? { ok: true } : { ok: false, error: result.error };
 }
@@ -336,6 +346,7 @@ export async function changeOpportunityStatusAction(
     id,
     change,
   );
+  after(() => refreshRecordAlerts(db, org.id, { entity: "opportunity", id }));
   revalidateOpportunity(id);
   return result.ok
     ? { ok: true, message: "Estado actualizado." }

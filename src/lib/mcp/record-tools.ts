@@ -1,14 +1,13 @@
-import type { Prisma } from "@prisma/client";
 import { z } from "zod";
 import { defineAgentTool } from "@/lib/agent/tool-definition";
 import type { AgentToolContext } from "@/lib/agent/executor";
 import { registerProposalChange } from "@/lib/agent/proposals";
 import {
   LOGGED_ACTIVITY_TYPES,
-  buildManualMeetingSummary,
-  normalizeMeetingParticipants,
-  type ManualMeetingInput,
+  meetingDescription,
+  meetingOutcomes,
 } from "@/lib/crm/activity-records";
+import { findMeetingActivityId } from "@/lib/agent/tools/meetings";
 import {
   assertCompany,
   assertOpportunityOfCompany,
@@ -77,8 +76,8 @@ const meetingUpdateSchema = z
       "Nueva fecha/hora de la reunión en ISO 8601",
     ).optional(),
     meetingType: z.string().min(1).optional(),
+    personIds: z.array(z.string().min(1)).max(50).optional(),
     participants: z.array(participantSchema).max(50).optional(),
-    status: z.string().min(1).optional(),
     summary: z.string().nullable().optional(),
     keyPoints: z.array(z.string()).optional(),
     decisions: z.array(z.string()).optional(),
@@ -93,19 +92,108 @@ const meetingUpdateSchema = z
     { message: "Indicá al menos un campo para actualizar la reunión" },
   );
 
-function jsonRecord(value: Prisma.JsonValue | null): Record<string, unknown> {
-  return value && typeof value === "object" && !Array.isArray(value)
-    ? (value as Record<string, unknown>)
-    : {};
-}
-
-function stringList(value: unknown): string[] {
-  return Array.isArray(value)
-    ? value.filter((entry): entry is string => typeof entry === "string")
-    : [];
-}
-
 export function buildMcpRecordTools(ctx: AgentToolContext) {
+  async function runActivityUpdate(args: z.output<typeof activityUpdateSchema>) {
+    const current = await ctx.db.activity.findUnique({
+      where: { id: args.activityId },
+      select: {
+        id: true,
+        companyId: true,
+        opportunityId: true,
+        occurredAt: true,
+        type: true,
+        title: true,
+        description: true,
+        durationMinutes: true,
+        channel: true,
+        outcomes: true,
+        participants: { select: { personId: true } },
+      },
+    });
+    if (!current?.occurredAt) {
+      throw new Error(
+        `Actividad ocurrida no encontrada: ${args.activityId}. Para tareas usá update_task.`,
+      );
+    }
+
+    const companyId = args.companyId ?? current.companyId;
+    if (!companyId) throw new Error("La actividad debe tener una empresa");
+    await assertCompany(ctx.db, companyId);
+    const opportunityId =
+      args.opportunityId === undefined
+        ? current.opportunityId
+        : args.opportunityId;
+    if (opportunityId) {
+      await assertOpportunityOfCompany(ctx.db, opportunityId, companyId);
+    }
+    const personIds =
+      args.personIds === undefined
+        ? current.participants.map(({ personId }) => personId)
+        : await assertPeople(ctx.db, args.personIds);
+    const occurredAt = args.date ? new Date(args.date) : current.occurredAt;
+    // Una reunión sí puede quedar agendada a futuro.
+    const resultingType = args.type ?? current.type;
+    if (
+      resultingType !== "meeting" &&
+      occurredAt.getTime() > Date.now() + FUTURE_ACTIVITY_TOLERANCE_MS
+    ) {
+      throw new Error(
+        "La fecha es futura: update_activity solo edita actividades que ya ocurrieron. Para algo pendiente usá create_task.",
+      );
+    }
+
+    const beforeValue = {
+      companyId: current.companyId,
+      opportunityId: current.opportunityId,
+      personIds: current.participants.map(({ personId }) => personId),
+      type: current.type,
+      title: current.title,
+      occurredAt: current.occurredAt.toISOString(),
+      durationMinutes: current.durationMinutes,
+      channel: current.channel,
+      description: current.description,
+      outcomes: current.outcomes,
+    };
+    const afterValue = {
+      companyId,
+      opportunityId,
+      personIds,
+      type: args.type ?? current.type,
+      title: args.title ?? current.title,
+      occurredAt: occurredAt.toISOString(),
+      durationMinutes:
+        args.durationMinutes === undefined
+          ? current.durationMinutes
+          : args.durationMinutes,
+      channel:
+        args.channel === undefined
+          ? current.channel
+          : emptyToNull(args.channel),
+      description:
+        args.summary === undefined
+          ? current.description
+          : emptyToNull(args.summary),
+      outcomes:
+        args.outcomes === undefined
+          ? current.outcomes
+          : emptyToNull(args.outcomes),
+    };
+    return registerProposalChange(ctx, { companyId, opportunityId }, [
+      {
+        type: "update_activity",
+        entity: "activity",
+        entityId: current.id,
+        beforeValue,
+        afterValue,
+        explanation: "Actividad actualizada mediante MCP.",
+        confidence: 1,
+        label: `Actividad: ${afterValue.title}`,
+        before: current.title,
+        after: afterValue.title,
+      },
+    ]);
+  }
+
   return {
     list_companies: defineAgentTool({
       description:
@@ -459,214 +547,62 @@ export function buildMcpRecordTools(ctx: AgentToolContext) {
       description:
         "Edita cualquier campo operativo de una actividad ya ocurrida: empresa, oportunidad, participantes, tipo, título, fecha, duración, canal, resumen y resultados. Para tareas pendientes usá update_task. Resolvé activityId con list_activities; nunca inventes un id.",
       inputSchema: activityUpdateSchema,
-      execute: async (args) => {
-        const current = await ctx.db.activity.findUnique({
-          where: { id: args.activityId },
-          select: {
-            id: true,
-            companyId: true,
-            opportunityId: true,
-            occurredAt: true,
-            type: true,
-            title: true,
-            description: true,
-            durationMinutes: true,
-            channel: true,
-            outcomes: true,
-            participants: { select: { personId: true } },
-          },
-        });
-        if (!current?.occurredAt) {
-          throw new Error(
-            `Actividad ocurrida no encontrada: ${args.activityId}. Para tareas usá update_task.`,
-          );
-        }
-
-        const companyId = args.companyId ?? current.companyId;
-        if (!companyId) throw new Error("La actividad debe tener una empresa");
-        await assertCompany(ctx.db, companyId);
-        const opportunityId =
-          args.opportunityId === undefined
-            ? current.opportunityId
-            : args.opportunityId;
-        if (opportunityId) {
-          await assertOpportunityOfCompany(ctx.db, opportunityId, companyId);
-        }
-        const personIds =
-          args.personIds === undefined
-            ? current.participants.map(({ personId }) => personId)
-            : await assertPeople(ctx.db, args.personIds);
-        const occurredAt = args.date ? new Date(args.date) : current.occurredAt;
-        if (occurredAt.getTime() > Date.now() + FUTURE_ACTIVITY_TOLERANCE_MS) {
-          throw new Error(
-            "La fecha es futura: update_activity solo edita actividades que ya ocurrieron. Para algo pendiente usá create_task.",
-          );
-        }
-
-        const beforeValue = {
-          companyId: current.companyId,
-          opportunityId: current.opportunityId,
-          personIds: current.participants.map(({ personId }) => personId),
-          type: current.type,
-          title: current.title,
-          occurredAt: current.occurredAt.toISOString(),
-          durationMinutes: current.durationMinutes,
-          channel: current.channel,
-          description: current.description,
-          outcomes: current.outcomes,
-        };
-        const afterValue = {
-          companyId,
-          opportunityId,
-          personIds,
-          type: args.type ?? current.type,
-          title: args.title ?? current.title,
-          occurredAt: occurredAt.toISOString(),
-          durationMinutes:
-            args.durationMinutes === undefined
-              ? current.durationMinutes
-              : args.durationMinutes,
-          channel:
-            args.channel === undefined
-              ? current.channel
-              : emptyToNull(args.channel),
-          description:
-            args.summary === undefined
-              ? current.description
-              : emptyToNull(args.summary),
-          outcomes:
-            args.outcomes === undefined
-              ? current.outcomes
-              : emptyToNull(args.outcomes),
-        };
-        return registerProposalChange(ctx, { companyId, opportunityId }, [
-          {
-            type: "update_activity",
-            entity: "activity",
-            entityId: current.id,
-            beforeValue,
-            afterValue,
-            explanation: "Actividad actualizada mediante MCP.",
-            confidence: 1,
-            label: `Actividad: ${afterValue.title}`,
-            before: current.title,
-            after: afterValue.title,
-          },
-        ]);
-      },
+      execute: (args) => runActivityUpdate(args),
     }),
 
     update_meeting: defineAgentTool({
       description:
-        "Edita una reunión existente: empresa, oportunidad, título, fecha, tipo, participantes y estado. En reuniones manuales también permite editar resumen, puntos clave, decisiones, riesgos y próximos pasos. Resolvé meetingId con list_meetings; nunca inventes un id.",
+        "Edita una reunión comercial: empresa, oportunidad, título, fecha, tipo, participantes, resumen, puntos clave, riesgos, acuerdos y próximos pasos. Solo cambian los campos enviados; los puntos clave y riesgos reescriben el resumen, y los acuerdos y próximos pasos reescriben el resultado. Resolvé meetingId con list_meetings; nunca inventes un id.",
       inputSchema: meetingUpdateSchema,
       execute: async (args) => {
-        const current = await ctx.db.meeting.findUnique({
-          where: { id: args.meetingId },
-          select: {
-            id: true,
-            companyId: true,
-            opportunityId: true,
-            title: true,
-            meetingType: true,
-            meetingDate: true,
-            participants: true,
-            status: true,
-            sourceType: true,
-            aiSummary: true,
-          },
-        });
-        if (!current)
+        const activityId = await findMeetingActivityId(ctx.db, args.meetingId);
+        if (!activityId) {
           throw new Error(`Reunión no encontrada: ${args.meetingId}`);
-
-        const companyId = args.companyId ?? current.companyId;
-        await assertCompany(ctx.db, companyId);
-        const opportunityId =
-          args.opportunityId === undefined
-            ? current.opportunityId
-            : args.opportunityId;
-        if (opportunityId) {
-          await assertOpportunityOfCompany(ctx.db, opportunityId, companyId);
         }
-
-        const editsSummary =
+        const editsBody =
           args.summary !== undefined ||
           args.keyPoints !== undefined ||
-          args.decisions !== undefined ||
           args.risks !== undefined ||
-          args.nextSteps !== undefined;
-        if (editsSummary && current.sourceType !== "manual") {
-          throw new Error(
-            "El resumen estructurado solo se edita en reuniones manuales; una reunión procesada conserva su resultado de IA.",
-          );
-        }
-
-        const oldSummary = jsonRecord(current.aiSummary);
-        const participants =
-          args.participants ??
-          (Array.isArray(current.participants)
-            ? (current.participants as z.output<typeof participantSchema>[])
-            : []);
-        const summaryInput: ManualMeetingInput = {
-          companyId,
-          opportunityId,
-          title: args.title ?? current.title,
-          meetingType: args.meetingType ?? current.meetingType,
-          meetingDate: args.date ? new Date(args.date) : current.meetingDate,
-          participants,
-          summary:
-            args.summary === undefined
-              ? typeof oldSummary.headline === "string"
-                ? oldSummary.headline
-                : null
-              : emptyToNull(args.summary),
-          keyPoints: args.keyPoints ?? stringList(oldSummary.keyPoints),
-          decisions: args.decisions ?? stringList(oldSummary.decisions),
-          risks: args.risks ?? stringList(oldSummary.risks),
-          nextSteps: args.nextSteps ?? stringList(oldSummary.nextSteps),
-        };
-
-        const beforeValue = {
-          companyId: current.companyId,
-          opportunityId: current.opportunityId,
-          title: current.title,
-          meetingDate: current.meetingDate.toISOString(),
-          meetingType: current.meetingType,
-          participants: current.participants,
-          status: current.status,
-          aiSummary: current.aiSummary,
-        };
-        const afterValue = {
-          companyId,
-          opportunityId,
-          title: args.title ?? current.title,
-          meetingDate: args.date
-            ? new Date(args.date).toISOString()
-            : current.meetingDate.toISOString(),
-          meetingType: args.meetingType ?? current.meetingType,
-          participants:
-            args.participants === undefined
-              ? current.participants
-              : normalizeMeetingParticipants(args.participants),
-          status: args.status ?? current.status,
-          aiSummary: editsSummary
-            ? buildManualMeetingSummary(summaryInput)
-            : current.aiSummary,
-        };
-        return registerProposalChange(ctx, { companyId, opportunityId }, [
-          {
-            type: "update_meeting",
-            entity: "meeting",
-            entityId: current.id,
-            beforeValue: beforeValue as Prisma.InputJsonValue,
-            afterValue: afterValue as Prisma.InputJsonValue,
-            explanation: "Reunión actualizada mediante MCP.",
-            confidence: 1,
-            label: `Reunión: ${afterValue.title}`,
-            before: current.title,
-            after: afterValue.title,
-          },
-        ]);
+          args.participants !== undefined;
+        const editsOutcomes =
+          args.decisions !== undefined || args.nextSteps !== undefined;
+        const current =
+          editsBody && args.summary === undefined
+            ? await ctx.db.activity.findUnique({
+                where: { id: activityId },
+                select: { description: true },
+              })
+            : null;
+        return runActivityUpdate({
+          activityId,
+          companyId: args.companyId,
+          opportunityId: args.opportunityId,
+          personIds: args.personIds,
+          title: args.title,
+          date: args.date,
+          channel: args.meetingType,
+          ...(editsBody
+            ? {
+                summary: meetingDescription({
+                  summary:
+                    args.summary === undefined
+                      ? (current?.description ?? null)
+                      : emptyToNull(args.summary),
+                  keyPoints: args.keyPoints ?? [],
+                  risks: args.risks ?? [],
+                  participants: args.participants ?? [],
+                }),
+              }
+            : {}),
+          ...(editsOutcomes
+            ? {
+                outcomes: meetingOutcomes({
+                  decisions: args.decisions ?? [],
+                  nextSteps: args.nextSteps ?? [],
+                }),
+              }
+            : {}),
+        });
       },
     }),
   };

@@ -18,7 +18,11 @@ import {
   logInteraction,
   type InteractionFormState,
 } from "@/app/(dashboard)/activities/actions";
-import { ACTIVITY_TYPE_LABELS, INTERACTION_TYPES } from "@/lib/activity-types";
+import {
+  ACTIVITY_TYPE_LABELS,
+  INTERACTION_TYPES,
+  type InteractionType,
+} from "@/lib/activity-types";
 
 function nowLocalInput() {
   const now = new Date();
@@ -37,6 +41,7 @@ export function InteractionLogForm({
   people = [],
   offerMarkContacted = false,
   triggerLabel = "Registrar interacción",
+  defaultType = "email",
 }: {
   companyId?: string;
   personId?: string;
@@ -46,8 +51,11 @@ export function InteractionLogForm({
   people?: { id: string; label: string }[];
   offerMarkContacted?: boolean;
   triggerLabel?: string;
+  defaultType?: InteractionType;
 }) {
   const [open, setOpen] = useState(false);
+  const [type, setType] = useState<string>(defaultType);
+  const isMeeting = type === "meeting";
   const [formKey, setFormKey] = useState(0);
   const [state, formAction] = useActionState<InteractionFormState, FormData>(
     async (prev, formData) => {
@@ -76,7 +84,7 @@ export function InteractionLogForm({
       <Dialog open={open} onOpenChange={setOpen}>
         <DialogContent className="sm:max-w-lg">
           <DialogHeader>
-            <DialogTitle>Registrar interacción</DialogTitle>
+            <DialogTitle>{isMeeting ? "Registrar reunión" : "Registrar interacción"}</DialogTitle>
             <DialogDescription>
               Algo que ya ocurrió: un correo, WhatsApp, llamada, mensaje de
               LinkedIn o reunión. Para algo pendiente crea una tarea.
@@ -102,7 +110,8 @@ export function InteractionLogForm({
                 <span className="text-muted-foreground">Canal</span>
                 <select
                   name="type"
-                  defaultValue="email"
+                  value={type}
+                  onChange={(event) => setType(event.target.value)}
                   className="bg-background h-9 w-full rounded-md border px-2 text-sm"
                 >
                   {INTERACTION_TYPES.map((type) => (
@@ -128,6 +137,18 @@ export function InteractionLogForm({
             </label>
             {personId ? (
               <input type="hidden" name="personId" value={personId} />
+            ) : people.length > 0 && isMeeting ? (
+              <fieldset className="space-y-1 text-xs">
+                <legend className="text-muted-foreground">Participantes</legend>
+                <div className="max-h-32 space-y-1 overflow-y-auto rounded-md border p-2">
+                  {people.map((person) => (
+                    <label key={person.id} className="flex items-center gap-2 text-sm">
+                      <input type="checkbox" name="participantIds" value={person.id} />
+                      {person.label}
+                    </label>
+                  ))}
+                </div>
+              </fieldset>
             ) : people.length > 0 ? (
               <label className="block space-y-1 text-xs">
                 <span className="text-muted-foreground">Persona</span>
@@ -146,14 +167,16 @@ export function InteractionLogForm({
               </label>
             ) : null}
             <label className="block space-y-1 text-xs">
-              <span className="text-muted-foreground">Descripción</span>
-              <Textarea name="description" rows={2} />
+              <span className="text-muted-foreground">{isMeeting ? "Resumen" : "Descripción"}</span>
+              <Textarea name="description" rows={isMeeting ? 4 : 2} />
             </label>
             <label className="block space-y-1 text-xs">
-              <span className="text-muted-foreground">Resultado</span>
+              <span className="text-muted-foreground">
+                {isMeeting ? "Acuerdos y próximas acciones" : "Resultado"}
+              </span>
               <Textarea
                 name="outcomes"
-                rows={2}
+                rows={isMeeting ? 3 : 2}
                 placeholder="Ej.: Pidió revisar el alcance con su gerente"
               />
             </label>

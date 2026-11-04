@@ -21,6 +21,8 @@ const TOOL_LABELS: Record<string, string> = {
   "tool-create_task": "Creó una tarea",
   "tool-create_opportunity": "Propuso crear una oportunidad",
   "tool-create_company": "Propuso crear una empresa",
+  "tool-wiki_search_knowledge": "Consultó la Wiki",
+  "tool-wiki_read_document": "Leyó un documento de la Wiki",
 };
 
 const PROPOSAL_TOOLS = new Set([

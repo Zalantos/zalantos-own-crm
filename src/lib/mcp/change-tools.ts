@@ -5,7 +5,7 @@ import {
   RevertConflictError,
   revertItem,
   revertProposal,
-} from "@/lib/meeting-intelligence/apply";
+} from "@/lib/ai-changes/apply";
 
 const statusSchema = z.enum([
   "pending",

@@ -5,6 +5,7 @@ import { redirect } from "next/navigation";
 import { Prisma } from "@prisma/client";
 import bcrypt from "bcryptjs";
 import { z } from "zod";
+import { createDefaultAlertRules } from "@/lib/commercial/alert-service";
 import { prismaSystem } from "@/lib/prisma";
 import { requireSuperAdmin } from "@/lib/session";
 import { DEFAULT_PIPELINE_STAGES } from "@/lib/pipeline/stages";
@@ -68,6 +69,7 @@ export async function createOrganization(
         organizationId: org.id,
       })),
     });
+    await createDefaultAlertRules(prismaSystem, org.id);
   } catch (error) {
     if (
       error instanceof Prisma.PrismaClientKnownRequestError &&

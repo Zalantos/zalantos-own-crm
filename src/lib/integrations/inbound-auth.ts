@@ -1,7 +1,7 @@
 import {
   isAuthorized,
   isCronSecretConfigured,
-} from "@/lib/meeting-intelligence/internal-auth";
+} from "@/lib/internal-auth";
 import { prismaSystem } from "@/lib/prisma";
 
 export type IntegrationAuthResult =

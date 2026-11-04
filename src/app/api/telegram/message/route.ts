@@ -10,10 +10,11 @@ import type { Prisma } from "@prisma/client";
 import { prismaSystem } from "@/lib/prisma";
 import { forOrg, getOrgSettings, type TenantClient } from "@/lib/tenant";
 import { agentConfig } from "@/lib/agent/config";
-import { appUrl } from "@/lib/meeting-intelligence/config";
+import { appUrl } from "@/lib/runtime-config";
 import { resolveAgentModel } from "@/lib/agent/model";
 import { buildAgentSystemPrompt } from "@/lib/agent/system-prompt";
 import { buildAgentTools } from "@/lib/agent/executor";
+import { isWikiEnabledForOrg } from "@/lib/wiki-mcp/authorization";
 import {
   CRM_OBSERVABILITY_SERVICE_NAME,
   CRM_OBSERVABILITY_SERVICE_SLUG,
@@ -120,6 +121,7 @@ export async function POST(request: NextRequest) {
         pageContext: null,
         attachments: [],
         surface: "telegram",
+        wikiEnabled: isWikiEnabledForOrg(link.organizationId),
       }),
       messages: await convertToModelMessages([...history, userMessage]),
       tools: buildAgentTools({

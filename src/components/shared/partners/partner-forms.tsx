@@ -16,17 +16,11 @@ import { Textarea } from "@/components/ui/textarea";
 import { SubmitButton } from "@/components/shared/submit-button";
 import {
   addPartnerContact,
-  changeAllianceAction,
-  createAlliancePartner,
-  updateAllianceFields,
+  createPartner,
+  updatePartnerFields,
   type PartnerFormState,
 } from "@/app/(dashboard)/partners/actions";
-import {
-  ALLIANCE_STAGES,
-  ALLIANCE_STAGE_LABELS,
-  ALLIANCE_TYPES,
-  ALLIANCE_TYPE_LABELS,
-} from "@/lib/commercial/partners";
+import { PARTNER_TYPES, PARTNER_TYPE_LABELS } from "@/lib/commercial/partners";
 
 const selectClass = "bg-background h-9 w-full rounded-md border px-3 text-sm";
 type Option = { id: string; label: string };
@@ -60,19 +54,19 @@ export function NewPartnerButton({
 }) {
   const [open, setOpen] = useState(false);
   const [kind, setKind] = useState("company");
-  const [state, formAction] = usePartnerAction(createAlliancePartner);
+  const [state, formAction] = usePartnerAction(createPartner);
   return (
     <>
       <Button type="button" onClick={() => setOpen(true)}>
-        Nueva alianza
+        Nuevo partner
       </Button>
       <Dialog open={open} onOpenChange={setOpen}>
         <DialogContent className="sm:max-w-lg">
           <DialogHeader>
-            <DialogTitle>Nueva alianza</DialogTitle>
+            <DialogTitle>Nuevo partner</DialogTitle>
             <DialogDescription>
-              Crea el partner en el catálogo y lo ubica en la etapa Identificado.
-              Una alianza no es una oportunidad de venta.
+              Agrega una relación comercial al directorio. Sus negocios se
+              registran como actores en prospectos y oportunidades.
             </DialogDescription>
           </DialogHeader>
           <form action={formAction} className="space-y-3">
@@ -82,7 +76,7 @@ export function NewPartnerButton({
             </label>
             <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
               <label className="space-y-1 text-xs">
-                <span className="text-muted-foreground">Tipo de partner</span>
+                <span className="text-muted-foreground">Origen</span>
                 <select name="kind" value={kind} onChange={(e) => setKind(e.target.value)} className={selectClass}>
                   <option value="company">Empresa del CRM</option>
                   <option value="person">Persona del CRM</option>
@@ -90,12 +84,12 @@ export function NewPartnerButton({
                 </select>
               </label>
               <label className="space-y-1 text-xs">
-                <span className="text-muted-foreground">Tipo de alianza</span>
+                <span className="text-muted-foreground">Tipo de partner</span>
                 <select name="allianceType" defaultValue="" className={selectClass}>
                   <option value="">Sin definir</option>
-                  {ALLIANCE_TYPES.map((type) => (
+                  {PARTNER_TYPES.map((type) => (
                     <option key={type} value={type}>
-                      {ALLIANCE_TYPE_LABELS[type]}
+                      {PARTNER_TYPE_LABELS[type]}
                     </option>
                   ))}
                 </select>
@@ -141,7 +135,7 @@ export function NewPartnerButton({
             </label>
             <ErrorText state={state} />
             <DialogFooter>
-              <SubmitButton pendingText="Creando...">Crear alianza</SubmitButton>
+              <SubmitButton pendingText="Creando...">Crear partner</SubmitButton>
             </DialogFooter>
           </form>
         </DialogContent>
@@ -150,72 +144,7 @@ export function NewPartnerButton({
   );
 }
 
-export function AllianceStageControls({
-  partnerId,
-  stage,
-  status,
-}: {
-  partnerId: string;
-  stage: string | null;
-  status: string;
-}) {
-  const [mode, setMode] = useState<"paused" | "discarded" | "open" | null>(null);
-  const [state, formAction] = usePartnerAction(changeAllianceAction.bind(null, partnerId), () => setMode(null));
-  return (
-    <div className="flex flex-wrap items-center gap-2">
-      {status === "open" && (
-        <form action={formAction} className="flex items-center gap-2">
-          <select name="stage" defaultValue={stage ?? ""} className="bg-background h-8 rounded-md border px-2 text-sm">
-            {!stage && <option value="">Fuera del pipeline</option>}
-            {ALLIANCE_STAGES.map((value) => (
-              <option key={value} value={value}>
-                {ALLIANCE_STAGE_LABELS[value]}
-              </option>
-            ))}
-          </select>
-          <SubmitButton pendingText="...">Mover</SubmitButton>
-        </form>
-      )}
-      {status === "open" ? (
-        <>
-          <Button type="button" variant="secondary" size="sm" onClick={() => setMode("paused")}>
-            Pausar
-          </Button>
-          <Button type="button" variant="ghost" size="sm" onClick={() => setMode("discarded")}>
-            Descartar
-          </Button>
-        </>
-      ) : (
-        <Button type="button" size="sm" onClick={() => setMode("open")}>
-          Reactivar
-        </Button>
-      )}
-      {state && "error" in state && !mode && <p className="text-destructive text-xs">{state.error}</p>}
-      <Dialog open={mode !== null} onOpenChange={(open) => !open && setMode(null)}>
-        <DialogContent className="sm:max-w-md">
-          <DialogHeader>
-            <DialogTitle>
-              {mode === "paused" ? "Pausar alianza" : mode === "discarded" ? "Descartar alianza" : "Reactivar alianza"}
-            </DialogTitle>
-          </DialogHeader>
-          <form action={formAction} className="space-y-3">
-            <input type="hidden" name="status" value={mode ?? ""} />
-            <label className="block space-y-1 text-xs">
-              <span className="text-muted-foreground">Motivo</span>
-              <Textarea name="reason" rows={2} required={mode !== "open"} />
-            </label>
-            <ErrorText state={state} />
-            <DialogFooter>
-              <SubmitButton pendingText="Guardando...">Confirmar</SubmitButton>
-            </DialogFooter>
-          </form>
-        </DialogContent>
-      </Dialog>
-    </div>
-  );
-}
-
-export function AllianceFieldsForm({
+export function PartnerFieldsForm({
   partnerId,
   values,
   users,
@@ -231,16 +160,16 @@ export function AllianceFieldsForm({
   };
   users: Option[];
 }) {
-  const [state, formAction] = usePartnerAction(updateAllianceFields.bind(null, partnerId));
+  const [state, formAction] = usePartnerAction(updatePartnerFields.bind(null, partnerId));
   return (
     <form action={formAction} className="grid grid-cols-1 gap-3 sm:grid-cols-2">
       <label className="space-y-1 text-xs">
-        <span className="text-muted-foreground">Tipo de alianza</span>
+        <span className="text-muted-foreground">Tipo de partner</span>
         <select name="allianceType" defaultValue={values.allianceType ?? ""} className={selectClass}>
           <option value="">Sin definir</option>
-          {ALLIANCE_TYPES.map((type) => (
+          {PARTNER_TYPES.map((type) => (
             <option key={type} value={type}>
-              {ALLIANCE_TYPE_LABELS[type]}
+              {PARTNER_TYPE_LABELS[type]}
             </option>
           ))}
         </select>
@@ -273,7 +202,7 @@ export function AllianceFieldsForm({
       </label>
       <div className="sm:col-span-2">
         <ErrorText state={state} />
-        <SubmitButton pendingText="Guardando...">Guardar alianza</SubmitButton>
+        <SubmitButton pendingText="Guardando...">Guardar</SubmitButton>
       </div>
     </form>
   );
